@@ -33,7 +33,10 @@ export interface ApiRequestMessage {
     method: string;
     headers: Record<string, string>;
     body?: string;
+    /** Per-attempt timeout in ms; omitted = proxy default, 0 = unlimited (capped) */
     timeout?: number;
+    /** Id of the requesting document's lifetime port (aborted on disconnect) */
+    clientId?: string;
   };
 }
 
@@ -81,6 +84,10 @@ export interface ApiErrorResponse {
     message: string;
     status?: number;
     statusText?: string;
+    /** Failure kind: upstream HTTP error, timeout, cancellation or network error */
+    code?: 'http' | 'timeout' | 'aborted' | 'network';
+    /** Server-requested retry delay in ms (Retry-After), if any */
+    retryAfter?: number;
   };
 }
 
@@ -176,9 +183,20 @@ export interface NotificationServiceConfig {
 }
 
 export interface ApiProxyServiceConfig {
+  /** Per-attempt timeout when the caller does not specify one (ms) */
   defaultTimeout: number;
+  /** Safety ceiling used when the caller asks for "unlimited" (0) (ms) */
+  unlimitedTimeoutCeiling: number;
+  /** Retries after the first attempt (408/429/5xx only) */
   maxRetries: number;
+  /** Base delay of the exponential backoff (ms) */
   retryDelay: number;
+  /** Upper bound of a computed backoff delay (ms) */
+  maxRetryDelay: number;
+  /** A longer Retry-After gives up instead of waiting (ms) */
+  maxRetryAfter: number;
+  /** Global cap on concurrent upstream requests across all tabs */
+  maxConcurrentRequests: number;
 }
 
 export interface CommandServiceConfig {
@@ -236,6 +254,8 @@ export class ConfigurationError extends BackgroundServiceError {
 export const BACKGROUND_CONSTANTS = {
   NOTIFICATION_TIMEOUT: 5000,
   API_REQUEST_TIMEOUT: 30000,
+  API_UNLIMITED_TIMEOUT_CEILING: 300000,
+  API_CLIENT_PORT_PREFIX: 'illa-api-client:',
   SESSION_KEY_API_NOTIFICATION: 'apiKeyNotificationShown',
   MENU_PARENT_ID: 'illa-website-management',
   WARNING_ICON_PATH: '/warning.png',

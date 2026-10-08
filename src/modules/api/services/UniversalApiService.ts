@@ -4,7 +4,7 @@
  */
 
 import { StorageService } from '../../core/storage';
-import { sendApiRequest } from '../utils/requestUtils';
+import { sendApiRequest, generateGeminiContent } from '../utils/requestUtils';
 import { mergeCustomParams } from '../utils/apiUtils';
 import {
   ApiConfigItem,
@@ -12,7 +12,6 @@ import {
   ApiProtocolFamily,
 } from '../../shared/types/api';
 import { getApiTimeout } from '../../../utils';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import {
   getProtocolFamilyLabel,
   isGeminiFamily,
@@ -32,7 +31,7 @@ export interface UniversalApiOptions {
   configId?: string;
   /** Force a specific protocol family */
   forceProvider?: ApiProtocolFamily;
-  /** Request timeout in milliseconds (default 0, unlimited) */
+  /** Request timeout in milliseconds (default 30 s; 0 = unlimited) */
   timeout?: number;
   /** Custom request parameters as a JSON string */
   customParams?: string;
@@ -139,7 +138,7 @@ export class UniversalApiService {
   }
 
   /**
-   * Call the Google Gemini SDK
+   * Call Google Gemini (REST, through the background proxy)
    */
   private async callGoogleGemini(
     prompt: string,
@@ -148,7 +147,6 @@ export class UniversalApiService {
   ): Promise<UniversalApiResult> {
     try {
       const config = apiConfig.config;
-      const genAI = new GoogleGenerativeAI(config.apiKey);
 
       // Base generation configuration
       const baseGenerationConfig: any = {
@@ -165,23 +163,7 @@ export class UniversalApiService {
         options.customParams || config.customParams,
       );
 
-      // Request options, such as timeout and proxy endpoint
-      const requestOptions: { timeout?: number; baseUrl?: string } = {};
-      const timeout = options.timeout ?? getApiTimeout(0);
-      if (timeout && timeout > 0) {
-        requestOptions.timeout = timeout;
-      }
-      if (config.apiEndpoint) {
-        requestOptions.baseUrl = config.apiEndpoint;
-      }
-
-      const model = genAI.getGenerativeModel(
-        {
-          model: config.model,
-          generationConfig,
-        },
-        requestOptions,
-      );
+      const timeout = getApiTimeout(options.timeout);
 
       // Build the full prompt
       let fullPrompt = prompt;
@@ -195,7 +177,10 @@ export class UniversalApiService {
         config: generationConfig,
       });
 
-      const result = await model.generateContent(fullPrompt);
+      const result = await generateGeminiContent(config, fullPrompt, {
+        generationConfig,
+        timeout,
+      });
       const response = result.response;
       const content = response.text();
 
@@ -492,8 +477,7 @@ export class UniversalApiService {
     config: ApiConfig,
     timeout?: number,
   ): Promise<Response> {
-    const timeoutMs = timeout ?? 0;
-    return await sendApiRequest(requestBody, config, timeoutMs);
+    return await sendApiRequest(requestBody, config, getApiTimeout(timeout));
   }
 
   /**

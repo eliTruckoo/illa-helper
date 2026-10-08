@@ -10,7 +10,10 @@ import {
   ApiConfigItem,
   ApiProtocolFamily,
 } from '../modules/shared/types';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import {
+  sendApiRequest,
+  generateGeminiContent,
+} from '../modules/api/utils/requestUtils';
 
 /**
  * Merge custom parameters into the base parameter object
@@ -73,13 +76,26 @@ export interface ApiTestResult {
   model?: string;
 }
 
+/** Default per-attempt API timeout (ms), used when no valid value is configured */
+export const DEFAULT_API_TIMEOUT_MS = 30000;
+
 /**
  * Get the API timeout
- * @param baseTimeout Base timeout in milliseconds
- * @returns Timeout in milliseconds; undefined (no timeout limit) if 0
+ * @param baseTimeout Configured timeout in milliseconds
+ * @returns Timeout in milliseconds: 0 when "unlimited" (0) was chosen (the
+ * background proxy still applies a safety ceiling), the default when the value
+ * is missing or invalid
  */
-export function getApiTimeout(baseTimeout: number): number | undefined {
-  return baseTimeout === 0 ? undefined : baseTimeout;
+export function getApiTimeout(baseTimeout?: number): number {
+  if (baseTimeout === 0) return 0;
+  if (
+    typeof baseTimeout !== 'number' ||
+    !Number.isFinite(baseTimeout) ||
+    baseTimeout < 0
+  ) {
+    return DEFAULT_API_TIMEOUT_MS;
+  }
+  return baseTimeout;
 }
 
 export async function testGeminiConnection(
@@ -91,8 +107,6 @@ export async function testGeminiConnection(
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(apiConfig.apiKey);
-
     const baseGenerationConfig: any = {
       temperature: apiConfig.temperature,
     };
@@ -105,25 +119,10 @@ export async function testGeminiConnection(
     // Adapt parameters
     generationConfig = mapParamsForProvider(generationConfig, 'gemini');
 
-    const requestOptions: { timeout?: number; baseUrl?: string } = {};
-    const timeout = getApiTimeout(baseTimeout || 0);
-    if (timeout) {
-      requestOptions.timeout = timeout;
-    }
-    if (apiConfig.apiEndpoint) {
-      requestOptions.baseUrl = apiConfig.apiEndpoint;
-    }
-
-    const model = genAI.getGenerativeModel(
-      {
-        model: apiConfig.model,
-        generationConfig,
-      },
-      requestOptions,
-    );
-
-    const result = await model.generateContent(
+    const result = await generateGeminiContent(
+      apiConfig,
       'Hello, this is a connection test. Please respond with "OK".',
+      { generationConfig, timeout: getApiTimeout(baseTimeout) },
     );
     const response = result.response;
     const text = response.text();
@@ -211,10 +210,10 @@ export async function testOpenAICompatibleConnection(
     // Merge custom parameters
     requestBody = mergeCustomParams(requestBody, apiConfig.customParams);
 
-    const response = await sendOpenAICompatibleTestRequest(
+    const response = await sendApiRequest(
       requestBody,
       apiConfig,
-      getApiTimeout(baseTimeout || 0) || 0,
+      getApiTimeout(baseTimeout),
     );
 
     if (response.ok) {
@@ -246,48 +245,6 @@ export async function testOpenAICompatibleConnection(
       message: error.message || 'Network connection error',
     };
   }
-}
-
-function sendOpenAICompatibleTestRequest(
-  requestBody: any,
-  apiConfig: ApiConfig,
-  timeout: number,
-): Promise<Response> {
-  return new Promise<Response>((resolve) => {
-    browser.runtime.sendMessage(
-      {
-        type: 'api-request',
-        data: {
-          url: apiConfig.apiEndpoint,
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiConfig.apiKey}`,
-          },
-          body: JSON.stringify(requestBody),
-          timeout,
-        },
-      },
-      (response) => {
-        if (response.success) {
-          resolve({
-            ok: true,
-            status: 200,
-            statusText: 'OK',
-            json: async () => response.data,
-          } as Response);
-          return;
-        }
-
-        resolve({
-          ok: false,
-          status: response.error?.status || 500,
-          statusText: response.error?.statusText || 'Internal Server Error',
-          json: async () => ({ error: response.error }),
-        } as Response);
-      },
-    );
-  });
 }
 
 /**

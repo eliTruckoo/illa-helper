@@ -2,12 +2,12 @@
  * Google Gemini translation provider
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { UserSettings } from '../../shared/types/storage';
 import { BaseProvider } from '../base/BaseProvider';
 import { CompletionRequest, CompletionResult } from '../types';
 import { mergeCustomParams, getGeminiOutputConfig } from '../utils/apiUtils';
 import { getApiTimeout, mapParamsForProvider } from '@/src/utils';
+import { generateGeminiContent } from '../utils/requestUtils';
 import { rateLimitManager } from '../../infrastructure/ratelimit';
 
 /**
@@ -22,8 +22,6 @@ export class GoogleGeminiProvider extends BaseProvider {
     request: CompletionRequest,
     settings: UserSettings,
   ): Promise<CompletionResult> {
-    const genAI = new GoogleGenerativeAI(this.config.apiKey);
-
     // Base generation config
     const baseGenerationConfig: any = {
       temperature: this.config.temperature,
@@ -40,23 +38,8 @@ export class GoogleGeminiProvider extends BaseProvider {
     // Adapt parameters
     generationConfig = mapParamsForProvider(generationConfig, 'gemini');
 
-    // Request options, such as timeout and proxy endpoint
-    const requestOptions: { timeout?: number; baseUrl?: string } = {};
+    // Sent through the background proxy (timeout, retries, global concurrency cap)
     const timeout = getApiTimeout(settings.apiRequestTimeout);
-    if (timeout) {
-      requestOptions.timeout = timeout;
-    }
-    if (this.config.apiEndpoint) {
-      requestOptions.baseUrl = this.config.apiEndpoint;
-    }
-
-    const model = genAI.getGenerativeModel(
-      {
-        model: this.config.model,
-        generationConfig,
-      },
-      requestOptions,
-    );
 
     const prompt = `${request.systemPrompt}\n\n${request.userPrompt}`;
     const rateLimiter = rateLimitManager.getLimiter(
@@ -65,7 +48,8 @@ export class GoogleGeminiProvider extends BaseProvider {
       true,
     );
 
-    const apiRequestFunction = () => model.generateContent(prompt);
+    const apiRequestFunction = () =>
+      generateGeminiContent(this.config, prompt, { generationConfig, timeout });
 
     const [result] = await rateLimiter.executeBatch([apiRequestFunction]);
     const response = result.response;

@@ -88,7 +88,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   floatingBall: DEFAULT_FLOATING_BALL_CONFIG,
   translationPosition: TranslationPosition.AFTER,
   showParentheses: true,
-  apiRequestTimeout: 0, // No timeout limit
+  apiRequestTimeout: 30000, // 30 s per attempt; 0 = unlimited (capped by the background proxy)
   customTranslationCSS: '',
   lazyLoading: DEFAULT_LAZY_LOADING_CONFIG,
 };
