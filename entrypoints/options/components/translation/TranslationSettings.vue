@@ -1,6 +1,6 @@
 <template>
   <div class="space-y-6">
-    <!-- 当前配置选择 -->
+    <!-- Current configuration selection -->
     <Card>
       <CardHeader>
         <CardTitle>
@@ -10,7 +10,7 @@
         </CardTitle>
       </CardHeader>
       <CardContent class="space-y-4">
-        <!-- API超时时间配置 -->
+        <!-- API timeout configuration -->
         <div class="bg-muted/50 rounded-lg p-4 border border-border/50">
           <div class="flex items-center gap-2 mb-3">
             <div
@@ -75,7 +75,7 @@
                 </div>
               </div>
 
-              <!-- 快速设置选项 -->
+              <!-- Quick setting options -->
               <div class="flex flex-wrap gap-2 mt-2">
                 <button
                   v-for="preset in [10, 30, 60, 120, 0]"
@@ -126,23 +126,23 @@
           </Select>
         </div>
 
-        <!-- 当前配置状态 -->
+        <!-- Current configuration status -->
         <div v-if="activeConfig" class="p-3 bg-muted rounded-lg">
           <div class="text-sm space-y-1">
             <div>
-              <strong>{{ $t('translationSettings.provider') }}：</strong>
+              <strong>{{ $t('translationSettings.provider') }}:</strong>
               {{ getProtocolFamilyLabel(activeConfig.protocolFamily) }}
             </div>
             <div>
-              <strong>{{ $t('translationSettings.model') }}：</strong>
+              <strong>{{ $t('translationSettings.model') }}:</strong>
               {{ activeConfig.config.model }}
             </div>
             <div class="truncate">
-              <strong>{{ $t('translationSettings.endpoint') }}：</strong>
+              <strong>{{ $t('translationSettings.endpoint') }}:</strong>
               {{ activeConfig.config.apiEndpoint }}
             </div>
             <div>
-              <strong>{{ $t('translationSettings.status') }}：</strong>
+              <strong>{{ $t('translationSettings.status') }}:</strong>
               <span
                 :class="
                   activeConfig.config.apiKey
@@ -162,7 +162,7 @@
       </CardContent>
     </Card>
 
-    <!-- 配置管理 -->
+    <!-- Configuration management -->
     <Card>
       <CardHeader class="pb-3">
         <CardTitle>
@@ -259,7 +259,7 @@
                 </div>
               </div>
 
-              <!-- 测试结果显示 -->
+              <!-- Test result display -->
               <div
                 v-if="cardTestResults[config.id]"
                 class="text-xs p-2 rounded-md mb-2"
@@ -343,7 +343,7 @@
               </div>
             </div>
 
-            <!-- 空状态 -->
+            <!-- Empty state -->
             <div
               v-if="settings.apiConfigs.length === 0"
               class="rounded-lg border border-dashed p-6 text-center text-muted-foreground col-span-full"
@@ -356,7 +356,7 @@
       </CardContent>
     </Card>
 
-    <!-- 配置对话框 -->
+    <!-- Configuration dialog -->
     <div
       v-if="showAddDialog || editingConfig"
       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
@@ -532,7 +532,7 @@
             <Switch v-model="configForm.config.includeThinkingParam" />
           </div>
 
-          <!-- 自定义API参数 -->
+          <!-- Custom API parameters -->
           <div class="space-y-3">
             <div class="space-y-1">
               <Label>{{ $t('translationSettings.customApiParams') }}</Label>
@@ -609,7 +609,7 @@
                 </div>
               </div>
 
-              <!-- 错误信息 -->
+              <!-- Error message -->
               <div
                 v-if="customParamsError"
                 class="text-xs text-red-600 bg-red-50 p-2 rounded border border-red-200"
@@ -617,7 +617,7 @@
                 {{ customParamsError }}
               </div>
 
-              <!-- 参数示例 -->
+              <!-- Parameter examples -->
               <div
                 v-if="showCustomParamsExample"
                 class="text-xs bg-muted p-3 rounded border"
@@ -642,7 +642,7 @@
             </div>
           </div>
 
-          <!-- API连接测试 -->
+          <!-- API connection test -->
           <div class="border-t border-border pt-4">
             <div class="flex items-center justify-between mb-2">
               <Label class="text-sm font-medium">
@@ -674,7 +674,7 @@
               </Button>
             </div>
 
-            <!-- 测试结果显示 -->
+            <!-- Test result display -->
             <div
               v-if="testResult"
               class="text-sm p-2 rounded-md"
@@ -796,19 +796,19 @@ const { t } = useI18n();
 const settings = ref<UserSettings>({ ...DEFAULT_SETTINGS });
 const storageService = StorageService.getInstance();
 
-// 对话框状态
+// Dialog state
 const showAddDialog = ref(false);
 const editingConfig = ref<ApiConfigItem | null>(null);
 
-// 自定义参数状态
+// Custom parameters state
 const customParamsError = ref<string>('');
 const customParamsValid = ref<boolean>(false);
 const showCustomParamsExample = ref<boolean>(false);
 
-// 密码可见性状态
+// Password visibility state
 const showPassword = ref<boolean>(false);
 
-// 预设只负责填充默认值，真正持久化的数据只有协议族和连接参数
+// Presets only fill in default values; the only data actually persisted is the protocol family and connection parameters
 const createConfigFormState = () => ({
   name: API_PRESETS.openai.label,
   presetKey: 'openai' as ApiPresetKey,
@@ -820,7 +820,7 @@ const createConfigFormState = () => ({
   },
 });
 
-// 配置表单
+// Configuration form
 const configForm = ref<{
   name: string;
   presetKey: ApiPresetKey;
@@ -832,7 +832,7 @@ const emit = defineEmits<{
   saveMessage: [message: string];
 }>();
 
-// 计算属性
+// Computed properties
 const activeConfig = computed(() => {
   return settings.value.apiConfigs.find(
     (config) => config.id === settings.value.activeApiConfigId,
@@ -846,10 +846,10 @@ const handleActiveConfigChange = async () => {
   try {
     await storageService.setActiveApiConfig(settings.value.activeApiConfigId);
 
-    // 重新加载完整设置以确保同步
+    // Reload the full settings to ensure they stay in sync
     await loadSettings();
 
-    emit('saveMessage', '活跃配置已更新');
+    emit('saveMessage', 'Active configuration updated');
     notifyConfigChange();
   } catch (error) {
     console.error(t('errors.updateActiveConfigFailed'), error);
@@ -866,7 +866,7 @@ const editConfig = (config: ApiConfigItem) => {
     config: { ...config.config },
   };
 
-  // 加载配置后验证自定义参数
+  // Validate custom parameters after loading the configuration
   if (configForm.value.config.customParams) {
     validateCustomParams();
   }
@@ -887,11 +887,11 @@ const inferPresetKey = (config: ApiConfigItem): ApiPresetKey => {
 };
 
 const deleteConfig = async (configId: string) => {
-  if (confirm('确定要删除这个配置吗？')) {
+  if (confirm('Are you sure you want to delete this configuration?')) {
     try {
       await storageService.removeApiConfig(configId);
       await loadSettings();
-      emit('saveMessage', '配置已删除');
+      emit('saveMessage', 'Configuration deleted');
       notifyConfigChange();
     } catch (error) {
       console.error(t('errors.deleteConfigFailed'), error);
@@ -904,7 +904,7 @@ const updateTemperature = (value: number[] | undefined) => {
   configForm.value.config.temperature = (value && value[0]) || 0;
 };
 
-// 自定义参数相关方法
+// Custom parameter methods
 const validateCustomParams = () => {
   const params = configForm.value.config.customParams?.trim();
 
@@ -921,9 +921,9 @@ const validateCustomParams = () => {
   } catch (error) {
     customParamsValid.value = false;
     if (error instanceof SyntaxError) {
-      customParamsError.value = `JSON格式错误: ${error.message}`;
+      customParamsError.value = `Invalid JSON format: ${error.message}`;
     } else {
-      customParamsError.value = 'JSON解析失败';
+      customParamsError.value = 'Failed to parse JSON';
     }
   }
 };
@@ -937,7 +937,7 @@ const formatCustomParams = () => {
     configForm.value.config.customParams = JSON.stringify(parsed, null, 2);
     validateCustomParams();
   } catch (_) {
-    // 格式化失败时不做任何操作，保持原有内容
+    // Do nothing if formatting fails; keep the existing content
   }
 };
 
@@ -981,14 +981,14 @@ const saveConfig = async () => {
         configForm.value.protocolFamily,
         configForm.value.config,
       );
-      emit('saveMessage', '配置已更新');
+      emit('saveMessage', 'Configuration updated');
     } else {
       await storageService.addApiConfig(
         configForm.value.name,
         configForm.value.protocolFamily,
         configForm.value.config,
       );
-      emit('saveMessage', '配置已添加');
+      emit('saveMessage', 'Configuration added');
     }
 
     await loadSettings();
@@ -1000,18 +1000,18 @@ const saveConfig = async () => {
   }
 };
 
-// 测试连接状态
+// Test connection state
 const isTestingConnection = ref(false);
 const testResult = ref<ApiTestResult | null>(null);
 
-// 卡片测试状态
+// Card test state
 const cardTestingStates = ref<Record<string, boolean>>({});
 const cardTestResults = ref<Record<string, ApiTestResult>>({});
 
-// 卡片测试结果定时器
+// Card test result timers
 const cardTestTimers = ref<Record<string, NodeJS.Timeout>>({});
 
-// 测试配置对话框中的API连接
+// Test the API connection in the configuration dialog
 const testApiConnection = async () => {
   const previewConfig: ApiConfigItem = {
     id: 'preview',
@@ -1038,13 +1038,13 @@ const testApiConnection = async () => {
   }
 };
 
-// 测试卡片配置的API连接
+// Test the API connection of a card configuration
 const testCardApiConnection = async (configItem: ApiConfigItem) => {
   const { id } = configItem;
 
   if (!canTestConfig(configItem)) return;
 
-  // 清除之前的定时器
+  // Clear previous timers
   if (cardTestTimers.value[id]) {
     clearTimeout(cardTestTimers.value[id]);
     delete cardTestTimers.value[id];
@@ -1063,7 +1063,7 @@ const testCardApiConnection = async (configItem: ApiConfigItem) => {
       );
     }
 
-    // 设置5秒后自动清除结果
+    // Automatically clear the result after 5 seconds
     cardTestTimers.value[id] = setTimeout(() => {
       delete cardTestResults.value[id];
       delete cardTestTimers.value[id];
@@ -1079,10 +1079,10 @@ const cancelEdit = () => {
   isTestingConnection.value = false;
   testResult.value = null;
 
-  // 重置密码可见性状态
+  // Reset password visibility state
   showPassword.value = false;
 
-  // 重置自定义参数状态
+  // Reset custom parameters state
   customParamsError.value = '';
   customParamsValid.value = false;
   showCustomParamsExample.value = false;
@@ -1109,7 +1109,7 @@ const notifyConfigChange = () => {
   }
 };
 
-// 清理所有定时器
+// Clean up all timers
 const clearAllTestTimers = () => {
   Object.values(cardTestTimers.value).forEach((timer) => {
     clearTimeout(timer);
@@ -1121,23 +1121,23 @@ onMounted(async () => {
   await loadSettings();
 });
 
-// 监听settings变化，实现实时保存
+// Watch settings changes to save in real time
 watch(
   settings,
   async (newSettings) => {
     try {
       await storageService.saveUserSettings(newSettings);
-      emit('saveMessage', '设置已保存');
+      emit('saveMessage', 'Settings saved');
       notifyConfigChange();
     } catch (error) {
       console.error(t('errors.saveSettingsFailed'), error);
-      emit('saveMessage', '保存设置失败');
+      emit('saveMessage', 'Failed to save settings');
     }
   },
   { deep: true },
 );
 
-// 组件卸载时清理定时器
+// Clean up timers when the component unmounts
 onUnmounted(() => {
   clearAllTestTimers();
 });

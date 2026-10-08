@@ -1,6 +1,6 @@
 /**
- * 更新检查服务
- * 负责检查插件更新、显示通知和管理版本徽章
+ * Update check service
+ * Checks for extension updates, shows notifications, and manages the version badge
  */
 
 import { browser } from 'wxt/browser';
@@ -44,7 +44,7 @@ export interface GitHubAsset {
 export class UpdateCheckService {
   private static instance: UpdateCheckService;
   private readonly currentVersion: string;
-  private readonly checkInterval: number = 24 * 60 * 60 * 1000; // 24小时检查一次
+  private readonly checkInterval: number = 24 * 60 * 60 * 1000; // check once every 24 hours
   private readonly githubApiUrl =
     'https://api.github.com/repos/xiao-zaiyi/illa-helper/releases/latest';
   private storageService: StorageService;
@@ -63,28 +63,28 @@ export class UpdateCheckService {
   }
 
   /**
-   * 初始化更新检查服务
+   * Initialize update check service
    */
   async init(): Promise<void> {
-    console.log('[UpdateCheckService] 初始化更新检查服务');
+    console.log('[UpdateCheckService] Initialize update check service');
 
-    // 插件启动时检查更新
+    // Check for updates when the extension starts
     setTimeout(() => {
       this.checkForUpdates();
-    }, 10000); // 延迟5秒启动，避免影响插件初始化速度
+    }, 10000); // delay startup to avoid slowing extension initialization
 
-    // 设置定期检查
+    // Set up periodic checks
     this.schedulePeriodicCheck();
 
-    // 设置通知监听器
+    // Set up notification listeners
     this.setupNotificationListeners();
 
-    // 检查是否有未处理的更新通知
+    // Check for pending update notifications
     await this.checkPendingUpdate();
   }
 
   /**
-   * 销毁服务
+   * Destroy the service
    */
   destroy(): void {
     if (this.intervalId) {
@@ -94,7 +94,7 @@ export class UpdateCheckService {
   }
 
   /**
-   * 设置定期检查
+   * Set up periodic checks
    */
   private schedulePeriodicCheck(): void {
     this.intervalId = setInterval(() => {
@@ -103,7 +103,7 @@ export class UpdateCheckService {
   }
 
   /**
-   * 处理更新相关的消息
+   * Handle update-related messages
    */
   async handleMessage(
     message: any,
@@ -112,7 +112,7 @@ export class UpdateCheckService {
     switch (message.type) {
       case 'CHECK_UPDATE':
         try {
-          // 手动检查更新时，强制检查并忽略已忽略版本的设置
+          // On manual update checks, force the check and ignore the ignored-version setting
           const updateInfo = await this.checkForUpdates(true);
           sendResponse(updateInfo);
         } catch (error) {
@@ -162,10 +162,10 @@ export class UpdateCheckService {
   }
 
   /**
-   * 设置通知监听器
+   * Set up notification listeners
    */
   private setupNotificationListeners(): void {
-    // 监听通知点击
+    // Listen for notification clicks
     browser.notifications?.onClicked?.addListener((notificationId) => {
       if (notificationId.startsWith('update-available')) {
         this.handleNotificationClick(notificationId);
@@ -182,8 +182,8 @@ export class UpdateCheckService {
   }
 
   /**
-   * 检查更新
-   * @param forceCheck 是否强制检查（忽略已忽略版本的设置）
+   * Check for updates
+   * @param forceCheck whether to force the check (ignores the ignored-version setting)
    */
   async checkForUpdates(forceCheck: boolean = false): Promise<UpdateInfo> {
     try {
@@ -197,17 +197,20 @@ export class UpdateCheckService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('[UpdateCheckService] GitHub API 错误响应:', errorText);
+        console.error(
+          '[UpdateCheckService] GitHub API error response:',
+          errorText,
+        );
         throw new Error(
-          `GitHub API 请求失败: ${response.status} - ${errorText.slice(0, 100)}`,
+          `GitHub API request failed: ${response.status} - ${errorText.slice(0, 100)}`,
         );
       }
 
       const releaseData: GitHubRelease = await response.json();
 
-      // 跳过预发布版本和草稿
+      // Skip prereleases and drafts
       if (releaseData.prerelease || releaseData.draft) {
-        console.log('[UpdateCheckService] 跳过预发布版本或草稿');
+        console.log('[UpdateCheckService] Skipping prerelease or draft');
         return this.createUpdateInfo(false, this.currentVersion);
       }
 
@@ -215,7 +218,7 @@ export class UpdateCheckService {
       const hasUpdate =
         this.compareVersions(latestVersion, this.currentVersion) > 0;
 
-      // 解析下载资源
+      // Parse download assets
       const downloadAssets = this.parseDownloadAssets(releaseData.assets || []);
 
       const updateInfo: UpdateInfo = {
@@ -234,26 +237,26 @@ export class UpdateCheckService {
         await this.setBadge(false);
       }
 
-      // 存储检查结果
+      // Store the check result
       await this.storeUpdateInfo(updateInfo);
 
       return updateInfo;
     } catch (error) {
-      console.error('[UpdateCheckService] 检查更新失败:', error);
+      console.error('[UpdateCheckService] Update check failed:', error);
       return this.createUpdateInfo(false, this.currentVersion);
     }
   }
 
   /**
-   * 处理发现更新
-   * @param updateInfo 更新信息
-   * @param forceCheck 是否强制检查（忽略已忽略版本的设置）
+   * Handle a discovered update
+   * @param updateInfo Update info
+   * @param forceCheck whether to force the check (ignores the ignored-version setting)
    */
   private async handleUpdateAvailable(
     updateInfo: UpdateInfo,
     forceCheck: boolean = false,
   ): Promise<void> {
-    // 检查是否已经通知过这个版本
+    // Check whether this version was already notified
     const lastNotifiedVersion = await this.getLastNotifiedVersion();
     const isDismissed = forceCheck
       ? false
@@ -264,14 +267,14 @@ export class UpdateCheckService {
       await this.setLastNotifiedVersion(updateInfo.latestVersion);
     }
 
-    // 总是显示徽章，除非用户主动清除（强制检查时忽略忽略状态）
+    // Always show the badge unless the user clears it (ignored state is bypassed on forced checks)
     if (!isDismissed) {
       await this.setBadge(true);
     }
   }
 
   /**
-   * 显示更新通知
+   * Show the update notification
    */
   private async showUpdateNotification(updateInfo: UpdateInfo): Promise<void> {
     try {
@@ -280,19 +283,19 @@ export class UpdateCheckService {
       await browser.notifications.create(notificationId, {
         type: 'basic',
         iconUrl: '/icon/128.png',
-        title: '🎉 illa-helper 有新版本了！',
-        message: `发现新版本 v${updateInfo.latestVersion}，当前版本 v${updateInfo.currentVersion}。点击查看更新详情。`,
-        buttons: [{ title: '查看更新' }, { title: '稍后提醒' }],
+        title: '🎉 A new version of illa-helper is available!',
+        message: `New version v${updateInfo.latestVersion} found (current: v${updateInfo.currentVersion}). Click to view update details.`,
+        buttons: [{ title: 'View update' }, { title: 'Remind me later' }],
       });
 
-      console.log('[UpdateCheckService] 已显示更新通知');
+      console.log('[UpdateCheckService] Update notification shown');
     } catch (error) {
-      console.error('[UpdateCheckService] 显示通知失败:', error);
+      console.error('[UpdateCheckService] Failed to show notification:', error);
     }
   }
 
   /**
-   * 处理通知点击
+   * Handle notification click
    */
   private async handleNotificationClick(notificationId: string): Promise<void> {
     const updateInfo = await this.getStoredUpdateInfo();
@@ -303,7 +306,7 @@ export class UpdateCheckService {
   }
 
   /**
-   * 处理通知按钮点击
+   * Handle notification button click
    */
   private async handleNotificationButtonClick(
     notificationId: string,
@@ -312,18 +315,18 @@ export class UpdateCheckService {
     const updateInfo = await this.getStoredUpdateInfo();
 
     if (buttonIndex === 0 && updateInfo?.downloadUrl) {
-      // 查看更新
+      // View update
       browser.tabs.create({ url: updateInfo.downloadUrl });
     } else if (buttonIndex === 1) {
-      // 稍后提醒 - 清除当前通知但保持徽章
-      console.log('[UpdateCheckService] 用户选择稍后提醒');
+      // Remind me later - clear the current notification but keep the badge
+      console.log('[UpdateCheckService] User chose to be reminded later');
     }
 
     browser.notifications.clear(notificationId);
   }
 
   /**
-   * 设置插件徽章
+   * Set the extension badge
    */
   private async setBadge(hasUpdate: boolean): Promise<void> {
     try {
@@ -331,26 +334,27 @@ export class UpdateCheckService {
         await browser.action.setBadgeText({ text: 'NEW' });
         await browser.action.setBadgeBackgroundColor({ color: '#ff4444' });
         await browser.action.setTitle({
-          title: '浸入式学语言助手 - 有新版本可用！点击查看详情',
+          title:
+            'Immersive Language Learning Assistant - New version available! Click for details',
         });
       } else {
         await browser.action.setBadgeText({ text: '' });
         await browser.action.setTitle({
-          title: '浸入式学语言助手',
+          title: 'Immersive Language Learning Assistant',
         });
       }
     } catch (error) {
-      console.error('[UpdateCheckService] 设置徽章失败:', error);
+      console.error('[UpdateCheckService] Failed to set badge:', error);
     }
   }
 
   /**
-   * 清除更新徽章
+   * Clear the update badge
    */
   async clearUpdateBadge(): Promise<void> {
     await this.setBadge(false);
 
-    // 标记当前版本为已忽略
+    // Mark the current version as ignored
     const updateInfo = await this.getStoredUpdateInfo();
     if (updateInfo?.latestVersion) {
       await this.dismissUpdate(updateInfo.latestVersion);
@@ -358,7 +362,7 @@ export class UpdateCheckService {
   }
 
   /**
-   * 忽略更新
+   * Ignore update
    */
   private async dismissUpdate(version: string): Promise<void> {
     const dismissedVersions = await this.getDismissedVersions();
@@ -371,7 +375,7 @@ export class UpdateCheckService {
   }
 
   /**
-   * 比较版本号
+   * Compare version numbers
    */
   private compareVersions(version1: string, version2: string): number {
     const v1Parts = version1.split('.').map(Number);
@@ -391,7 +395,7 @@ export class UpdateCheckService {
   }
 
   /**
-   * 创建更新信息对象
+   * Create an update info object
    */
   private createUpdateInfo(hasUpdate: boolean, version: string): UpdateInfo {
     return {
@@ -402,7 +406,7 @@ export class UpdateCheckService {
   }
 
   /**
-   * 存储更新信息
+   * Store update info
    */
   private async storeUpdateInfo(updateInfo: UpdateInfo): Promise<void> {
     await browser.storage.local.set({
@@ -412,7 +416,7 @@ export class UpdateCheckService {
   }
 
   /**
-   * 获取存储的更新信息
+   * Get stored update info
    */
   async getStoredUpdateInfo(): Promise<UpdateInfo | null> {
     const result = await browser.storage.local.get('updateInfo');
@@ -420,7 +424,7 @@ export class UpdateCheckService {
   }
 
   /**
-   * 检查待处理的更新
+   * Check for pending updates
    */
   private async checkPendingUpdate(): Promise<void> {
     const updateInfo = await this.getStoredUpdateInfo();
@@ -435,7 +439,7 @@ export class UpdateCheckService {
   }
 
   /**
-   * 获取最后通知的版本
+   * Get the last notified version
    */
   private async getLastNotifiedVersion(): Promise<string | null> {
     const result = await browser.storage.local.get('lastNotifiedVersion');
@@ -443,14 +447,14 @@ export class UpdateCheckService {
   }
 
   /**
-   * 设置最后通知的版本
+   * Set the last notified version
    */
   private async setLastNotifiedVersion(version: string): Promise<void> {
     await browser.storage.local.set({ lastNotifiedVersion: version });
   }
 
   /**
-   * 获取被忽略的版本列表
+   * Get the list of ignored versions
    */
   private async getDismissedVersions(): Promise<string[]> {
     const result = await browser.storage.local.get('dismissedUpdateVersions');
@@ -458,7 +462,7 @@ export class UpdateCheckService {
   }
 
   /**
-   * 检查版本是否被忽略
+   * Check whether a version is ignored
    */
   private async isUpdateDismissed(version: string): Promise<boolean> {
     const dismissedVersions = await this.getDismissedVersions();
@@ -466,7 +470,7 @@ export class UpdateCheckService {
   }
 
   /**
-   * 解析GitHub Release的下载资源
+   * Parse download assets from a GitHub release
    */
   private parseDownloadAssets(assets: GitHubAsset[]): DownloadAsset[] {
     const downloadAssets: DownloadAsset[] = [];
@@ -474,7 +478,7 @@ export class UpdateCheckService {
     for (const asset of assets) {
       let browserType: 'chrome' | 'firefox' | 'edge' | 'safari' | undefined;
 
-      // 根据文件名判断浏览器类型
+      // Determine the browser type from the file name
       const fileName = asset.name.toLowerCase();
       if (fileName.includes('chrome') || fileName.includes('.crx')) {
         browserType = 'chrome';

@@ -128,7 +128,7 @@
           >
             {{ formatReleaseNotes(updateInfo.releaseNotes) }}
           </div>
-          <!-- 下载信息 -->
+          <!-- Download info -->
           <div
             v-if="
               updateInfo.downloadAssets && updateInfo.downloadAssets.length > 0
@@ -281,20 +281,20 @@ const downloading = ref(false);
 const currentBrowser = ref<'chrome' | 'firefox' | 'edge' | 'safari'>('chrome');
 
 onMounted(async () => {
-  // 在浏览器扩展中，我们可以通过 browser.runtime.getManifest() 获取 manifest.json 的内容
+  // In a browser extension, we can read manifest.json via browser.runtime.getManifest()
   try {
     const manifest = browser.runtime.getManifest();
     extensionVersion.value = manifest.version;
   } catch (error) {
     console.error(t('errors.getExtensionVersion'), error);
-    // 在非扩展环境或开发服务器中，这可能会失败。可以设置一个默认值。
+    // This may fail outside the extension environment or on the dev server. A default value can be set.
     extensionVersion.value = 'DEV';
   }
 
-  // 加载存储的更新信息
+  // Load stored update info
   await loadStoredUpdateInfo();
 
-  // 检测当前浏览器
+  // Detect the current browser
   currentBrowser.value = detectCurrentBrowser();
 });
 
@@ -308,7 +308,7 @@ async function loadStoredUpdateInfo() {
       updateChecked.value = true;
     }
 
-    // 获取上次检查时间
+    // Get the last check time
     const result = await browser.storage.local.get('lastUpdateCheck');
     if (result.lastUpdateCheck) {
       lastCheckTime.value = result.lastUpdateCheck;
@@ -358,10 +358,10 @@ async function dismissUpdate() {
       });
     }
 
-    // 清除 badge
+    // Clear the badge
     await browser.runtime.sendMessage({ type: 'CLEAR_UPDATE_BADGE' });
 
-    // 更新本地状态
+    // Update local state
     updateInfo.value = { ...updateInfo.value!, hasUpdate: false };
   } catch (error) {
     console.error(t('errors.dismissUpdateFailed'), error);
@@ -373,13 +373,13 @@ function formatLastCheckTime(timestamp: number): string {
   const diff = now - timestamp;
 
   if (diff < 60000) {
-    // 1分钟内
+    // Within 1 minute
     return t('time.justNow');
   } else if (diff < 3600000) {
-    // 1小时内
+    // Within 1 hour
     return t('time.minutesAgo', { minutes: Math.floor(diff / 60000) });
   } else if (diff < 86400000) {
-    // 24小时内
+    // Within 24 hours
     return t('time.hoursAgo', { hours: Math.floor(diff / 3600000) });
   } else {
     const days = Math.floor(diff / 86400000);
@@ -397,21 +397,21 @@ function detectCurrentBrowser(): 'chrome' | 'firefox' | 'edge' | 'safari' {
   } else if (userAgent.includes('safari') && !userAgent.includes('chrome')) {
     return 'safari';
   } else {
-    return 'chrome'; // 默认认为是 Chrome 系列
+    return 'chrome'; // Assume Chrome family by default
   }
 }
 
 function getDownloadAssetForCurrentBrowser(): DownloadAsset | null {
   if (!updateInfo.value?.downloadAssets) return null;
 
-  // 优先查找匹配当前浏览器的文件
+  // Prefer files matching the current browser
   const matchingAsset = updateInfo.value.downloadAssets.find(
     (asset) => asset.browserType === currentBrowser.value,
   );
 
   if (matchingAsset) return matchingAsset;
 
-  // 如果没有找到匹配的，返回第一个可用的资源
+  // If no match is found, return the first available asset
   return updateInfo.value.downloadAssets[0] || null;
 }
 
@@ -424,13 +424,13 @@ async function downloadFile() {
 
   downloading.value = true;
   try {
-    // 创建下载链接
+    // Create the download link
     const link = document.createElement('a');
     link.href = asset.downloadUrl;
     link.download = asset.name;
     link.target = '_blank';
 
-    // 触发下载
+    // Trigger the download
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -455,15 +455,15 @@ function formatFileSize(bytes: number): string {
 function formatReleaseNotes(notes?: string): string {
   if (!notes) return t('about.noReleaseNotes');
 
-  // 简化 markdown 格式，只保留主要内容
+  // Simplify markdown, keeping only the main content
   return (
     notes
-      .replace(/#{1,6}\s*/g, '') // 移除标题标记
-      .replace(/\*\*(.*?)\*\*/g, '$1') // 移除粗体标记
-      .replace(/\*(.*?)\*/g, '$1') // 移除斜体标记
-      .replace(/`(.*?)`/g, '$1') // 移除代码标记
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // 移除链接但保留文本
+      .replace(/#{1,6}\s*/g, '') // Remove heading markers
+      .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold markers
+      .replace(/\*(.*?)\*/g, '$1') // Remove italic markers
+      .replace(/`(.*?)`/g, '$1') // Remove code markers
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Remove links but keep text
       .slice(0, 500) + (notes.length > 500 ? '...' : '')
-  ); // 限制长度
+  ); // Limit length
 }
 </script>

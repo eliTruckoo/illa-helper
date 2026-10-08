@@ -1,6 +1,6 @@
 /**
- * 简单文本解析器
- * 专为 "原文||译文" 格式设计，极简高效
+ * Simple text parser
+ * Designed for the "original||translation" format; minimal and efficient
  */
 
 export interface ParsedReplacement {
@@ -15,13 +15,13 @@ export interface ParseResult {
 }
 
 /**
- * 简单文本解析器类
+ * Simple text parser class
  */
 export class StructuredTextParser {
   /**
-   * 解析简单的双竖线格式文本
-   * @param text AI返回的文本
-   * @returns 解析结果
+   * Parse text in the simple double-pipe format
+   * @param text text returned by the AI
+   * @returns parse result
    */
   public static parse(text: string): ParseResult {
     const result: ParseResult = {
@@ -31,10 +31,10 @@ export class StructuredTextParser {
     };
 
     try {
-      // 清理文本
+      // Clean the text
       const cleanedText = this.cleanText(text);
 
-      // 解析替换项
+      // Parse replacement items
       const replacements = this.parseDoubleBarFormat(cleanedText);
 
       result.replacements = replacements.filter(
@@ -43,56 +43,56 @@ export class StructuredTextParser {
       result.success = result.replacements.length > 0;
 
       if (result.replacements.length === 0) {
-        result.errors.push('没有找到有效的替换项');
+        result.errors.push('No valid replacement items found');
       }
     } catch (error) {
       result.errors.push(
-        `解析错误: ${error instanceof Error ? error.message : String(error)}`,
+        `Parse error: ${error instanceof Error ? error.message : String(error)}`,
       );
-      console.error('[双竖线解析] 解析失败:', error);
+      console.error('[Double-pipe parser] Parse failed:', error);
     }
 
     return result;
   }
 
   /**
-   * 清理文本，移除多余的空白和格式字符
+   * Clean the text, removing extra whitespace and formatting characters
    */
   private static cleanText(text: string): string {
     return text
-      .replace(/```[\s\S]*?```/g, '') // 移除代码块
-      .replace(/^\s*[\r\n]/gm, '') // 移除空行
+      .replace(/```[\s\S]*?```/g, '') // remove code blocks
+      .replace(/^\s*[\r\n]/gm, '') // remove empty lines
       .trim();
   }
 
   /**
-   * 解析双竖线格式: 原文||译文
+   * Parse double-pipe format: original||translation
    */
   private static parseDoubleBarFormat(text: string): ParsedReplacement[] {
     const replacements: ParsedReplacement[] = [];
 
-    // 按行分割
+    // Split by line
     const lines = text
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line);
 
     for (const line of lines) {
-      // 首先尝试双竖线分隔符
+      // Try the double-pipe separator first
       if (line.includes('||')) {
         const parts = line.split('||');
         if (parts.length >= 2) {
           const original = parts[0].trim();
           const translation = parts[1].trim();
           if (original && translation) {
-            // [双竖线解析] 找到替换项
+            // [Double-pipe parser] Found replacement item
             replacements.push({ original, translation });
             continue;
           }
         }
       }
 
-      // 备用分隔符（容错处理）
+      // Fallback separators (error tolerance)
       const fallbackResult = this.parseFallbackSeparators(line);
       if (fallbackResult) {
         replacements.push(fallbackResult);
@@ -103,12 +103,12 @@ export class StructuredTextParser {
   }
 
   /**
-   * 解析备用分隔符格式（容错处理）
+   * Parse fallback separator formats (error tolerance)
    */
   private static parseFallbackSeparators(
     line: string,
   ): ParsedReplacement | null {
-    // 常见的分隔符，按优先级排序
+    // Common separators, ordered by priority
     const separators = ['→', '->', ':', '=', '|'];
 
     for (const sep of separators) {
@@ -128,14 +128,14 @@ export class StructuredTextParser {
   }
 
   /**
-   * 验证解析结果
+   * Validate the parse result
    */
   public static validateResult(
     result: ParseResult,
     expectedMinimum: number = 1,
   ): boolean {
     if (!result.success) {
-      console.warn('[双竖线解析] 解析失败:', result.errors);
+      console.warn('[Double-pipe parser] Parse failed:', result.errors);
       return false;
     }
 
@@ -143,10 +143,13 @@ export class StructuredTextParser {
       return false;
     }
 
-    // 验证每个替换项的有效性
+    // Validate each replacement item
     for (const replacement of result.replacements) {
       if (!replacement.original || !replacement.translation) {
-        console.warn('[双竖线解析] 发现无效的替换项:', replacement);
+        console.warn(
+          '[Double-pipe parser] Invalid replacement item found:',
+          replacement,
+        );
         return false;
       }
 
@@ -154,7 +157,10 @@ export class StructuredTextParser {
         replacement.original.length < 1 ||
         replacement.translation.length < 1
       ) {
-        console.warn('[双竖线解析] 替换项内容过短:', replacement);
+        console.warn(
+          '[Double-pipe parser] Replacement item too short:',
+          replacement,
+        );
         return false;
       }
     }

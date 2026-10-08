@@ -1,5 +1,5 @@
 /**
- * UI模块统一导出
+ * UI module unified exports
  */
 
 export { TooltipRenderer } from './TooltipRenderer';

@@ -1,6 +1,6 @@
 /**
- * CSS 变量常量
- * 定义样式系统的基础变量
+ * CSS variable constants
+ * Defines the base variables of the style system
  */
 
 export const CSS_VARIABLES = `
@@ -12,7 +12,7 @@ export const CSS_VARIABLES = `
 `;
 
 /**
- * CSS 变量枚举
+ * CSS variable enum
  */
 export const STYLE_VARS = {
   PRIMARY_COLOR: '#6a88e0',
@@ -26,7 +26,7 @@ export const STYLE_VARS = {
 } as const;
 
 /**
- * 动画常量
+ * Animation constants
  */
 export const ANIMATIONS = {
   TOOLTIP_APPEAR: 'wxt-tooltip-appear 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -36,7 +36,7 @@ export const ANIMATIONS = {
 } as const;
 
 /**
- * Z-index 层级
+ * Z-index layers
  */
 export const Z_INDEX = {
   TOOLTIP: 10000,

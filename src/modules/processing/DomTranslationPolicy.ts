@@ -137,5 +137,7 @@ function isHiddenElement(element: Element): boolean {
 }
 
 function isMostlyPunctuation(text: string): boolean {
-  return /^[\d\s.,!?\-+=()[\]{}:;'"，。！？、（）【】《》]+$/.test(text);
+  return /^[\d\s.,!?\-+=()[\]{}:;'"\uff0c\u3002\uff01\uff1f\u3001\uff08\uff09\u3010\u3011\u300a\u300b]+$/.test(
+    text,
+  );
 }

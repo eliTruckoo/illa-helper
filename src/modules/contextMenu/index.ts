@@ -1,6 +1,6 @@
 /**
- * 右键菜单模块
- * 提供浏览器右键菜单管理功能
+ * Context menu module
+ * Provides browser context menu management
  */
 
 export { ContextMenuManager } from './ContextMenuManager';

@@ -13,12 +13,11 @@
 [![TwitterFollow](https://img.shields.io/twitter/follow/zaiyixiao?logo=x&color=007EC6&label=zaiyixiao)](https://x.com/zaiyixiao)
 
 <br/>
-<a href="https://hellogithub.com/repository/52653c92268d4024878a1a6781df9dd8" target="_blank"><img src="https://abroad.hellogithub.com/v1/widgets/recommend.svg?rid=52653c92268d4024878a1a6781df9dd8&claim_uid=RfJtwvgkBr3MUGy&theme=small" alt="Featured｜HelloGitHub" /></a>
+<a href="https://hellogithub.com/repository/52653c92268d4024878a1a6781df9dd8" target="_blank"><img src="https://abroad.hellogithub.com/v1/widgets/recommend.svg?rid=52653c92268d4024878a1a6781df9dd8&claim_uid=RfJtwvgkBr3MUGy&theme=small" alt="Featured | HelloGitHub" /></a>
 </div>
 
 > A browser extension based on the "comprehensible input" theory to help you learn languages naturally while browsing the web.
 
-English | [简体中文](./README_ZH.md)
 
 ## 📸 Feature Showcase
 

@@ -1,14 +1,14 @@
 <template>
-  <!-- 遮罩层 -->
+  <!-- Overlay -->
   <div
     class="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
   >
-    <!-- 对话框 -->
+    <!-- Dialog -->
     <div
       class="bg-card border border-border rounded-lg shadow-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto"
       @click.stop
     >
-      <!-- 标题栏 -->
+      <!-- Title bar -->
       <div class="flex items-center justify-between p-6 border-b border-border">
         <h3 class="text-lg font-semibold text-foreground">
           {{
@@ -25,12 +25,12 @@
         </button>
       </div>
 
-      <!-- 内容 -->
+      <!-- Content -->
       <div class="p-6 space-y-6">
-        <!-- 规则类型选择 -->
+        <!-- Rule type selection -->
         <RuleTypeSelector v-model="formData.type" />
 
-        <!-- 网站模式输入 -->
+        <!-- Website pattern input -->
         <div class="space-y-2">
           <label class="text-sm font-medium text-foreground">
             {{ $t('websiteRuleDialog.pattern') }}
@@ -50,7 +50,7 @@
           </div>
         </div>
 
-        <!-- 描述输入 -->
+        <!-- Description input -->
         <div class="space-y-2">
           <label class="text-sm font-medium text-foreground">
             {{ $t('websiteRuleDialog.description') }}
@@ -63,7 +63,7 @@
           />
         </div>
 
-        <!-- 帮助信息 -->
+        <!-- Help info -->
         <div class="bg-muted/50 rounded-md p-4 space-y-3">
           <div class="text-sm font-medium text-foreground">
             {{ $t('websiteRuleDialog.supportedPatterns') }}
@@ -94,7 +94,7 @@
           </div>
         </div>
 
-        <!-- 预设模板 -->
+        <!-- Preset templates -->
         <div class="space-y-3">
           <label class="text-sm font-medium text-foreground">
             {{ $t('websiteRuleDialog.commonTemplates') }}
@@ -118,7 +118,7 @@
         </div>
       </div>
 
-      <!-- 操作按钮 -->
+      <!-- Action buttons -->
       <div
         class="flex items-center justify-end gap-2 p-6 border-t border-border"
       >
@@ -181,7 +181,7 @@ const formData = reactive({
 });
 
 const presets = [
-  // 黑名单预设
+  // Blacklist presets
   { name: 'GitHub', pattern: '*://github.com/*', type: 'blacklist' },
   {
     name: 'Stack Overflow',
@@ -191,7 +191,7 @@ const presets = [
   { name: 'MDN', pattern: '*://developer.mozilla.org/*', type: 'blacklist' },
   { name: 'Google Docs', pattern: '*://docs.google.com/*', type: 'blacklist' },
 
-  // 白名单预设
+  // Whitelist presets
   { name: 'Wikipedia', pattern: '*://*.wikipedia.org/*', type: 'whitelist' },
   { name: 'Reddit', pattern: '*://reddit.com/*', type: 'whitelist' },
   { name: 'Medium', pattern: '*://medium.com/*', type: 'whitelist' },
@@ -229,7 +229,7 @@ const validatePattern = (pattern: string): boolean => {
     return false;
   }
 
-  // 基本的URL模式验证
+  // Basic URL pattern validation
   const validPatterns = [
     /^\*:\/\/.*/, // *://domain
     /^https?:\/\/.*/, // http://domain or https://domain

@@ -1,33 +1,33 @@
 /**
- * UI相关类型定义
+ * UI type definitions
  */
 
 import { PhoneticInfo } from './phonetic.types';
 
-// 发音元素数据
+// Pronunciation element data
 export interface PronunciationElementData {
   word: string;
   element: HTMLElement;
   phonetic?: PhoneticInfo;
   tooltip?: HTMLElement;
-  isMouseOver?: boolean; // 标记鼠标是否在元素上
-  originalText?: string; // 新增：原文信息，存储翻译前的原始词汇
+  isMouseOver?: boolean; // whether the mouse is over the element
+  originalText?: string; // Added: original text info, stores the original word before translation
 }
 
-// 悬浮框类型
+// Tooltip type
 export type TooltipType = 'phrase' | 'word';
 
-// 悬浮框状态
+// Tooltip state
 export interface TooltipState {
   visible: boolean;
   element: HTMLElement | null;
   type: TooltipType;
 }
 
-// 交互事件类型
+// Interaction event types
 export type InteractionEventType = 'mouseenter' | 'mouseleave' | 'click';
 
-// 交互事件处理器
+// Interaction event handler
 export interface InteractionEventHandler {
   type: InteractionEventType;
   handler: (event: Event) => void;

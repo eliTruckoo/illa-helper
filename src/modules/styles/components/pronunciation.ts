@@ -1,10 +1,10 @@
 /**
- * 发音功能样式
- * 与 tooltip.ts 新设计保持一致
+ * Pronunciation feature styles
+ * Consistent with the new design in tooltip.ts
  */
 
 export const PRONUNCIATION_STYLES = `
-/* 发音功能样式 */
+/* Pronunciation feature styles */
 .wxt-pronunciation-enabled {
   position: relative;
   transition: background-color 0.15s ease;
@@ -34,7 +34,7 @@ export const PRONUNCIATION_STYLES = `
   right: -14px;
 }
 
-/* 音频按钮样式（独立使用时） */
+/* Audio button styles (when used standalone) */
 .wxt-audio-btn {
   background: rgba(100, 255, 218, 0.12);
   border: 1px solid rgba(100, 255, 218, 0.2);
@@ -61,7 +61,7 @@ export const PRONUNCIATION_STYLES = `
   background: rgba(100, 255, 218, 0.25);
 }
 
-/* 音标样式 */
+/* Phonetic styles */
 .wxt-phonetic-text {
   font-family: 'SF Mono', 'Menlo', 'Consolas', 'Roboto Mono', monospace;
   font-size: 13px;
@@ -76,7 +76,7 @@ export const PRONUNCIATION_STYLES = `
   letter-spacing: 0.03em;
 }
 
-/* 音标错误提示样式 */
+/* Phonetic error message styles */
 .wxt-phonetic-error {
   font-family: 'SF Mono', 'Menlo', 'Consolas', 'Roboto Mono', monospace;
   font-size: 12px;
@@ -91,7 +91,7 @@ export const PRONUNCIATION_STYLES = `
   letter-spacing: 0.01em;
 }
 
-/* 音标加载状态 - Shimmer */
+/* Phonetic loading state - Shimmer */
 .wxt-phonetic-loading {
   height: 22px;
   width: 100px;

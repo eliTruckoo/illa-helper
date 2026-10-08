@@ -1,16 +1,16 @@
 <template>
   <div class="min-h-screen bg-background text-foreground">
-    <!-- 主容器 -->
+    <!-- Main container -->
     <div class="flex flex-col md:flex-row h-screen">
-      <!-- 左侧导航栏 -->
+      <!-- Left navigation bar -->
       <OptionsNavigation
         :current-section="currentSection"
         @section-change="handleSectionChange"
       />
 
-      <!-- 右侧内容区域 -->
+      <!-- Right content area -->
       <div class="flex-1 flex flex-col">
-        <!-- 顶部状态栏 -->
+        <!-- Top status bar -->
         <div
           class="h-16 bg-card border-b border-border flex items-center justify-between px-4 md:px-6"
           :class="{ 'mobile-header': isMobile }"
@@ -21,14 +21,14 @@
             </h1>
           </div>
           <div class="flex items-center space-x-4">
-            <!-- 保存状态指示器 -->
+            <!-- Save status indicator -->
             <div
               v-if="saveMessage"
               class="hidden md:block text-sm text-muted-foreground"
             >
               {{ saveMessage }}
             </div>
-            <!-- 主题切换按钮 -->
+            <!-- Theme toggle button -->
             <button
               @click="toggleTheme"
               class="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
@@ -39,7 +39,7 @@
           </div>
         </div>
 
-        <!-- 移动端保存状态提示 -->
+        <!-- Mobile save status notice -->
         <div
           v-if="saveMessage && isMobile"
           class="fixed bottom-4 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-primary text-primary-foreground rounded-md shadow-lg z-50"
@@ -47,7 +47,7 @@
           {{ saveMessage }}
         </div>
 
-        <!-- 主内容区域 -->
+        <!-- Main content area -->
         <OptionsContent
           :current-section="currentSection"
           @save-message="handleSaveMessage"
@@ -66,19 +66,19 @@ import OptionsContent from './components/OptionsContent.vue';
 
 const { t } = useI18n();
 
-// 当前选中的设置模块
+// Currently selected settings section
 const currentSection = ref('basic');
 
-// 保存状态消息
+// Save status message
 const saveMessage = ref('');
 
-// 主题状态
+// Theme state
 const isDark = ref(false);
 
-// 移动端状态
+// Mobile state
 const isMobile = ref(false);
 
-// 设置模块标题映射
+// Settings section title map
 const sectionTitles: Record<string, string> = {
   basic: t('options.basic'),
   translation: t('options.translation'),
@@ -89,43 +89,43 @@ const sectionTitles: Record<string, string> = {
   about: t('options.about'),
 };
 
-// 检查设备是否为移动端
+// Check whether the device is mobile
 const checkIfMobile = () => {
   isMobile.value = window.innerWidth < 768;
 };
 
 onMounted(async () => {
-  // 优先从存储中加载主题设置
+  // Prefer loading the theme setting from storage
   const storedTheme = await browser.storage.local.get('theme');
   if (storedTheme.theme) {
     isDark.value = storedTheme.theme === 'dark';
   } else {
-    // 如果存储中没有，则根据系统偏好设置
+    // If none in storage, fall back to the system preference
     isDark.value = window.matchMedia('(prefers-color-scheme: dark)').matches;
   }
   applyTheme();
 
-  // 检查URL中的锚点参数
+  // Check the anchor parameter in the URL
   const hash = window.location.hash.substring(1);
   if (hash && sectionTitles[hash]) {
     currentSection.value = hash;
   }
 
-  // 监听浏览器前进后退按钮
+  // Listen for browser back/forward buttons
   window.addEventListener('hashchange', handleHashChange);
 
-  // 初始检测设备类型
+  // Initial device type detection
   checkIfMobile();
   window.addEventListener('resize', checkIfMobile);
 });
 
-// 移除事件监听器
+// Remove event listeners
 onUnmounted(() => {
   window.removeEventListener('hashchange', handleHashChange);
   window.removeEventListener('resize', checkIfMobile);
 });
 
-// 监听currentSection变化，更新URL锚点
+// Watch currentSection changes and update the URL anchor
 watch(currentSection, (newSection) => {
   if (window.location.hash.substring(1) !== newSection) {
     window.history.pushState(null, '', `#${newSection}`);
@@ -142,7 +142,7 @@ const handleHashChange = () => {
 const handleSectionChange = (section: string) => {
   currentSection.value = section;
 
-  // 短暂延迟后滚动到对应的锚点位置，确保内容已渲染
+  // Scroll to the matching anchor after a short delay to ensure content has rendered
   setTimeout(() => {
     const element = document.getElementById(section);
     if (element) {
@@ -168,7 +168,7 @@ const getSectionTitle = (section: string): string => {
 const toggleTheme = async () => {
   isDark.value = !isDark.value;
   applyTheme();
-  // 将主题偏好保存到存储中
+  // Save the theme preference to storage
   await browser.storage.local.set({ theme: isDark.value ? 'dark' : 'light' });
 };
 
@@ -183,7 +183,7 @@ const applyTheme = () => {
 </script>
 
 <style scoped>
-/* 移动端标题样式 */
+/* Mobile title styles */
 .mobile-header {
   position: fixed;
   top: 0;

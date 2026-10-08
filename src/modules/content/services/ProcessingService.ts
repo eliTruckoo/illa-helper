@@ -8,8 +8,8 @@ import { ProcessingCoordinator } from '../../processing/ProcessingCoordinator';
 import { ReplacementBudget } from '../../processing/ReplacementBudget';
 
 /**
- * 页面处理服务
- * 负责页面翻译处理逻辑
+ * Page processing service
+ * Handles page translation processing logic
  */
 export class ProcessingService implements IProcessingService {
   private textProcessor: TextProcessorService;
@@ -29,7 +29,7 @@ export class ProcessingService implements IProcessingService {
     this.lazyLoadingService = lazyLoadingService;
     this.updateProcessingParams(settings);
 
-    // 设置懒加载回调
+    // Set lazy loading callback
     if (this.lazyLoadingService) {
       this.lazyLoadingService.setProcessingCallback(
         this.processSegmentsLazy.bind(this),
@@ -38,7 +38,7 @@ export class ProcessingService implements IProcessingService {
   }
 
   /**
-   * 处理页面内容
+   * Process page content
    */
   async processPage(): Promise<void> {
     try {
@@ -48,12 +48,12 @@ export class ProcessingService implements IProcessingService {
         await this.processPageImmediate();
       }
     } catch (error) {
-      console.error('[ProcessingService] 页面处理失败:', error);
+      console.error('[ProcessingService] Page processing failed:', error);
     }
   }
 
   /**
-   * 立即处理整个页面
+   * Process the entire page immediately
    */
   private async processPageImmediate(): Promise<void> {
     const segments = await this.getSegments(document.body);
@@ -68,7 +68,7 @@ export class ProcessingService implements IProcessingService {
   }
 
   /**
-   * 懒加载模式处理页面
+   * Process the page in lazy loading mode
    */
   private async processPageWithLazyLoading(): Promise<void> {
     const segments = await this.getSegments(document.body);
@@ -86,7 +86,7 @@ export class ProcessingService implements IProcessingService {
   }
 
   /**
-   * 获取页面段落
+   * Get page segments
    */
   private async getSegments(root: Node): Promise<ContentSegment[]> {
     try {
@@ -101,32 +101,38 @@ export class ProcessingService implements IProcessingService {
 
       return contentSegmenter.segmentContent(root);
     } catch (error) {
-      console.error('[ProcessingService] 获取内容段落失败:', error);
+      console.error(
+        '[ProcessingService] Failed to get content segments:',
+        error,
+      );
       return [];
     }
   }
 
   /**
-   * 懒加载段落处理
+   * Lazy-loaded segment processing
    */
   async processSegmentsLazy(segments: ContentSegment[]): Promise<void> {
     try {
       await this.processSegments(segments, true);
     } catch (error) {
-      console.error('[ProcessingService] 懒加载段落处理失败:', error);
+      console.error(
+        '[ProcessingService] Lazy-loaded segment processing failed:',
+        error,
+      );
       throw error;
     }
   }
 
   /**
-   * 处理段落列表。整页处理、懒加载批次和动态节点都必须消耗同一个页面预算。
+   * Process a segment list. Whole-page processing, lazy-loading batches and dynamic nodes must all consume the same page budget.
    */
   private async processSegments(
     segments: ContentSegment[],
     isLazyLoading: boolean,
   ): Promise<void> {
-    // 批次必须共用页面预算，不能失败后降级到单段 processRoot。
-    // 否则每个入口都会重新按比例领取额度，低替换率会失效。
+    // Batches must share the page budget and must not fall back to single-segment processRoot on failure.
+    // Otherwise each entry point would claim a fresh proportional quota and low replacement rates would stop working.
     const pronunciationService = this.textProcessor.getPronunciationService();
     const coordinator = new ProcessingCoordinator(pronunciationService);
 
@@ -142,7 +148,7 @@ export class ProcessingService implements IProcessingService {
   }
 
   /**
-   * 处理指定节点
+   * Process the given node
    */
   async processNode(node: Node): Promise<void> {
     try {
@@ -166,12 +172,12 @@ export class ProcessingService implements IProcessingService {
 
       await this.processSegments(segments, false);
     } catch (error) {
-      console.error('[ProcessingService] 节点处理失败:', error);
+      console.error('[ProcessingService] Node processing failed:', error);
     }
   }
 
   /**
-   * 更新设置
+   * Update settings
    */
   updateSettings(settings: UserSettings): void {
     this.updateProcessingParams(settings);
@@ -195,7 +201,7 @@ export class ProcessingService implements IProcessingService {
     };
   }
 
-  // 状态查询方法
+  // State query methods
   getProcessingParams(): ProcessingParams {
     return { ...this.processingParams };
   }

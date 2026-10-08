@@ -85,22 +85,22 @@ const { renderParagraphTranslation } = await import(
 assert.equal(
   isTranslationCandidateNode(document.querySelector('#real-button'), 1),
   false,
-  '真实 button 标签仍然不能进入翻译队列',
+  'A real button tag still must not enter the translation queue',
 );
 assert.equal(
   isTranslationCandidateNode(document.querySelector('#pre'), 1),
   false,
-  'pre 代码块不能进入翻译队列',
+  'pre code blocks must not enter the translation queue',
 );
 assert.equal(
   isTranslationCandidateNode(document.querySelector('#tabs'), 1),
   true,
-  'ARIA role 不能再把可见文本整棵误杀',
+  'ARIA role must no longer wrongly exclude an entire subtree of visible text',
 );
 assert.equal(
   isTranslationCandidateNode(document.querySelector('#card'), 16),
   true,
-  'role=button 的正文卡片应该允许进入翻译队列',
+  'Body cards with role=button should be allowed into the translation queue',
 );
 
 const selected = selectParagraphTranslationElements(
@@ -121,13 +121,13 @@ assert.deepEqual(
     'article',
     'card',
   ],
-  '段落选择应该覆盖导航、普通段落和无 p 标签正文，不能过度过滤',
+  'Paragraph selection should cover navigation, regular paragraphs, and body text without p tags, without over-filtering',
 );
 
 const article = document.querySelector('#article');
 renderParagraphTranslation(
   article,
-  '安卡拉峰会可能被视为一个多极转折点。',
+  'The Ankara summit may be seen as a multipolar turning point.',
   'wxt-style-default',
 );
 
@@ -137,20 +137,20 @@ const paragraphTranslation = article.querySelector(
 assert.equal(
   paragraphTranslation?.tagName,
   'SPAN',
-  'p 译文应该挂在 p 内部，避免作为兄弟节点破坏布局',
+  'The p translation should be attached inside the p, avoiding a sibling node that breaks the layout',
 );
 assert.match(
   paragraphTranslation?.getAttribute('style') ?? '',
   /display:\s*block/,
-  'p 译文必须换行显示',
+  'The p translation must be displayed on its own line',
 );
 
 const tab = document.querySelector('#tab-guides');
-renderParagraphTranslation(tab, '指南', 'wxt-style-default');
+renderParagraphTranslation(tab, 'Guides', 'wxt-style-default');
 assert.equal(
   tab.querySelector('.illa-paragraph-translation')?.tagName,
   'SPAN',
-  '短 inline 导航项的译文应该贴在原元素内部',
+  'The translation of a short inline nav item should be attached inside the original element',
 );
 
 console.log('main regression passed');

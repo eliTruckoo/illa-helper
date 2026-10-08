@@ -1,5 +1,5 @@
 /**
- * 文本处理工具函数
+ * Text processing utility functions
  */
 
 import { Replacement } from '../../shared/types/api';
@@ -10,7 +10,7 @@ export interface ReplacementLimitOptions {
 }
 
 /**
- * 为替换项添加位置信息
+ * Add position info to replacement items
  */
 export function addPositionsToReplacements(
   originalText: string,

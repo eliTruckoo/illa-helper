@@ -1,19 +1,19 @@
 /**
- * 类型系统统一入口
- * 重导出所有类型定义，提供统一的导入入口
+ * Type system unified entry point
+ * Re-exports all type definitions to provide a unified import entry point
  */
 
-// 核心基础类型
+// Core base types
 export * from './core';
 
-// API相关类型
+// API-related types
 export * from './api';
 
-// UI界面类型
+// UI types
 export * from './ui';
 
-// 存储配置类型
+// Storage configuration types
 export * from './storage';
 
-// 导出常量
+// Export constants
 export * from '../constants/defaults';

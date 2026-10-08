@@ -1,6 +1,6 @@
 /**
- * 处理协调器
- * 负责协调所有文本处理请求，确保原子性处理和无重复处理
+ * Processing coordinator
+ * Coordinates all text processing requests, ensuring atomic processing without duplicates
  */
 
 import {
@@ -25,25 +25,25 @@ import type {
 } from './ProcessingContracts';
 
 /**
- * 处理结果接口
+ * Processing result interface
  */
 export interface ProcessingResult {
-  /** 是否成功 */
+  /** Whether processing succeeded */
   success: boolean;
-  /** 替换数量 */
+  /** Number of replacements */
   replacementCount: number;
-  /** 处理的段落数量 */
+  /** Number of segments processed */
   segmentCount: number;
-  /** 跳过的段落数量（已处理或正在处理） */
+  /** Number of segments skipped (already processed or in progress) */
   skippedCount: number;
-  /** 错误信息 */
+  /** Error message */
   error?: string;
-  /** 处理耗时（毫秒） */
+  /** Processing duration (ms) */
   duration: number;
 }
 
 /**
- * 段落处理结果
+ * Segment processing result
  */
 interface SegmentProcessingResult {
   segment: ContentSegment;
@@ -60,22 +60,22 @@ interface SegmentTranslationResult {
 }
 
 /**
- * 处理协调器
+ * Processing coordinator
  *
- * 核心职责：
- * 1. 协调所有处理请求，确保无重复处理
- * 2. 实现原子性处理，避免并发冲突
- * 3. 提供统一的错误处理和回滚机制
- * 4. 监控处理性能和状态
+ * Core responsibilities:
+ * 1. Coordinate all processing requests and avoid duplicate processing
+ * 2. Process atomically to avoid concurrency conflicts
+ * 3. Provide unified error handling and rollback
+ * 4. Monitor processing performance and state
  */
 export class ProcessingCoordinator {
-  /** 处理队列，防止并发冲突 */
+  /** Processing queue to prevent concurrency conflicts */
   private processingQueue: Promise<unknown> = Promise.resolve();
 
-  /** 发音服务 */
+  /** Pronunciation service */
   private pronunciationService?: PronunciationRegistrar;
 
-  /** 统计信息 */
+  /** Statistics */
   private stats = {
     totalProcessed: 0,
     totalSkipped: 0,
@@ -88,8 +88,8 @@ export class ProcessingCoordinator {
   }
 
   /**
-   * 处理内容段落列表
-   * 主要入口方法，确保所有段落按顺序处理
+   * Process the content segment list
+   * Main entry point; ensures all segments are processed in order
    */
   async processSegments(
     segments: ContentSegment[],
@@ -102,7 +102,7 @@ export class ProcessingCoordinator {
   ): Promise<ProcessingResult> {
     const startTime = Date.now();
 
-    // 将处理请求加入队列，确保串行处理
+    // Enqueue the processing request to ensure serial processing
     const nextTask = this.processingQueue.then(async () => {
       return this.doProcessSegments(
         segments,
@@ -120,7 +120,7 @@ export class ProcessingCoordinator {
   }
 
   /**
-   * 实际的段落处理逻辑
+   * Actual segment processing logic
    */
   private async doProcessSegments(
     segments: ContentSegment[],
@@ -138,7 +138,7 @@ export class ProcessingCoordinator {
     let errorCount = 0;
     const errors: string[] = [];
 
-    // 过滤已处理和正在处理的段落
+    // Filter out segments already processed or in progress
     const segmentsToProcess = segments.filter((segment) => {
       const isProcessed = globalProcessingState.isContentProcessed(
         segment.fingerprint,
@@ -155,14 +155,14 @@ export class ProcessingCoordinator {
       return true;
     });
 
-    // 批量标记开始处理
+    // Mark processing start in batch
     const successfullyMarked = segmentsToProcess.filter((segment) =>
       globalProcessingState.markProcessingStart(segment.fingerprint),
     );
 
     try {
-      // 并行处理段落（但要控制并发数）
-      const batchSize = 8; // 控制并发数，避免过载
+      // Process segments in parallel (with limited concurrency)
+      const batchSize = 8; // Limit concurrency to avoid overload
       const results: SegmentProcessingResult[] = [];
       const activeBudget =
         replacementBudget ??
@@ -178,7 +178,7 @@ export class ProcessingCoordinator {
         );
         const batchResults = await Promise.allSettled(batchPromises);
 
-        // API 请求可以并发，预算消耗和 DOM 写入必须按段落顺序执行。
+        // API requests may run concurrently, but budget consumption and DOM writes must run in segment order.
         batchResults.forEach((result, index) => {
           const segment = batch[index];
           if (result.status === 'fulfilled') {
@@ -213,13 +213,13 @@ export class ProcessingCoordinator {
         });
       }
 
-      // 统计结果
+      // Aggregate results
       results.forEach((result) => {
         if (result.success) {
           processedCount++;
           totalReplacements += result.replacementCount;
 
-          // 标记处理完成
+          // Mark processing complete
           globalProcessingState.markProcessingComplete(
             result.segment.fingerprint,
             result.segment.domPath,
@@ -228,9 +228,9 @@ export class ProcessingCoordinator {
           );
         } else {
           errorCount++;
-          errors.push(result.error || '未知错误');
+          errors.push(result.error || 'Unknown error');
 
-          // 标记处理失败
+          // Mark processing failed
           globalProcessingState.markProcessingFailed(
             result.segment.fingerprint,
             result.segment.domPath,
@@ -238,7 +238,7 @@ export class ProcessingCoordinator {
         }
       });
     } catch (globalError) {
-      // 清理所有标记
+      // Clear all markers
       successfullyMarked.forEach((segment) => {
         globalProcessingState.markProcessingFailed(
           segment.fingerprint,
@@ -262,7 +262,7 @@ export class ProcessingCoordinator {
 
     const duration = Date.now() - startTime;
 
-    // 更新统计信息
+    // Update statistics
     this.updateStats(processedCount, skippedCount, errorCount, duration);
 
     return {
@@ -276,7 +276,7 @@ export class ProcessingCoordinator {
   }
 
   /**
-   * 并发获取候选替换项，不在这里消耗页面预算。
+   * Fetch candidate replacements concurrently; the page budget is not consumed here.
    */
   private async collectSegmentReplacements(
     segment: ContentSegment,
@@ -305,7 +305,7 @@ export class ProcessingCoordinator {
   }
 
   /**
-   * 按 DOM 顺序应用候选替换项，并在这里消耗页面级预算。
+   * Apply candidate replacements in DOM order and consume the page-level budget here.
    */
   private applySegmentTranslation(
     translationResult: SegmentTranslationResult,
@@ -379,7 +379,7 @@ export class ProcessingCoordinator {
   }
 
   /**
-   * 应用替换到DOM
+   * Apply replacements to the DOM
    */
   private applyReplacements(
     segment: ContentSegment,
@@ -425,7 +425,7 @@ export class ProcessingCoordinator {
   }
 
   /**
-   * 在文本节点中查找范围
+   * Find a range within the text nodes
    */
   private findRangeInTextNodes(
     textNodes: Text[],
@@ -438,10 +438,10 @@ export class ProcessingCoordinator {
     let startOffset = 0;
     let endOffset = 0;
 
-    // 构建完整文本内容用于验证
+    // Build the full text content for validation
     const fullText = textNodes.map((node) => node.textContent || '').join('');
 
-    // 验证位置边界
+    // Validate position bounds
     if (start < 0 || end > fullText.length || start >= end) {
       return null;
     }
@@ -468,7 +468,7 @@ export class ProcessingCoordinator {
       range.setStart(startNode, startOffset);
       range.setEnd(endNode, endOffset);
 
-      // 验证范围内容与预期是否匹配
+      // Verify the range content matches the expected text
       const extractedText = range.toString();
       const expectedText = fullText.substring(start, end);
 
@@ -483,7 +483,7 @@ export class ProcessingCoordinator {
   }
 
   /**
-   * 应用单个替换到范围
+   * Apply a single replacement to a range
    */
   private applyReplacementToRange(
     range: Range,
@@ -508,7 +508,7 @@ export class ProcessingCoordinator {
   }
 
   /**
-   * 标记文本节点为已处理
+   * Mark text nodes as processed
    */
   private markTextNodesProcessed(textNodes: Text[]): void {
     const timestamp = Date.now().toString();
@@ -521,21 +521,21 @@ export class ProcessingCoordinator {
   }
 
   /**
-   * 添加处理中的视觉反馈
+   * Add visual feedback while processing
    */
   private addProcessingFeedback(element: Element): void {
     element.classList.add('wxt-processing');
   }
 
   /**
-   * 移除处理中的视觉反馈
+   * Remove visual feedback while processing
    */
   private removeProcessingFeedback(element: Element): void {
     element.classList.remove('wxt-processing');
   }
 
   /**
-   * 添加发光效果
+   * Add glow effect
    */
   private addGlowEffect(element: Element): void {
     element.classList.add('wxt-glow');
@@ -545,7 +545,7 @@ export class ProcessingCoordinator {
   }
 
   /**
-   * 更新统计信息
+   * Update statistics
    */
   private updateStats(
     processed: number,
@@ -557,7 +557,7 @@ export class ProcessingCoordinator {
     this.stats.totalSkipped += skipped;
     this.stats.totalErrors += errors;
 
-    // 更新平均处理时间
+    // Update average processing time
     const totalOperations = this.stats.totalProcessed + this.stats.totalErrors;
     if (totalOperations > 0) {
       this.stats.averageProcessingTime =
@@ -569,14 +569,14 @@ export class ProcessingCoordinator {
   }
 
   /**
-   * 获取统计信息
+   * Get statistics
    */
   getStats() {
     return { ...this.stats };
   }
 
   /**
-   * 重置统计信息
+   * Reset statistics
    */
   resetStats(): void {
     this.stats = {
@@ -588,15 +588,15 @@ export class ProcessingCoordinator {
   }
 
   /**
-   * 等待所有处理完成
+   * Wait for all processing to complete
    */
   async waitForCompletion(): Promise<void> {
     await this.processingQueue;
   }
 
   /**
-   * 为单个段落的翻译内容添加发音功能
-   * @param segment 内容段落
+   * Add pronunciation to the translated content of a single segment
+   * @param segment Content segment
    */
   private async addPronunciationToSegment(
     segment: ContentSegment,
@@ -604,7 +604,7 @@ export class ProcessingCoordinator {
     if (!this.pronunciationService) return;
 
     try {
-      // 在所有相关元素中查找翻译元素
+      // Find translation elements in all related elements
       const allTranslationElements: Element[] = [];
 
       for (const element of segment.elements) {
@@ -619,10 +619,10 @@ export class ProcessingCoordinator {
       for (const element of allTranslationElements) {
         const translationText = element.textContent;
         if (translationText) {
-          // 提取纯英文内容（去除括号）
+          // Extract plain English content (strip parentheses)
           const cleanText = translationText.replace(/[()]/g, '').trim();
 
-          // 检查是否为英文文本（支持常见标点符号和数字）
+          // Check whether the text is English (common punctuation and digits allowed)
           if (
             /^[a-zA-Z0-9\s\-',.!?;:()%]+$/.test(cleanText) &&
             cleanText.length > 0
@@ -632,13 +632,13 @@ export class ProcessingCoordinator {
               cleanText,
             );
 
-            // 标记已添加发音功能
+            // Mark pronunciation as added
             element.setAttribute('data-pronunciation-added', 'true');
           }
         }
       }
     } catch (_) {
-      // 静默处理错误
+      // Silently ignore errors
     }
   }
 }

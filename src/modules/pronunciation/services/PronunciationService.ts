@@ -1,8 +1,8 @@
 /**
- * 发音服务主类。
+ * Main pronunciation service class.
  *
- * 对外保留原来的发音门面：注册元素、查询音标、朗读、更新 API/TTS/UI 配置。
- * 悬浮框 DOM 生命周期和鼠标交互已经下沉到 TooltipInteractionController。
+ * Keeps the original pronunciation facade: register elements, query phonetics, speak, and update API/TTS/UI configuration.
+ * The tooltip DOM lifecycle and mouse interaction have moved down into TooltipInteractionController.
  */
 
 import { IPhoneticProvider, PhoneticProviderFactory } from '../phonetic';
@@ -63,7 +63,7 @@ export class PronunciationService {
   }
 
   /**
-   * 为翻译元素添加发音功能。
+   * Add pronunciation functionality to a translated element.
    */
   async addPronunciationToElement(
     element: HTMLElement,
@@ -74,21 +74,21 @@ export class PronunciationService {
   }
 
   /**
-   * 移除元素的发音功能。
+   * Remove pronunciation functionality from an element.
    */
   removePronunciationFromElement(element: HTMLElement): void {
     this.tooltipController.unregister(element);
   }
 
   /**
-   * 获取单词的音标信息。
+   * Get phonetic information for a word.
    */
   async getPhonetic(word: string): Promise<PhoneticResult> {
     return this.phoneticProvider.getPhonetic(word);
   }
 
   /**
-   * 朗读文本。主 TTS 失败时回退到 Web Speech。
+   * Speak text. Falls back to Web Speech if the primary TTS fails.
    */
   async speakText(text: string): Promise<TTSResult> {
     try {
@@ -100,70 +100,73 @@ export class PronunciationService {
       }
 
       console.warn(
-        `主TTS提供者(${this.ttsProvider.name})失败，回退到备用提供者`,
+        `Primary TTS provider (${this.ttsProvider.name}) failed, falling back to the backup provider`,
         primaryResult.error,
       );
 
       if (!this.fallbackTTSProvider.isAvailable()) {
         return {
           success: false,
-          error: `主TTS提供者失败且备用提供者不可用: ${primaryResult.error}`,
+          error: `Primary TTS provider failed and backup provider unavailable: ${primaryResult.error}`,
         };
       }
 
       const fallbackResult = await this.fallbackTTSProvider.speak(text);
       if (fallbackResult.success) {
         console.info(
-          `TTS回退成功，使用备用提供者(${this.fallbackTTSProvider.name})`,
+          `TTS fallback succeeded using backup provider (${this.fallbackTTSProvider.name})`,
         );
         return { success: true };
       }
 
       return {
         success: false,
-        error: `主TTS和备用TTS都失败: 主=${primaryResult.error}, 备用=${fallbackResult.error}`,
+        error: `Both primary and backup TTS failed: primary=${primaryResult.error}, backup=${fallbackResult.error}`,
       };
     } catch (error) {
-      console.error('TTS朗读过程中发生意外错误:', error);
+      console.error('Unexpected error during TTS playback:', error);
 
       try {
         if (this.fallbackTTSProvider.isAvailable()) {
           const fallbackResult = await this.fallbackTTSProvider.speak(text);
           if (fallbackResult.success) {
-            console.info('TTS异常回退成功');
+            console.info('TTS exception fallback succeeded');
             return { success: true };
           }
         }
       } catch (fallbackError) {
-        console.error('备用TTS也发生异常:', fallbackError);
+        console.error('Backup TTS also threw an exception:', fallbackError);
       }
 
       return {
         success: false,
-        error: error instanceof Error ? error.message : '朗读功能暂时不可用',
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Speech playback is temporarily unavailable',
       };
     }
   }
 
   /**
-   * 停止主 TTS 和备用 TTS。
+   * Stop the primary and backup TTS.
    */
   stopSpeaking(): void {
     try {
       this.ttsProvider.stop();
     } catch (error) {
-      console.error('停止主TTS提供者时出错:', error);
+      console.error('Error stopping primary TTS provider:', error);
     }
 
     try {
       this.fallbackTTSProvider.stop();
     } catch (error) {
-      console.error('停止备用TTS提供者时出错:', error);
+      console.error('Error stopping backup TTS provider:', error);
     }
   }
 
   /**
-   * 使用指定口音朗读文本。
+   * Speak text with the specified accent.
    */
   async speakTextWithAccent(text: string, lang: string): Promise<TTSResult> {
     try {
@@ -188,7 +191,7 @@ export class PronunciationService {
         }
 
         console.warn(
-          `有道TTS口音朗读失败: ${primaryResult.error}，尝试Web Speech`,
+          `Youdao TTS accent playback failed: ${primaryResult.error}, trying Web Speech`,
         );
       }
 
@@ -203,16 +206,18 @@ export class PronunciationService {
         return fallbackResult;
       }
 
-      console.warn('所有口音朗读方法都失败，使用默认发音');
+      console.warn(
+        'All accent playback methods failed, using default pronunciation',
+      );
       return await this.speakText(text);
     } catch (error) {
-      console.error('口音朗读失败:', error);
+      console.error('Accent playback failed:', error);
       return await this.speakText(text);
     }
   }
 
   /**
-   * 更新运行时配置。
+   * Update runtime configuration.
    */
   updateConfig(config: Partial<PronunciationConfig>): void {
     this.config = { ...this.config, ...config };
@@ -245,7 +250,7 @@ export class PronunciationService {
   }
 
   /**
-   * 更新API配置，配置变更会立即影响 AI 释义。
+   * Update API configuration; changes take effect immediately for AI definitions.
    */
   async updateApiConfig(apiConfigItem?: ApiConfigItem | null): Promise<void> {
     try {
@@ -253,13 +258,13 @@ export class PronunciationService {
         apiConfigItem ?? (await this.storageService.getActiveApiConfigItem());
       if (configToUse) {
         this.aiTranslationProvider.updateApiConfig(configToUse);
-        console.log('API配置已更新');
+        console.log('API configuration updated');
       } else {
         this.aiTranslationProvider.updateApiConfig(null);
-        console.warn('未找到活跃的API配置');
+        console.warn('No active API configuration found');
       }
     } catch (error) {
-      console.error('更新API配置失败:', error);
+      console.error('Failed to update API configuration:', error);
     }
   }
 
@@ -297,7 +302,7 @@ export class PronunciationService {
         userSettings.originalWordDisplayMode || OriginalWordDisplayMode.VISIBLE;
       this.tooltipRenderer.updateOriginalWordDisplayMode(mode);
     } catch (error) {
-      console.error('更新原文显示模式失败:', error);
+      console.error('Failed to update original text display mode:', error);
       this.tooltipRenderer.updateOriginalWordDisplayMode(
         OriginalWordDisplayMode.VISIBLE,
       );

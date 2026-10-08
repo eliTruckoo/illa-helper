@@ -1,9 +1,9 @@
 /**
- * API相关工具函数
+ * API-related utility functions
  */
 
 /**
- * 合并自定义参数到基础参数对象
+ * Merge custom parameters into the base parameter object
  */
 export function mergeCustomParams(
   baseParams: any,
@@ -20,18 +20,18 @@ export function mergeCustomParams(
       if (!protectedKeys.includes(key)) {
         merged[key] = value;
       } else {
-        console.warn(`忽略受保护的参数: ${key}`);
+        console.warn(`Ignoring protected parameter: ${key}`);
       }
     });
   } catch (error) {
-    console.warn('自定义参数JSON解析失败:', error);
+    console.warn('Failed to parse custom parameters JSON:', error);
   }
 
   return merged;
 }
 
 /**
- * 创建通用的错误响应
+ * Create a generic error response
  */
 export function createErrorResponse(originalText: string) {
   return {
@@ -42,7 +42,7 @@ export function createErrorResponse(originalText: string) {
 }
 
 /**
- * 验证文本和配置
+ * Validate text and configuration
  */
 export function validateInputs(text: string, apiKey?: string): boolean {
   return !!(text?.trim() && apiKey?.trim());

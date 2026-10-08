@@ -1,6 +1,6 @@
 /**
- * UserLevel 工具类
- * 提供 UserLevel 相关的工具函数
+ * UserLevel utilities
+ * Provides UserLevel-related helper functions
  */
 
 import {
@@ -13,15 +13,15 @@ import {
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 /**
- * 合并自定义参数到基础参数对象
- * @param baseParams 基础参数对象
- * @param customParamsJson 自定义参数JSON字符串
- * @returns 合并后的参数对象
+ * Merge custom parameters into the base parameter object
+ * @param baseParams Base parameter object
+ * @param customParamsJson Custom parameters as a JSON string
+ * @returns The merged parameter object
  */
 function mergeCustomParams(baseParams: any, customParamsJson?: string): any {
   const merged = { ...baseParams };
 
-  // 保护的系统关键参数，不允许被覆盖
+  // Protected system-critical parameters that must not be overridden
   const protectedKeys = ['model', 'messages', 'apiKey'];
 
   if (!customParamsJson?.trim()) {
@@ -31,41 +31,41 @@ function mergeCustomParams(baseParams: any, customParamsJson?: string): any {
   try {
     const customParams = JSON.parse(customParamsJson);
 
-    // 合并自定义参数，但保护系统关键参数
+    // Merge custom parameters while protecting system-critical ones
     Object.entries(customParams).forEach(([key, value]) => {
       if (!protectedKeys.includes(key)) {
         merged[key] = value;
       } else {
-        console.warn(`忽略受保护的参数: ${key}`);
+        console.warn(`Ignoring protected parameter: ${key}`);
       }
     });
   } catch (error) {
-    console.warn('自定义参数JSON解析失败:', error);
+    console.warn('Failed to parse custom parameters JSON:', error);
   }
 
   return merged;
 }
 
 /**
- * 获取 UserLevel 的中文显示名称
- * @param level UserLevel 枚举值
- * @returns 中文显示名称
+ * Get the display name of a UserLevel
+ * @param level UserLevel enum value
+ * @returns The display name
  */
 export function getUserLevelLabel(level: UserLevel): string {
   const option = USER_LEVEL_OPTIONS.find((opt) => opt.value === level);
-  return option?.label || '未知';
+  return option?.label || 'Unknown';
 }
 
 /**
- * 获取所有 UserLevel 选项，用于下拉框等组件
- * @returns UserLevel 选项数组
+ * Get all UserLevel options, for use in dropdowns and similar components
+ * @returns Array of UserLevel options
  */
 export function getUserLevelOptions() {
   return USER_LEVEL_OPTIONS;
 }
 
 /**
- * API测试结果接口
+ * API test result interface
  */
 export interface ApiTestResult {
   success: boolean;
@@ -74,9 +74,9 @@ export interface ApiTestResult {
 }
 
 /**
- * 获取API超时时间
- * @param baseTimeout 基础超时时间（毫秒）
- * @returns 超时时间（毫秒），如果为0则返回undefined表示无超时限制
+ * Get the API timeout
+ * @param baseTimeout Base timeout in milliseconds
+ * @returns Timeout in milliseconds; undefined (no timeout limit) if 0
  */
 export function getApiTimeout(baseTimeout: number): number | undefined {
   return baseTimeout === 0 ? undefined : baseTimeout;
@@ -102,7 +102,7 @@ export async function testGeminiConnection(
       apiConfig.customParams,
     );
 
-    // 适配参数
+    // Adapt parameters
     generationConfig = mapParamsForProvider(generationConfig, 'gemini');
 
     const requestOptions: { timeout?: number; baseUrl?: string } = {};
@@ -147,11 +147,11 @@ export async function testGeminiConnection(
 }
 
 /**
- * 统一的API连接测试入口函数
- * 根据协议族自动选择合适的测试方法
- * @param userConfig 用户API配置对象
- * @param baseTimeout 超时时间（毫秒）
- * @returns Promise<ApiTestResult> 测试结果
+ * Unified entry point for API connection tests
+ * Automatically selects the appropriate test method based on the protocol family
+ * @param userConfig User API configuration object
+ * @param baseTimeout Timeout in milliseconds
+ * @returns Promise<ApiTestResult> The test result
  */
 export async function testApiConnection(
   userConfig: ApiConfigItem,
@@ -173,10 +173,10 @@ export async function testApiConnection(
 }
 
 /**
- * 测试OpenAI兼容API的连接
- * @param apiConfig API配置对象
- * @param baseTimeout 超时时间（毫秒）
- * @returns Promise<ApiTestResult> 测试结果
+ * Test the connection to an OpenAI-compatible API
+ * @param apiConfig API configuration object
+ * @param baseTimeout Timeout in milliseconds
+ * @returns Promise<ApiTestResult> The test result
  */
 export async function testOpenAICompatibleConnection(
   apiConfig: ApiConfig,
@@ -203,12 +203,12 @@ export async function testOpenAICompatibleConnection(
       max_tokens: 10,
     };
 
-    // 只有当配置允许传递思考参数时，才添加enable_thinking字段
+    // Only add the enable_thinking field when the config allows passing thinking parameters
     if (apiConfig.includeThinkingParam) {
       requestBody.enable_thinking = apiConfig.enable_thinking;
     }
 
-    // 合并自定义参数
+    // Merge custom parameters
     requestBody = mergeCustomParams(requestBody, apiConfig.customParams);
 
     const response = await sendOpenAICompatibleTestRequest(
@@ -243,7 +243,7 @@ export async function testOpenAICompatibleConnection(
   } catch (error: any) {
     return {
       success: false,
-      message: error.message || '网络连接错误',
+      message: error.message || 'Network connection error',
     };
   }
 }
@@ -291,40 +291,40 @@ function sendOpenAICompatibleTestRequest(
 }
 
 /**
- * 清理AI响应中的Markdown格式
- * @param content AI返回的原始内容
- * @returns 清理后的JSON字符串
+ * Clean Markdown formatting from an AI response
+ * @param content Raw content returned by the AI
+ * @returns The cleaned JSON string
  */
 export function cleanMarkdownFromResponse(content: string): string {
   if (!content || typeof content !== 'string') {
     return content;
   }
 
-  // 移除Markdown代码块标记
+  // Remove Markdown code block markers
   let cleaned = content.trim();
 
-  // 移除开头的```json或```
+  // Remove leading ```json or ```
   cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, '');
 
-  // 移除结尾的```
+  // Remove trailing ```
   cleaned = cleaned.replace(/\n?\s*```\s*$/i, '');
 
-  // 移除其他可能的Markdown格式
-  cleaned = cleaned.replace(/^\s*```[\s\S]*?\n/, ''); // 移除开头的代码块
-  cleaned = cleaned.replace(/\n```\s*$/, ''); // 移除结尾的代码块
+  // Remove other possible Markdown formatting
+  cleaned = cleaned.replace(/^\s*```[\s\S]*?\n/, ''); // Remove leading code block
+  cleaned = cleaned.replace(/\n```\s*$/, ''); // Remove trailing code block
 
-  // 移除可能的额外空白字符
+  // Remove any extra whitespace
   cleaned = cleaned.trim();
 
   return cleaned;
 }
 
 /**
- * 安全地设置元素的HTML内容，解决Firefox的innerHTML安全警告
- * 使用DOMParser方式避免直接的innerHTML赋值
- * @param element 目标DOM元素
- * @param htmlContent HTML内容字符串
- * @returns 是否设置成功
+ * Safely set an element's HTML content, avoiding Firefox's innerHTML security warning
+ * Uses DOMParser to avoid direct innerHTML assignment
+ * @param element Target DOM element
+ * @param htmlContent HTML content string
+ * @returns Whether the content was set successfully
  */
 export function safeSetInnerHTML(
   element: HTMLElement,
@@ -338,13 +338,13 @@ export function safeSetInnerHTML(
     const parser = new DOMParser();
     const parsed = parser.parseFromString(htmlContent, 'text/html');
 
-    // 清空目标元素
+    // Clear the target element
     element.textContent = '';
 
-    // 将解析后的内容移动到目标元素
+    // Move the parsed content into the target element
     const bodyContent = parsed.body;
     if (bodyContent) {
-      // 将body中的所有子节点移动到目标元素
+      // Move all child nodes of body into the target element
       while (bodyContent.firstChild) {
         element.appendChild(bodyContent.firstChild);
       }
@@ -352,43 +352,43 @@ export function safeSetInnerHTML(
 
     return true;
   } catch (error) {
-    console.error('设置HTML内容失败:', error);
+    console.error('Failed to set HTML content:', error);
     return false;
   }
 }
 
 /**
- * 从可能包含Markdown代码块的字符串中提取并解析JSON。
- * @param text 包含JSON的原始字符串。
- * @returns 解析后的JavaScript对象。
- * @throws 如果JSON无效或无法提取，则抛出错误。
+ * Extract and parse JSON from a string that may contain a Markdown code block.
+ * @param text Raw string containing JSON.
+ * @returns The parsed JavaScript object.
+ * @throws An error if the JSON is invalid or cannot be extracted.
  */
 export function extractAndParseJson(text: string): any {
   if (!text || typeof text !== 'string') {
     throw new Error('Invalid input: text must be a non-empty string.');
   }
 
-  // 匹配Markdown中的JSON代码块
+  // Match a JSON code block in Markdown
   const jsonBlockMatch = text.match(/```(json)?\s*([\s\S]+?)\s*```/);
 
   let jsonString;
   if (jsonBlockMatch && jsonBlockMatch[2]) {
-    // 从Markdown代码块中提取JSON字符串
+    // Extract the JSON string from the Markdown code block
     jsonString = jsonBlockMatch[2];
   } else {
-    // 如果没有找到代码块，假定整个字符串都是JSON
-    // 尝试找到第一个 '{' 和最后一个 '}' 之间的内容
+    // If no code block is found, assume the whole string is JSON
+    // Try to find the content between the first '{' and the last '}'
     const firstBrace = text.indexOf('{');
     const lastBrace = text.lastIndexOf('}');
     if (firstBrace !== -1 && lastBrace > firstBrace) {
       jsonString = text.substring(firstBrace, lastBrace + 1);
     } else {
-      jsonString = text; // 作为最后的手段
+      jsonString = text; // As a last resort
     }
   }
 
   try {
-    // 清理并解析JSON
+    // Clean and parse JSON
     return JSON.parse(jsonString.trim());
   } catch (error) {
     console.error('Failed to parse JSON:', error);
@@ -399,14 +399,14 @@ export function extractAndParseJson(text: string): any {
 }
 
 /**
- * 将 OpenAI 风格的参数映射到特定提供商（如 Google Gemini）的格式。
- * @param params - 包含类 OpenAI 参数的对象。
- * @param provider - 目标提供商的标识符 ('gemini' 等)。
- * @returns 映射后适合目标提供商的参数对象。
+ * Map OpenAI-style parameters to a specific provider's format (e.g. Google Gemini).
+ * @param params - Object containing OpenAI-style parameters.
+ * @param provider - Identifier of the target provider ('gemini', etc.).
+ * @returns Parameter object mapped for the target provider.
  */
 export function mapParamsForProvider(params: any, provider: 'gemini'): any {
   if (provider !== 'gemini') {
-    return params; // 目前只为 Gemini 实现
+    return params; // Currently only implemented for Gemini
   }
 
   const mapping: { [key: string]: string } = {
@@ -426,7 +426,7 @@ export function mapParamsForProvider(params: any, provider: 'gemini'): any {
     }
   }
 
-  // 特殊处理 stopSequences，确保它是一个字符串数组
+  // Special handling for stopSequences: ensure it is a string array
   if (
     mappedParams.stopSequences &&
     !Array.isArray(mappedParams.stopSequences)

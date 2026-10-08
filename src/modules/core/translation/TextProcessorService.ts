@@ -1,6 +1,6 @@
 /**
- * 文本处理服务
- * 负责遍历DOM，提取文本节点，并进行处理
+ * Text processor service
+ * Traverses the DOM, extracts text nodes and processes them
  */
 
 import {
@@ -16,20 +16,20 @@ import { globalProcessingState } from '../../processing/ProcessingStateManager';
 import { ReplacementBudget } from '../../processing/ReplacementBudget';
 import type { TextReplacementEngine } from '../../processing/ProcessingContracts';
 
-// 内容分段配置
+// Content segmentation configuration
 export interface SegmentConfig {
   maxSegmentLength: number;
   minSegmentLength: number;
   mergeSmallSegments: boolean;
 }
 
-// 处理统计信息
+// Processing statistics
 export interface ProcessingStats {
-  coordinator: any; // 协调器统计
-  global: any; // 全局统计
+  coordinator: any; // coordinator statistics
+  global: any; // global statistics
 }
 
-// 文本处理服务配置
+// Text processor service configuration
 export interface TextProcessorConfig {
   enablePronunciationTooltip?: boolean;
   apiConfigItem?: ApiConfigItem | null;
@@ -37,21 +37,21 @@ export interface TextProcessorConfig {
 }
 
 /**
- * 文本处理服务类
- * 采用单例模式，提供统一的DOM文本处理功能
+ * Text processor service class
+ * Uses the singleton pattern and provides unified DOM text processing
  */
 export class TextProcessorService {
-  // 单例实例
+  // Singleton instance
   private static instance: TextProcessorService | null = null;
 
-  // 服务组件
+  // Service components
   private pronunciationService!: PronunciationService;
   private contentSegmenter!: ContentSegmenter;
   private processingCoordinator!: ProcessingCoordinator;
   private config: TextProcessorConfig;
 
   /**
-   * 私有构造函数，确保单例模式
+   * Private constructor, ensures the singleton pattern
    */
   private constructor(config: TextProcessorConfig = {}) {
     this.config = {
@@ -64,7 +64,7 @@ export class TextProcessorService {
   }
 
   /**
-   * 获取服务实例（单例模式）
+   * Get the service instance (singleton pattern)
    */
   public static getInstance(
     config?: TextProcessorConfig,
@@ -76,17 +76,17 @@ export class TextProcessorService {
   }
 
   /**
-   * 重置服务实例（主要用于测试）
+   * Reset the service instance (mainly for testing)
    */
   public static resetInstance(): void {
     TextProcessorService.instance = null;
   }
 
   /**
-   * 初始化服务组件
+   * Initialize service components
    */
   private initializeServices(): void {
-    // 创建发音服务配置
+    // Create the pronunciation service configuration
     const pronunciationConfig = {
       ...DEFAULT_PRONUNCIATION_CONFIG,
       uiConfig: {
@@ -95,7 +95,7 @@ export class TextProcessorService {
       },
     };
 
-    // 初始化各个服务组件
+    // Initialize each service component
     this.pronunciationService = new PronunciationService(
       pronunciationConfig,
       this.config.apiConfigItem ?? null,
@@ -107,8 +107,8 @@ export class TextProcessorService {
   }
 
   /**
-   * 注入样式
-   * 为文本处理添加必要的CSS样式
+   * Inject styles
+   * Add the CSS styles required for text processing
    */
   private injectGlowStyle(): void {
     if ((window as any).wxtGlowStyleInjected) return;
@@ -139,13 +139,13 @@ export class TextProcessorService {
         filter: blur(0) !important;
       }
 
-      /* 增强a标签内学习模式的悬停支持 */
+      /* Enhance hover support for learning mode inside a tags */
       a .wxt-original-word--learning:hover,
       a:hover .wxt-original-word--learning {
         filter: blur(0) !important;
       }
 
-      /* 音标错误提示样式 */
+      /* Phonetic error message styles */
       .wxt-phonetic-error {
         font-family: 'SF Mono', 'Monaco', 'Consolas', 'Roboto Mono', monospace;
         font-size: 13px;
@@ -161,7 +161,7 @@ export class TextProcessorService {
         opacity: 0.8;
       }
 
-      /* 嵌套单词悬浮框标题行布局 */
+      /* Nested word tooltip title row layout */
       .wxt-word-title-row {
         display: flex;
         align-items: center;
@@ -195,7 +195,7 @@ export class TextProcessorService {
         pointer-events: none !important;
       }
       
-      /* 确保链接元素在处理状态下仍然可以点击 */
+      /* Ensure link elements remain clickable while being processed */
       a.wxt-processing,
       a.wxt-processing *,
       .wxt-processing a,
@@ -204,7 +204,7 @@ export class TextProcessorService {
         cursor: pointer !important;
       }
       
-      /* 确保按钮元素在处理状态下仍然可以点击 */
+      /* Ensure button elements remain clickable while being processed */
       button.wxt-processing,
       button.wxt-processing *,
       .wxt-processing button,
@@ -213,7 +213,7 @@ export class TextProcessorService {
         cursor: pointer !important;
       }
       
-      /* 确保可点击元素在处理状态下仍然可以点击 */
+      /* Ensure clickable elements remain clickable while being processed */
       [onclick].wxt-processing,
       [onclick].wxt-processing *,
       .wxt-processing [onclick],
@@ -228,18 +228,18 @@ export class TextProcessorService {
   }
 
   // =================================================================
-  // 核心处理流程 (Core Processing Flow)
+  // Core Processing Flow
   // =================================================================
 
   /**
-   * 处理根节点
-   * 主要的文本处理入口，支持智能分段和统一处理
-   * @param root 根节点
-   * @param textReplacer 文本替换器
-   * @param originalWordDisplayMode 原词显示模式
-   * @param maxLength 最大处理长度
-   * @param translationPosition 翻译位置
-   * @param showParentheses 是否显示括号
+   * Process the root node
+   * Main text processing entry point, supports smart segmentation and unified processing
+   * @param root root node
+   * @param textReplacer text replacer
+   * @param originalWordDisplayMode original word display mode
+   * @param maxLength maximum processing length
+   * @param translationPosition translation position
+   * @param showParentheses whether to show parentheses
    */
   public async processRoot(
     root: Node,
@@ -251,14 +251,14 @@ export class TextProcessorService {
     replacementBudget?: ReplacementBudget,
   ): Promise<void> {
     try {
-      // 更新内容分段器配置
+      // Update the content segmenter configuration
       this.updateSegmentConfig({
         maxSegmentLength: maxLength,
         minSegmentLength: 20,
         mergeSmallSegments: true,
       });
 
-      // 使用智能分段器将根节点分割为内容段落
+      // Use the smart segmenter to split the root node into content segments
       const segments = this.contentSegmenter.segmentContent(root);
       if (segments.length === 0) {
         return;
@@ -271,7 +271,7 @@ export class TextProcessorService {
           textReplacer.getConfig().replacementRate,
         );
 
-      // 使用处理协调器进行统一处理
+      // Use the processing coordinator for unified processing
       await this.processingCoordinator.processSegments(
         segments,
         textReplacer,
@@ -282,47 +282,47 @@ export class TextProcessorService {
         activeBudget,
       );
     } catch (error) {
-      console.warn('文本处理过程中发生错误:', error);
-      // 静默处理错误，确保不影响页面正常运行
+      console.warn('An error occurred during text processing:', error);
+      // Handle errors silently so the page keeps working normally
     }
   }
 
   // =================================================================
-  // 配置管理 (Configuration Management)
+  // Configuration Management
   // =================================================================
 
   /**
-   * 更新服务配置
-   * @param config 新的配置（部分更新）
+   * Update the service configuration
+   * @param config new configuration (partial update)
    */
   public updateConfig(config: Partial<TextProcessorConfig>): void {
     this.config = { ...this.config, ...config };
 
-    // 如果API配置变更，需要更新发音服务
+    // If the API configuration changed, the pronunciation service must be updated
     if ('apiConfigItem' in config) {
       this.updateApiConfig(config.apiConfigItem ?? null);
     }
   }
 
   /**
-   * 获取当前配置
+   * Get the current configuration
    */
   public getConfig(): TextProcessorConfig {
     return { ...this.config };
   }
 
   /**
-   * 更新分段配置
-   * @param segmentConfig 分段配置
+   * Update the segmentation configuration
+   * @param segmentConfig segmentation configuration
    */
   public updateSegmentConfig(segmentConfig: Partial<SegmentConfig>): void {
     this.contentSegmenter.updateConfig(segmentConfig);
   }
 
   /**
-   * 更新API配置
-   * 支持运行时API配置更新，配置变更会立即生效
-   * @param apiConfigItem API配置项
+   * Update the API configuration
+   * Supports runtime API configuration updates; changes take effect immediately
+   * @param apiConfigItem API configuration item
    */
   public updateApiConfig(apiConfigItem: ApiConfigItem | null): void {
     try {
@@ -330,20 +330,23 @@ export class TextProcessorService {
         this.pronunciationService.updateApiConfig(apiConfigItem);
       }
 
-      // 更新内部配置
+      // Update the internal configuration
       this.config.apiConfigItem = apiConfigItem;
     } catch (error) {
-      console.warn('更新API配置时发生错误:', error);
+      console.warn(
+        'An error occurred while updating the API configuration:',
+        error,
+      );
     }
   }
 
   // =================================================================
-  // 统计和监控 (Statistics & Monitoring)
+  // Statistics & Monitoring
   // =================================================================
 
   /**
-   * 获取处理统计信息
-   * @returns 处理统计数据
+   * Get processing statistics
+   * @returns processing statistics data
    */
   public getProcessingStats(): ProcessingStats {
     return {
@@ -353,7 +356,7 @@ export class TextProcessorService {
   }
 
   /**
-   * 重置处理统计信息
+   * Reset processing statistics
    */
   public resetStats(): void {
     this.processingCoordinator.resetStats();
@@ -361,32 +364,32 @@ export class TextProcessorService {
   }
 
   // =================================================================
-  // 服务生命周期管理 (Service Lifecycle)
+  // Service Lifecycle
   // =================================================================
 
   /**
-   * 初始化服务
+   * Initialize the service
    */
   public async initialize(): Promise<void> {
-    // 可以在这里添加异步初始化逻辑
-    console.log('TextProcessorService 已初始化');
+    // Async initialization logic can be added here
+    console.log('TextProcessorService initialized');
   }
 
   /**
-   * 销毁服务资源
+   * Destroy service resources
    */
   public dispose(): void {
     this.resetStats();
-    // 清理其他资源
-    console.log('TextProcessorService 资源已清理');
+    // Clean up other resources
+    console.log('TextProcessorService resources cleaned up');
   }
 
   // =================================================================
-  // 便利方法 (Utility Methods)
+  // Utility Methods
   // =================================================================
 
   /**
-   * 检查服务是否就绪
+   * Check whether the service is ready
    */
   public isReady(): boolean {
     return !!(
@@ -397,7 +400,7 @@ export class TextProcessorService {
   }
 
   /**
-   * 获取服务状态
+   * Get the service status
    */
   public getStatus(): {
     isReady: boolean;
@@ -412,15 +415,15 @@ export class TextProcessorService {
   }
 
   /**
-   * 获取发音服务实例
-   * @returns 发音服务实例
+   * Get the pronunciation service instance
+   * @returns pronunciation service instance
    */
   public getPronunciationService(): PronunciationService | undefined {
     return this.pronunciationService;
   }
 }
 
-// 导出服务实例获取器（简化外部使用）
+// Export the service instance getter (simplifies external usage)
 export const getTextProcessorService = (config?: TextProcessorConfig) => {
   return TextProcessorService.getInstance(config);
 };

@@ -1,22 +1,22 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-# 🚀 Pre-commit 代码质量检查
+# 🚀 Pre-commit code quality checks
 
-echo "🔍 开始 pre-commit 检查..."
+echo "🔍 Starting pre-commit checks..."
 
-# TypeScript 编译检查（全项目）
-echo "📝 检查 TypeScript 编译..."
+# TypeScript compile check (whole project)
+echo "📝 Checking TypeScript compilation..."
 npm run compile
 if [ $? -ne 0 ]; then
-  echo "❌ TypeScript 编译失败，提交被阻止"
+  echo "❌ TypeScript compilation failed, commit blocked"
   exit 1
 fi
 
-# 对暂存区文件进行格式化和 lint 检查
-echo "🧹 检查暂存区文件的格式和质量..."
+# Format and lint staged files
+echo "🧹 Checking format and quality of staged files..."
 npx lint-staged
 if [ $? -ne 0 ]; then
-  echo "❌ 代码格式或质量检查失败，提交被阻止"
+  echo "❌ Code format or quality check failed, commit blocked"
   exit 1
 fi

@@ -1,12 +1,12 @@
 /**
- * 消息服务相关类型定义
- * 包含消息传递、通知、通信协议等相关类型
+ * Messaging service type definitions
+ * Includes types for messaging, notifications, and communication protocols
  */
 
 import { UserSettings, ContextMenuMessage } from '../../shared/types/storage';
 import { ContextMenuActionType, UrlPatternType } from '../../shared/types/core';
 
-// 重新导出导入的类型
+// Re-export imported types
 export type {
   UserSettings,
   ContextMenuMessage,
@@ -14,10 +14,10 @@ export type {
   UrlPatternType,
 };
 
-// ==================== 消息类型定义 ====================
+// ==================== Message type definitions ====================
 
 /**
- * 消息类型枚举
+ * Message type enum
  */
 export enum MessageType {
   SETTINGS_UPDATED = 'settings_updated',
@@ -28,7 +28,7 @@ export enum MessageType {
 }
 
 /**
- * 基础消息接口
+ * Base message interface
  */
 export interface BaseMessage {
   type: MessageType | string;
@@ -37,7 +37,7 @@ export interface BaseMessage {
 }
 
 /**
- * 设置更新消息
+ * Settings update message
  */
 export interface SettingsUpdateMessage extends BaseMessage {
   type: MessageType.SETTINGS_UPDATED;
@@ -45,14 +45,14 @@ export interface SettingsUpdateMessage extends BaseMessage {
 }
 
 /**
- * 网站管理更新消息
+ * Website management update message
  */
 export interface WebsiteManagementUpdateMessage extends BaseMessage {
   type: MessageType.WEBSITE_MANAGEMENT_UPDATED;
 }
 
 /**
- * 右键菜单动作消息
+ * Context menu action message
  */
 export interface ContextMenuActionMessage extends BaseMessage {
   type: MessageType.CONTEXT_MENU_ACTION;
@@ -60,7 +60,7 @@ export interface ContextMenuActionMessage extends BaseMessage {
 }
 
 /**
- * 通知消息
+ * Notification message
  */
 export interface NotificationMessage extends BaseMessage {
   type: MessageType.NOTIFICATION;
@@ -70,7 +70,7 @@ export interface NotificationMessage extends BaseMessage {
 }
 
 /**
- * 错误消息
+ * Error message
  */
 export interface ErrorMessage extends BaseMessage {
   type: MessageType.ERROR;
@@ -79,7 +79,7 @@ export interface ErrorMessage extends BaseMessage {
 }
 
 /**
- * 联合消息类型
+ * Union message type
  */
 export type Message =
   | SettingsUpdateMessage
@@ -88,10 +88,10 @@ export type Message =
   | NotificationMessage
   | ErrorMessage;
 
-// ==================== 通信相关类型 ====================
+// ==================== Communication Types ====================
 
 /**
- * 消息发送结果
+ * Message send result
  */
 export interface MessageSendResult {
   success: boolean;
@@ -100,7 +100,7 @@ export interface MessageSendResult {
 }
 
 /**
- * 标签页查询选项
+ * Tab query options
  */
 export interface TabQueryOptions {
   active?: boolean;
@@ -110,7 +110,7 @@ export interface TabQueryOptions {
 }
 
 /**
- * 消息发送选项
+ * Message send options
  */
 export interface MessageSendOptions {
   targetTab?: number;
@@ -120,7 +120,7 @@ export interface MessageSendOptions {
 }
 
 /**
- * 消息监听器
+ * Message listener
  */
 export type MessageListener<T = any> = (
   message: T,
@@ -128,7 +128,7 @@ export type MessageListener<T = any> = (
 ) => Promise<any> | any;
 
 /**
- * 消息服务配置
+ * Messaging service configuration
  */
 export interface MessagingServiceConfig {
   enableLogging?: boolean;

@@ -1,5 +1,5 @@
 /**
- * API代理服务 - 处理通过background的API请求，绕过CORS限制
+ * API proxy service - handles API requests via the background script, bypassing CORS restrictions
  */
 
 import {
@@ -23,7 +23,7 @@ export class ApiProxyService {
   }
 
   /**
-   * 获取单例实例
+   * Get the singleton instance
    */
   public static getInstance(): ApiProxyService {
     if (!ApiProxyService.instance) {
@@ -33,7 +33,7 @@ export class ApiProxyService {
   }
 
   /**
-   * 处理API请求
+   * Handle an API request
    */
   public async handleApiRequest(
     message: ApiRequestMessage,
@@ -42,10 +42,10 @@ export class ApiProxyService {
     let timeoutId: NodeJS.Timeout | undefined;
 
     try {
-      // 创建AbortController用于超时控制
+      // Create an AbortController for timeout control
       const controller = new AbortController();
 
-      // 只有在timeout大于0时才设置超时
+      // Only set the timeout when timeout is greater than 0
       if (timeout && timeout > 0) {
         timeoutId = setTimeout(() => controller.abort(), timeout);
       }
@@ -61,7 +61,7 @@ export class ApiProxyService {
         clearTimeout(timeoutId);
       }
 
-      // 读取响应数据
+      // Read the response data
       const responseData = await response.text();
       let parsedData;
 
@@ -87,11 +87,11 @@ export class ApiProxyService {
         };
       }
     } catch (error: any) {
-      console.error('Background API请求失败:', error);
+      console.error('Background API request failed:', error);
 
-      let errorMessage = '请求失败';
+      let errorMessage = 'Request failed';
       if (error.name === 'AbortError') {
-        errorMessage = '请求超时';
+        errorMessage = 'Request timed out';
       } else if (error.message) {
         errorMessage = error.message;
       }
@@ -106,7 +106,7 @@ export class ApiProxyService {
   }
 
   /**
-   * 取消所有活动请求
+   * Cancel all active requests
    */
   public cancelAllRequests(): void {
     this.activeRequests.forEach((controller) => {
@@ -116,7 +116,7 @@ export class ApiProxyService {
   }
 
   /**
-   * 更新配置
+   * Update configuration
    */
   public updateConfig(newConfig: Partial<ApiProxyServiceConfig>): void {
     this.config = {
@@ -126,7 +126,7 @@ export class ApiProxyService {
   }
 
   /**
-   * 销毁服务
+   * Destroy the service
    */
   public destroy(): void {
     this.cancelAllRequests();

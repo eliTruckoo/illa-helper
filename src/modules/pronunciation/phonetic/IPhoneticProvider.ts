@@ -1,39 +1,39 @@
 /**
- * 音标提供者接口
- * 实现策略模式，支持多种音标API
+ * Phonetic provider interface
+ * Implements the strategy pattern to support multiple phonetic APIs
  */
 
 import { PhoneticResult } from '../types';
 
 export interface IPhoneticProvider {
   /**
-   * 提供者名称
+   * Provider name
    */
   readonly name: string;
 
   /**
-   * 获取单词的音标信息
-   * @param word 要查询的单词
-   * @returns Promise<PhoneticResult> 音标查询结果
+   * Get phonetic information for a word
+   * @param word Word to look up
+   * @returns Promise<PhoneticResult> Phonetic lookup result
    */
   getPhonetic(word: string): Promise<PhoneticResult>;
 
   /**
-   * 批量获取音标信息
-   * @param words 要查询的单词数组
-   * @returns Promise<PhoneticResult[]> 音标查询结果数组
+   * Get phonetic information in batch
+   * @param words Array of words to look up
+   * @returns Promise<PhoneticResult[]> Array of phonetic lookup results
    */
   getBatchPhonetics(words: string[]): Promise<PhoneticResult[]>;
 
   /**
-   * 检查提供者是否可用
-   * @returns Promise<boolean> 是否可用
+   * Check whether the provider is available
+   * @returns Promise<boolean> Whether it is available
    */
   isAvailable(): Promise<boolean>;
 
   /**
-   * 获取提供者配置信息
-   * @returns 提供者的配置信息
+   * Get provider configuration info
+   * @returns The provider's configuration info
    */
   getConfig(): {
     endpoint?: string;

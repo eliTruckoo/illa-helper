@@ -31,10 +31,10 @@ import {
 import { testApiConnection, ApiTestResult } from '@/src/utils';
 import { getProtocolFamilyLabel } from '@/src/modules/shared/ApiConfigHelpers';
 
-// 使用 i18n
+// Use i18n
 const { t } = useI18n();
 
-// 服务实例
+// Service instances
 const storageService = StorageService.getInstance();
 
 const settings = ref<UserSettings>({ ...DEFAULT_SETTINGS });
@@ -43,7 +43,7 @@ const hasUpdate = ref(false);
 onMounted(async () => {
   const loadedSettings = await storageService.getUserSettings();
 
-  // 确保所有配置项存在
+  // Ensure all config items exist
   if (!loadedSettings.multilingualConfig) {
     loadedSettings.multilingualConfig = { ...DEFAULT_MULTILINGUAL_CONFIG };
   }
@@ -54,10 +54,10 @@ onMounted(async () => {
     loadedSettings.floatingBall = { ...DEFAULT_FLOATING_BALL_CONFIG };
   }
 
-  // 设置settings.value后标记初始化完成
+  // Mark initialization complete after settings.value is set
   settings.value = reactive(loadedSettings);
 
-  // 延迟标记初始化完成，确保所有响应式更新都完成
+  // Defer marking initialization complete so all reactive updates finish
   nextTick(() => {
     isInitializing = false;
   });
@@ -67,15 +67,15 @@ onMounted(async () => {
     extensionVersion.value = manifest.version;
   } catch (error) {
     console.error(t('errors.getExtensionVersion'), error);
-    // 在非扩展环境或开发服务器中，这可能会失败。可以设置一个默认值。
+    // This may fail outside the extension environment or in the dev server. A default value can be set.
     extensionVersion.value = 'DEV';
   }
 
-  // 检查是否有更新
+  // Check for updates
   await checkForUpdates();
 });
 
-// API测试状态
+// API test state
 const isTestingConnection = ref(false);
 const testResult = ref<ApiTestResult | null>(null);
 let testResultTimer: number | null = null;
@@ -83,7 +83,7 @@ let testResultTimer: number | null = null;
 const testActiveApiConnection = async () => {
   if (!activeConfig.value || !activeConfig.value.config.apiKey) return;
 
-  // 清除之前的定时器
+  // Clear the previous timer
   if (testResultTimer) {
     clearTimeout(testResultTimer);
     testResultTimer = null;
@@ -97,7 +97,7 @@ const testActiveApiConnection = async () => {
       activeConfig.value,
       settings.value.apiRequestTimeout,
     );
-    // 5秒后自动清除结果
+    // Automatically clear the result after 5 seconds
     testResultTimer = window.setTimeout(() => {
       testResult.value = null;
     }, 5000);
@@ -118,15 +118,15 @@ onUnmounted(() => {
   }
 });
 
-// 设置更新状态管理
+// Settings update state management
 let debounceTimer: number;
 let isInitializing = true;
 
-// 统一的设置更新监听
+// Unified settings update watcher
 watch(
   settings,
   () => {
-    // 跳过初始化阶段的触发
+    // Skip triggers during the initialization phase
     if (isInitializing) return;
 
     clearTimeout(debounceTimer);
@@ -135,10 +135,10 @@ watch(
   { deep: true },
 );
 
-// 统一的保存和通知函数
+// Unified save and notify function
 const saveAndNotifySettings = async () => {
   try {
-    // 简化验证：确保语言设置完整
+    // Simplified validation: ensure language settings are complete
     if (
       !settings.value.multilingualConfig.targetLanguage.trim() ||
       !settings.value.multilingualConfig.nativeLanguage.trim()
@@ -185,7 +185,7 @@ const openAdvancedSettings = () => {
 
 async function checkForUpdates() {
   try {
-    // 获取存储的更新信息
+    // Get stored update info
     const updateInfo = await browser.runtime.sendMessage({
       type: 'GET_UPDATE_INFO',
     });
@@ -201,15 +201,15 @@ const showApiSettings = ref(true);
 const toggleApiSettings = () =>
   (showApiSettings.value = !showApiSettings.value);
 
-// 简化后移除智能模式相关的响应式逻辑
+// Smart-mode reactive logic removed after simplification
 
 const targetLanguageOptions = computed(() =>
   languageService.getTargetLanguageOptions(),
 );
 
-// 简化后直接使用v-model，不需要单独的事件处理函数
+// v-model is used directly after simplification, no separate event handler needed
 
-// 多配置支持
+// Multi-config support
 const activeConfig = computed(() => {
   return settings.value.apiConfigs?.find(
     (config) => config.id === settings.value.activeApiConfigId,
@@ -220,11 +220,11 @@ const handleActiveConfigChange = async () => {
   try {
     await storageService.setActiveApiConfig(settings.value.activeApiConfigId);
 
-    // 重新加载完整设置以确保同步
+    // Reload full settings to ensure sync
     const updatedSettings = await storageService.getUserSettings();
     Object.assign(settings.value, updatedSettings);
 
-    // 通知content script配置已更新
+    // Notify the content script that the config was updated
     await messagingService.notifySettingsChanged(settings.value);
   } catch (error) {
     console.error(t('settings.switchConfigFailed'), error);
@@ -273,12 +273,12 @@ const openOptionsBasePage = () => {
   browser.tabs.create({ url: 'options.html#basic' });
 };
 
-// 母语设置选项
+// Native language setting options
 const nativeLanguageOptions = computed(() =>
   languageService.getNativeLanguageOptions(),
 );
 
-// 简化后使用v-model，删除旧的事件处理函数
+// v-model is used after simplification, old event handlers removed
 </script>
 
 <template>
@@ -397,7 +397,7 @@ const nativeLanguageOptions = computed(() =>
                   {{ option.label }}
                 </option>
               </select>
-              <!-- 自定义样式提示 -->
+              <!-- Custom style hint -->
               <div
                 v-if="settings.translationStyle === 'custom'"
                 class="custom-style-tip"
@@ -465,7 +465,7 @@ const nativeLanguageOptions = computed(() =>
             </div>
           </div>
 
-          <!-- 懒加载设置 -->
+          <!-- Lazy loading settings -->
           <div class="topping-settings-card mt-3">
             <div class="setting-group">
               <label>{{ $t('lazyLoading.title') }}</label>
@@ -481,7 +481,7 @@ const nativeLanguageOptions = computed(() =>
                 </label>
               </div>
             </div>
-            <!-- 预加载距离调整 -->
+            <!-- Preload distance adjustment -->
             <div v-if="settings.lazyLoading.enabled" class="setting-group">
               <label>
                 {{ $t('lazyLoading.preloadDistance') }}:
@@ -531,7 +531,7 @@ const nativeLanguageOptions = computed(() =>
 
           <div class="api-content" v-if="showApiSettings">
             <div>
-              <!-- 配置选择下拉框 -->
+              <!-- Config selection dropdown -->
               <div class="sub-setting-group">
                 <label class="text-sm mt-2 mb-1">
                   {{ $t('api.currentConfig') }}
@@ -552,7 +552,7 @@ const nativeLanguageOptions = computed(() =>
                 </select>
               </div>
 
-              <!-- 当前配置信息显示 -->
+              <!-- Current config info display -->
               <div v-if="activeConfig" class="current-config-info">
                 <div class="config-info-item">
                   <span class="info-label">{{ $t('api.configName') }}:</span>
@@ -586,7 +586,7 @@ const nativeLanguageOptions = computed(() =>
                   </span>
                 </div>
 
-                <!-- API 连接测试 -->
+                <!-- API connection test -->
                 <div class="api-test-section">
                   <Transition name="fade">
                     <div
@@ -725,7 +725,7 @@ const nativeLanguageOptions = computed(() =>
   color: var(--text-color);
   position: relative;
   padding-bottom: 56px;
-  /* 预留footer高度，避免内容被遮挡 */
+  /* Reserve footer height to avoid content being covered */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1193,7 +1193,7 @@ footer p {
   color: var(--label-color);
 }
 
-/* 目标语言选择器动画 */
+/* Target language selector animation */
 .slide-down-enter-active,
 .slide-down-leave-active {
   transition: all 0.3s ease;
@@ -1405,7 +1405,7 @@ footer p {
   opacity: 0;
 }
 
-/* 自定义样式提示 */
+/* Custom style hint */
 .custom-style-tip {
   margin-top: 8px;
   padding: 8px 10px;
@@ -1440,7 +1440,7 @@ footer p {
   color: var(--primary-hover-color);
 }
 
-/* 母语设置样式 */
+/* Native language setting styles */
 .native-language-group {
   display: flex;
   flex-direction: column;
@@ -1514,7 +1514,7 @@ footer p {
   margin-top: 4px;
 }
 
-/* 简化提示样式 */
+/* Simplified hint styles */
 .simple-explanation {
   background: #f8f9fa;
   border: 1px solid #e9ecef;

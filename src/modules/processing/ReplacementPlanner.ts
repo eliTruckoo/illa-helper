@@ -39,7 +39,7 @@ function resolveReplacementPosition(
     return replacement;
   }
 
-  // DOM 可能在模型返回前发生轻微变化。只在原位置附近找，避免重复词被重定位到第一处。
+  // The DOM may change slightly before the model responds. Only search near the original position so repeated words are not relocated to the first occurrence.
   const nearbyStart = Math.max(0, start - replacement.original.length);
   const nearbyEnd = Math.min(
     currentText.length,

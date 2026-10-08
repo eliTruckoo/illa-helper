@@ -1,29 +1,29 @@
 /**
- * 悬浮球功能类型定义
+ * Floating ball feature type definitions
  */
 
-// 悬浮球配置接口
+// Floating ball config interface
 export interface FloatingBallConfig {
-  enabled: boolean; // 是否启用悬浮球
-  position: number; // 垂直位置百分比 (0-100)
-  opacity: number; // 透明度 (0.1-1.0)
+  enabled: boolean; // Whether the floating ball is enabled
+  position: number; // Vertical position percentage (0-100)
+  opacity: number; // Opacity (0.1-1.0)
 }
 
-// 悬浮球事件类型
+// Floating ball event type
 export type FloatingBallEventType = 'translate' | 'drag' | 'click' | 'menu';
 
-// 悬浮球操作类型
+// Floating ball action type
 export type FloatingBallActionType =
-  | 'translate' // 触发翻译
-  | 'settings' // 打开设置
-  | 'close' // 关闭悬浮球
-  | 'toggle_menu' // 切换菜单
-  | 'options'; // 打开选项
+  | 'translate' // Trigger translation
+  | 'settings' // Open settings
+  | 'close' // Close floating ball
+  | 'toggle_menu' // Toggle menu
+  | 'options'; // Open options
 
-// 悬浮球状态
+// Floating ball state
 export interface FloatingBallState {
   isDragging: boolean;
   isVisible: boolean;
-  isMenuExpanded: boolean; // 新增：菜单是否展开
+  isMenuExpanded: boolean; // Added: whether the menu is expanded
   currentPosition: number;
 }

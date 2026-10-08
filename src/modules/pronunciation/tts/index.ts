@@ -1,6 +1,6 @@
 /**
- * TTS功能模块统一导出
- * 包含TTS接口、实现类和工厂类
+ * Unified exports for the TTS module
+ * Includes the TTS interface, implementations and factory
  */
 
 export { ITTSProvider, TTSProviderConfig } from './ITTSProvider';

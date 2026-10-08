@@ -1,15 +1,15 @@
 /**
- * 共享常量定义
- * 用于统一管理跨模块使用的常量
+ * Shared constant definitions
+ * Centralizes constants used across modules
  */
 
 // ============================================================
-// DOM Walker 规则 - 统一的 DOM 遍历规则
+// DOM Walker rules - unified DOM traversal rules
 // ============================================================
 
 /**
- * 完全跳过的标签 - 不遍历、不翻译
- * 这些元素及其子树会被完全忽略
+ * Tags skipped entirely - not traversed, not translated
+ * These elements and their subtrees are ignored completely
  */
 export const SKIP_TAGS = new Set([
   'SCRIPT',
@@ -40,13 +40,13 @@ export const SKIP_TAGS = new Set([
 ]);
 
 /**
- * 不深入遍历但保留文本的标签
- * 父元素翻译时会包含这些元素的文本内容
+ * Tags that are not traversed into but whose text is preserved
+ * Their text content is included when the parent element is translated
  */
 export const ATOMIC_INLINE_TAGS = new Set(['TIME', 'ABBR']);
 
 /**
- * 强制视为块级的标签 - 无论 CSS display 如何
+ * Tags always treated as block-level - regardless of CSS display
  */
 export const FORCE_BLOCK_TAGS = new Set([
   'BODY',
@@ -89,7 +89,7 @@ export const FORCE_BLOCK_TAGS = new Set([
 ]);
 
 /**
- * DOM 标记属性名
+ * DOM marker attribute names
  */
 export const DOM_LABELS = {
   WALKED: 'data-illa-walked',
@@ -98,8 +98,8 @@ export const DOM_LABELS = {
   INLINE: 'data-illa-inline',
 } as const;
 
-// 段落翻译相关常量
+// Paragraph translation constants
 export const PARAGRAPH_TRANSLATION = {
-  // CSS类名
+  // CSS class names
   WRAPPER_CLASS: 'illa-paragraph-translation',
 };

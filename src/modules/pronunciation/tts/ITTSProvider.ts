@@ -1,54 +1,54 @@
 /**
- * TTS提供者接口
- * 定义统一的文本转语音服务规范
+ * TTS provider interface
+ * Defines the unified text-to-speech service contract
  */
 
 import { TTSResult } from '../types';
 
 export interface TTSProviderConfig {
-  // Web Speech API配置
+  // Web Speech API configuration
   lang?: string;
   voice?: string;
   rate?: number;
   pitch?: number;
   volume?: number;
 
-  // 有道TTS配置
-  accent?: 'us' | 'uk'; // 美式或英式发音
+  // Youdao TTS configuration
+  accent?: 'us' | 'uk'; // US or UK pronunciation
 }
 
 export interface ITTSProvider {
   readonly name: string;
 
   /**
-   * 朗读文本
-   * @param text 要朗读的文本
-   * @param config 可选的配置覆盖
+   * Read text aloud
+   * @param text Text to read aloud
+   * @param config Optional configuration override
    */
   speak(text: string, config?: Partial<TTSProviderConfig>): Promise<TTSResult>;
 
   /**
-   * 停止朗读
+   * Stop reading aloud
    */
   stop(): void;
 
   /**
-   * 检查是否正在朗读
+   * Check whether reading aloud is in progress
    */
   isSpeaking(): boolean;
 
   /**
-   * 检查TTS是否可用
+   * Check whether TTS is available
    */
   isAvailable(): boolean;
 
   /**
-   * 更新配置
+   * Update configuration
    */
   updateConfig(config: Partial<TTSProviderConfig>): void;
 
   /**
-   * 获取当前配置
+   * Get the current configuration
    */
   getConfig(): TTSProviderConfig;
 }

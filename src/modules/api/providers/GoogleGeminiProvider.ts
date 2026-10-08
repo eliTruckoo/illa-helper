@@ -1,5 +1,5 @@
 /**
- * Google Gemini 翻译提供者
+ * Google Gemini translation provider
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -15,7 +15,7 @@ import { StructuredTextParser } from '../utils/structuredTextParser';
 import { languageService } from '../../core/translation/LanguageService';
 
 /**
- * Google Gemini API 提供者实现
+ * Google Gemini API provider implementation
  */
 export class GoogleGeminiProvider extends BaseProvider {
   protected getProviderName(): string {
@@ -28,21 +28,21 @@ export class GoogleGeminiProvider extends BaseProvider {
   ): Promise<FullTextAnalysisResponse> {
     const genAI = new GoogleGenerativeAI(this.config.apiKey);
 
-    // 基础生成配置
+    // Base generation config
     const baseGenerationConfig: any = {
       temperature: this.config.temperature,
     };
 
-    // 从 customParams 合并额外参数
+    // Merge extra parameters from customParams
     let generationConfig = mergeCustomParams(
       baseGenerationConfig,
       this.config.customParams,
     );
 
-    // 适配参数
+    // Adapt parameters
     generationConfig = mapParamsForProvider(generationConfig, 'gemini');
 
-    // 请求选项，如超时和代理端点
+    // Request options, such as timeout and proxy endpoint
     const requestOptions: { timeout?: number; baseUrl?: string } = {};
     const timeout = getApiTimeout(settings.apiRequestTimeout);
     if (timeout) {
@@ -79,12 +79,14 @@ export class GoogleGeminiProvider extends BaseProvider {
     const response = result.response;
     const responseText = response.text();
 
-    // 使用结构化文本解析器
+    // Use the structured text parser
     const parseResult = StructuredTextParser.parse(responseText);
 
     if (!parseResult.success) {
-      console.error('[Gemini] 解析失败:', parseResult.errors);
-      throw new Error(`结构化文本解析失败: ${parseResult.errors.join(', ')}`);
+      console.error('[Gemini] Parsing failed:', parseResult.errors);
+      throw new Error(
+        `Structured text parsing failed: ${parseResult.errors.join(', ')}`,
+      );
     }
 
     const replacements = addPositionsToReplacements(

@@ -1,6 +1,6 @@
 /**
- * TTS提供者工厂
- * 负责创建和管理不同的TTS提供者实例
+ * TTS provider factory
+ * Creates and manages different TTS provider instances
  */
 
 import { ITTSProvider, TTSProviderConfig } from './ITTSProvider';
@@ -10,10 +10,10 @@ import { TTSProviderType } from '../types';
 
 export class TTSProviderFactory {
   /**
-   * 创建TTS提供者实例
-   * @param providerType 提供者类型
-   * @param config 配置参数
-   * @returns TTS提供者实例
+   * Create a TTS provider instance
+   * @param providerType provider type
+   * @param config configuration parameters
+   * @returns TTS provider instance
    */
   static createProvider(
     providerType: TTSProviderType,
@@ -27,20 +27,20 @@ export class TTSProviderFactory {
         return new YoudaoTTSProvider(config);
 
       default:
-        throw new Error(`不支持的TTS提供者类型: ${providerType}`);
+        throw new Error(`Unsupported TTS provider type: ${providerType}`);
     }
   }
 
   /**
-   * 获取所有支持的提供者类型
+   * Get all supported provider types
    */
   static getSupportedProviders(): TTSProviderType[] {
     return ['web-speech', 'youdao'];
   }
 
   /**
-   * 检查提供者类型是否支持
-   * @param providerType 提供者类型
+   * Check whether the provider type is supported
+   * @param providerType provider type
    */
   static isProviderSupported(
     providerType: string,
@@ -51,26 +51,28 @@ export class TTSProviderFactory {
   }
 
   /**
-   * 获取提供者的显示名称
-   * @param providerType 提供者类型
+   * Get the display name of the provider
+   * @param providerType provider type
    */
   static getProviderDisplayName(providerType: TTSProviderType): string {
     const displayNames: Record<TTSProviderType, string> = {
-      'web-speech': '浏览器语音',
-      youdao: '有道词典',
+      'web-speech': 'Browser Speech',
+      youdao: 'Youdao Dictionary',
     };
 
     return displayNames[providerType] || providerType;
   }
 
   /**
-   * 获取提供者的描述
-   * @param providerType 提供者类型
+   * Get the description of the provider
+   * @param providerType provider type
    */
   static getProviderDescription(providerType: TTSProviderType): string {
     const descriptions: Record<TTSProviderType, string> = {
-      'web-speech': '使用浏览器内置的语音合成功能，支持多种语言和语音',
-      youdao: '使用有道词典的在线语音服务，支持美式和英式发音',
+      'web-speech':
+        'Uses the browser built-in speech synthesis, supporting multiple languages and voices',
+      youdao:
+        'Uses the Youdao Dictionary online speech service, supporting American and British pronunciation',
     };
 
     return descriptions[providerType] || '';

@@ -1,13 +1,13 @@
 <template>
   <div class="space-y-2">
-    <!-- 分组标题 -->
+    <!-- Group title -->
     <h3
       class="text-xs font-medium text-sidebar-foreground/60 uppercase tracking-wider px-2 py-1"
     >
       {{ title }}
     </h3>
 
-    <!-- 菜单项列表 -->
+    <!-- Menu item list -->
     <div class="space-y-1">
       <NavigationItem
         v-for="item in items"
@@ -64,7 +64,7 @@ const handleItemClick = (section: string) => {
 </script>
 
 <style scoped>
-/* 移动端优化样式 */
+/* Mobile optimization styles */
 @media (max-width: 767px) {
   h3 {
     margin-top: 8px;

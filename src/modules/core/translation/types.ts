@@ -1,6 +1,6 @@
 /**
- * 翻译服务核心类型定义
- * 包含文本替换、处理、提示词管理和语言管理相关的类型
+ * Core type definitions for the translation services
+ * Includes types for text replacement, processing, prompt management and language management
  */
 
 import {
@@ -18,14 +18,14 @@ import {
   TranslationStyle,
 } from '../../shared/types/core';
 
-// ==================== 文本替换服务类型 ====================
+// ==================== Text replacer service types ====================
 
 /**
- * 替换结果接口
+ * Replacement result interface
  */
 export interface ReplacementResult {
-  original: string; // 原始文本
-  replaced: string; // 替换后的文本
+  original: string; // Original text
+  replaced: string; // Replaced text
   replacedWords: Array<{
     chinese: string;
     english: string;
@@ -33,12 +33,12 @@ export interface ReplacementResult {
       start: number;
       end: number;
     };
-    isNew: boolean; // 是否是生词
+    isNew: boolean; // Whether it is a new word
   }>;
 }
 
 /**
- * 缓存键接口 - 简化版本
+ * Cache key interface - simplified
  */
 export interface CacheKey {
   text: string;
@@ -49,16 +49,16 @@ export interface CacheKey {
 }
 
 /**
- * 缓存统计信息
+ * Cache statistics
  */
 export interface CacheStats {
   cacheSize: number;
 }
 
-// ==================== 文本处理服务类型 ====================
+// ==================== Text processor service types ====================
 
 /**
- * 内容分段配置
+ * Content segmentation configuration
  */
 export interface SegmentConfig {
   maxSegmentLength: number;
@@ -67,17 +67,17 @@ export interface SegmentConfig {
 }
 
 /**
- * 处理统计信息
+ * Processing statistics
  */
 export interface ProcessingStats {
-  coordinator: any; // 协调器统计
-  global: any; // 全局统计
+  coordinator: any; // Coordinator statistics
+  global: any; // Global statistics
 }
 
-// ==================== 提示词服务类型 ====================
+// ==================== Prompt service types ====================
 
 /**
- * 提示词配置接口 - 简化版本
+ * Prompt configuration interface - simplified
  */
 export interface PromptConfig {
   targetLanguage: string;
@@ -86,7 +86,7 @@ export interface PromptConfig {
 }
 
 /**
- * 提示词生成选项
+ * Prompt generation options
  */
 export interface PromptOptions {
   isTraditional?: boolean;
@@ -94,22 +94,22 @@ export interface PromptOptions {
   customInstructions?: string;
 }
 
-// ==================== 语言服务类型 ====================
+// ==================== Language service types ====================
 
 /**
- * 语言信息接口
+ * Language info interface
  */
 export interface Language {
   code: string; // e.g., 'en', 'zh', 'ja'
   name: string; // e.g., 'English', 'Chinese', 'Japanese'
-  nativeName: string; // e.g., 'English', '中文', '日本語'
-  isPopular?: boolean; // 标记常用语言
+  nativeName: string; // e.g., 'English', 'Chinese', 'Japanese'
+  isPopular?: boolean; // Marks commonly used languages
 }
 
-// ==================== 服务基类类型 ====================
+// ==================== Service base class types ====================
 
 /**
- * 服务基类配置
+ * Service base class configuration
  */
 export interface ServiceConfig {
   enableLogging?: boolean;
@@ -118,7 +118,7 @@ export interface ServiceConfig {
 }
 
 /**
- * 服务初始化选项
+ * Service initialization options
  */
 export interface ServiceInitOptions {
   apiConfig?: ApiConfig;
@@ -126,10 +126,10 @@ export interface ServiceInitOptions {
   customConfig?: Record<string, any>;
 }
 
-// ==================== 翻译流程类型 ====================
+// ==================== Translation flow types ====================
 
 /**
- * 翻译处理上下文
+ * Translation processing context
  */
 export interface TranslationContext {
   text: string;
@@ -142,7 +142,7 @@ export interface TranslationContext {
 }
 
 /**
- * 翻译处理结果
+ * Translation processing result
  */
 export interface TranslationProcessResult {
   success: boolean;
@@ -151,7 +151,7 @@ export interface TranslationProcessResult {
   fromCache?: boolean;
 }
 
-// ==================== 导出汇总 ====================
+// ==================== Export summary ====================
 
 export type {
   UserSettings,

@@ -1,12 +1,12 @@
 /**
- * API模块类型定义
+ * API module type definitions
  */
 
 import { FullTextAnalysisResponse } from '../shared/types/api';
 import { UserSettings } from '../shared/types/storage';
 
 /**
- * 翻译提供者接口
+ * Translation provider interface
  */
 export interface ITranslationProvider {
   analyzeFullText(
@@ -16,7 +16,7 @@ export interface ITranslationProvider {
 }
 
 /**
- * API请求配置
+ * API request configuration
  */
 export interface ApiRequestConfig {
   url: string;
@@ -27,7 +27,7 @@ export interface ApiRequestConfig {
 }
 
 /**
- * 后台代理响应
+ * Background proxy response
  */
 export interface BackgroundProxyResponse {
   success: boolean;

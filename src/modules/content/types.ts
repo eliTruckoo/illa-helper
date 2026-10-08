@@ -12,7 +12,7 @@ import { FloatingBallManager } from '@/src/modules/floatingBall';
 import { LazyLoadingService } from './services/LazyLoadingService';
 
 /**
- * Content Script 主服务接口
+ * Content Script main service interface
  */
 export interface IContentManager {
   init(): Promise<void>;
@@ -20,7 +20,7 @@ export interface IContentManager {
 }
 
 /**
- * 配置服务接口
+ * Configuration service interface
  */
 export interface IConfigurationService {
   getUserSettings(): Promise<UserSettings>;
@@ -37,7 +37,7 @@ export interface IConfigurationService {
 }
 
 /**
- * 处理服务接口
+ * Processing service interface
  */
 export interface IProcessingService {
   processPage(): Promise<void>;
@@ -45,7 +45,7 @@ export interface IProcessingService {
 }
 
 /**
- * 监听器服务接口
+ * Listener service interface
  */
 export interface IListenerService {
   setupMessageListeners(): void;
@@ -54,7 +54,7 @@ export interface IListenerService {
 }
 
 /**
- * 服务容器类型
+ * Service container type
  */
 export interface ServiceContainer {
   styleManager: StyleManager;
@@ -66,7 +66,7 @@ export interface ServiceContainer {
 }
 
 /**
- * 处理参数类型
+ * Processing parameter type
  */
 export interface ProcessingParams {
   originalWordDisplayMode: OriginalWordDisplayMode;

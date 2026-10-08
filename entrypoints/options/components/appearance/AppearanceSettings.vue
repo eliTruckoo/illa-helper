@@ -64,7 +64,7 @@
       </CardContent>
     </Card>
 
-    <!-- 悬浮词义框设置 -->
+    <!-- Tooltip definition settings -->
     <Card>
       <CardHeader>
         <CardTitle>
@@ -90,7 +90,7 @@
           />
         </div>
 
-        <!-- 快捷键设置 -->
+        <!-- Hotkey settings -->
         <div
           v-if="settings.enablePronunciationTooltip"
           class="flex items-center justify-between"

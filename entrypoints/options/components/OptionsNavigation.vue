@@ -3,7 +3,7 @@
     class="navigation-container"
     :class="{ mobile: isMobile, 'menu-open': mobileMenuOpen }"
   >
-    <!-- 移动端菜单按钮 -->
+    <!-- Mobile menu button -->
     <div v-if="isMobile" class="mobile-menu-button" @click="toggleMobileMenu">
       <div class="hamburger" :class="{ active: mobileMenuOpen }">
         <span></span>
@@ -16,7 +16,7 @@
       class="navigation-content"
       :class="{ mobile: isMobile, 'menu-open': mobileMenuOpen }"
     >
-      <!-- 顶部Logo区域 -->
+      <!-- Top logo area -->
       <div class="h-16 flex items-center px-6 border-b border-sidebar-border">
         <div
           class="flex items-center space-x-3 cursor-pointer"
@@ -30,7 +30,7 @@
               {{ $t('options.title') }}
             </h4>
           </div>
-          <!-- 移动端关闭按钮 -->
+          <!-- Mobile close button -->
           <button
             v-if="isMobile"
             @click="toggleMobileMenu"
@@ -54,10 +54,10 @@
         </div>
       </div>
 
-      <!-- 导航菜单 -->
+      <!-- Navigation menu -->
       <nav class="flex-1 px-4 py-6 overflow-y-auto">
         <div class="space-y-6">
-          <!-- 基础功能组 -->
+          <!-- Basic features group -->
           <NavigationGroup
             :title="$t('options.basicFunctions')"
             :items="basicFeatures"
@@ -65,7 +65,7 @@
             @section-change="handleSectionChange"
           />
 
-          <!-- 高级功能组 -->
+          <!-- Advanced features group -->
           <NavigationGroup
             :title="$t('options.advancedFunctions')"
             :items="advancedFeatures"
@@ -73,7 +73,7 @@
             @section-change="handleSectionChange"
           />
 
-          <!-- 管理工具组 -->
+          <!-- Management tools group -->
           <NavigationGroup
             :title="$t('options.managementTools')"
             :items="managementTools"
@@ -84,7 +84,7 @@
       </nav>
     </div>
 
-    <!-- 移动端背景遮罩 -->
+    <!-- Mobile background overlay -->
     <div
       v-if="isMobile && mobileMenuOpen"
       class="mobile-overlay"
@@ -126,11 +126,11 @@ const emit = defineEmits<{
   sectionChange: [section: string];
 }>();
 
-// 移动端适配相关状态
+// Mobile adaptation state
 const isMobile = ref(false);
 const mobileMenuOpen = ref(false);
 
-// 基础功能组
+// Basic features group
 const basicFeatures = computed<NavigationItem[]>(() => [
   {
     key: 'basic',
@@ -152,7 +152,7 @@ const basicFeatures = computed<NavigationItem[]>(() => [
   },
 ]);
 
-// 高级功能组
+// Advanced features group
 const advancedFeatures = computed<NavigationItem[]>(() => [
   {
     key: 'translation',
@@ -162,7 +162,7 @@ const advancedFeatures = computed<NavigationItem[]>(() => [
   },
 ]);
 
-// 管理工具组
+// Management tools group
 const managementTools = computed<NavigationItem[]>(() => [
   {
     key: 'website-management',
@@ -188,16 +188,16 @@ const handleLogoClick = () => {
   window.open('https://illa.xlike.cc', '_blank');
 };
 
-// 检查设备是否为移动端
+// Check whether the device is mobile
 const checkIfMobile = () => {
   isMobile.value = window.innerWidth < 768;
 };
 
-// 切换移动端菜单显示状态
+// Toggle mobile menu visibility
 const toggleMobileMenu = () => {
   mobileMenuOpen.value = !mobileMenuOpen.value;
 
-  // 如果菜单打开，禁止背景滚动
+  // If the menu is open, prevent background scrolling
   if (mobileMenuOpen.value) {
     document.body.style.overflow = 'hidden';
   } else {
@@ -205,7 +205,7 @@ const toggleMobileMenu = () => {
   }
 };
 
-// 监听窗口大小变化
+// Listen for window resize
 onMounted(() => {
   checkIfMobile();
   window.addEventListener('resize', checkIfMobile);
@@ -213,11 +213,11 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', checkIfMobile);
-  // 确保恢复原始状态
+  // Ensure the original state is restored
   document.body.style.overflow = '';
 });
 
-// 监视currentSection变化，在移动端自动关闭菜单
+// Watch currentSection changes and auto-close the menu on mobile
 watch(
   () => props.currentSection,
   () => {
@@ -230,7 +230,7 @@ watch(
 
 const handleSectionChange = (section: string) => {
   emit('sectionChange', section);
-  // 在移动设备上点击导航项后关闭菜单
+  // Close the menu after tapping a nav item on mobile
   if (isMobile.value) {
     mobileMenuOpen.value = false;
     document.body.style.overflow = '';
@@ -248,7 +248,7 @@ const handleSectionChange = (section: string) => {
   transition: all 0.3s ease;
 }
 
-/* 移动端样式 */
+/* Mobile styles */
 .navigation-container.mobile {
   width: 0;
   border: none;
@@ -280,7 +280,7 @@ const handleSectionChange = (section: string) => {
   box-shadow: 4px 0 10px rgba(0, 0, 0, 0.1);
 }
 
-/* 汉堡菜单按钮 */
+/* Hamburger menu button */
 .mobile-menu-button {
   position: fixed;
   top: 12px;
@@ -326,7 +326,7 @@ const handleSectionChange = (section: string) => {
   transform: translateY(-7px) rotate(-45deg);
 }
 
-/* 背景遮罩 */
+/* Background overlay */
 .mobile-overlay {
   position: fixed;
   top: 0;

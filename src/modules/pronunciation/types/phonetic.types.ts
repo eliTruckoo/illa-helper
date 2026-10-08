@@ -1,116 +1,116 @@
 /**
- * 音标相关类型定义
+ * Phonetic type definitions
  */
 
 /**
- * 音标信息接口
- * 包含单词的音标、词义和AI翻译等完整信息
+ * Phonetic information interface
+ * Contains complete information for a word, including phonetics, meanings and AI translation
  */
 export interface PhoneticInfo {
-  /** 单词文本 */
+  /** Word text */
   word: string;
-  /** 音标条目数组 */
+  /** Array of phonetic entries */
   phonetics: PhoneticEntry[];
-  /** 词义条目数组（可选） */
+  /** Array of meaning entries (optional) */
   meanings?: MeaningEntry[];
-  /** AI翻译释义（可选） */
+  /** AI translation definition (optional) */
   aiTranslation?: AITranslationEntry;
-  /** 错误状态信息（可选） */
+  /** Error state information (optional) */
   error?: {
-    /** 是否有音标获取错误 */
+    /** Whether there was a phonetic fetch error */
     hasPhoneticError: boolean;
-    /** 音标错误信息 */
+    /** Phonetic error message */
     phoneticErrorMessage?: string;
   };
 }
 
 /**
- * 音标条目接口
- * 包含音标的文本、音频和来源信息
+ * Phonetic entry interface
+ * Contains the phonetic text, audio and source information
  */
 export interface PhoneticEntry {
-  /** 音标文本 (如: /ˈhɛloʊ/) */
+  /** Phonetic text (e.g.: /ˈhɛloʊ/) */
   text?: string;
-  /** 音频文件URL */
+  /** Audio file URL */
   audio?: string;
-  /** 数据来源URL */
+  /** Data source URL */
   sourceUrl?: string;
 }
 
 /**
- * 词义条目接口
- * 包含词性和定义信息
+ * Meaning entry interface
+ * Contains part of speech and definition information
  */
 export interface MeaningEntry {
-  /** 词性 */
+  /** Part of speech */
   partOfSpeech: string;
-  /** 定义条目数组 */
+  /** Array of definition entries */
   definitions: DefinitionEntry[];
 }
 
 /**
- * 定义条目接口
- * 包含具体的词义定义、例句和同义词
+ * Definition entry interface
+ * Contains the concrete definition, example sentence and synonyms
  */
 export interface DefinitionEntry {
-  /** 词义定义 */
+  /** Definition */
   definition: string;
-  /** 使用例句（可选） */
+  /** Example sentence (optional) */
   example?: string;
-  /** 同义词数组（可选） */
+  /** Array of synonyms (optional) */
   synonyms?: string[];
 }
 
 /**
- * 音标获取结果接口
- * 包含音标查询操作的完整结果信息
+ * Phonetic fetch result interface
+ * Contains the complete result of a phonetic lookup
  */
 export interface PhoneticResult {
-  /** 操作是否成功 */
+  /** Whether the operation succeeded */
   success: boolean;
-  /** 音标数据（成功时返回） */
+  /** Phonetic data (returned on success) */
   data?: PhoneticInfo;
-  /** 错误信息（失败时返回） */
+  /** Error message (returned on failure) */
   error?: string;
-  /** 是否来自缓存 */
+  /** Whether the result came from cache */
   cached?: boolean;
 }
 
 /**
- * 缓存条目接口
- * 用于实现带有TTL的内存缓存
+ * Cache entry interface
+ * Used to implement an in-memory cache with TTL
  */
 export interface CacheEntry<T> {
-  /** 缓存的数据 */
+  /** Cached data */
   data: T;
-  /** 缓存创建时间戳 */
+  /** Cache creation timestamp */
   timestamp: number;
-  /** 生存时间（毫秒） */
+  /** Time to live (milliseconds) */
   ttl: number;
 }
 
 /**
- * AI翻译条目接口
- * 包含AI翻译的词义解释和来源信息
+ * AI translation entry interface
+ * Contains the AI-translated meaning explanation and source information
  */
 export interface AITranslationEntry {
-  /** 词义解释文本 */
+  /** Meaning explanation text */
   explain: string;
-  /** 翻译来源标识 */
+  /** Translation source identifier */
   source: string;
 }
 
 /**
- * AI翻译结果接口
- * 包含翻译操作的结果状态和数据
+ * AI translation result interface
+ * Contains the status and data of a translation operation
  */
 export interface AITranslationResult {
-  /** 操作是否成功 */
+  /** Whether the operation succeeded */
   success: boolean;
-  /** 翻译数据（成功时返回） */
+  /** Translation data (returned on success) */
   data?: AITranslationEntry;
-  /** 错误信息（失败时返回） */
+  /** Error message (returned on failure) */
   error?: string;
-  /** 是否来自缓存 */
+  /** Whether the result came from cache */
   cached?: boolean;
 }

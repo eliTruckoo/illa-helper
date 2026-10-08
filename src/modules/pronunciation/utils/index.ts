@@ -1,5 +1,5 @@
 /**
- * 工具类模块统一导出
+ * Utility module unified exports
  */
 
 export * from './TimerManager';

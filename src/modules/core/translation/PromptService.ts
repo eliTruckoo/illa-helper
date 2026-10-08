@@ -3,7 +3,7 @@ import { PromptConfig } from './types';
 import { languageService } from './LanguageService';
 
 /**
- * 提示词服务 - 单例模式
+ * Prompt service - singleton
  */
 export class PromptService {
   private static instance: PromptService;
@@ -18,16 +18,16 @@ export class PromptService {
   }
 
   /**
-   * 生成统一提示词 - 精简版
+   * Generate the unified prompt - condensed version
    */
   public getUnifiedPrompt(config: PromptConfig): string {
     const { targetLanguage, userLevel, replacementRate } = config;
 
     const components = [
-      this.generateBaseInstruction(), // 保持，但稍精简
-      this.generateTaskAndRules(targetLanguage), // 新合并：任务+规则
-      this.generateUserConfig(userLevel, replacementRate), // 新合并：水平+比例
-      this.generateFormatRequirements(), // 强化强调
+      this.generateBaseInstruction(), // kept, slightly condensed
+      this.generateTaskAndRules(targetLanguage), // merged: task + rules
+      this.generateUserConfig(userLevel, replacementRate), // merged: level + ratio
+      this.generateFormatRequirements(), // emphasis strengthened
       this.generateExamples(targetLanguage, replacementRate),
     ].filter((component) => component.trim() !== '');
 
@@ -35,14 +35,14 @@ export class PromptService {
   }
 
   /**
-   * 基础指令 - 精简
+   * Base instruction - condensed
    */
   private generateBaseInstruction(): string {
     return 'You are an AI translator for language learners. Strictly follow instructions: select suitable words/phrases from input text based on user level and ratio, then output ONLY their translations in the specified format. No extra text allowed.';
   }
 
   /**
-   * 任务与规则 - 合并简化，澄清冲突
+   * Task and rules - merged and simplified, conflicts clarified
    */
   private generateTaskAndRules(targetLanguage: string): string {
     const langName =
@@ -60,7 +60,7 @@ export class PromptService {
   }
 
   /**
-   * 用户配置 - 合并水平与比例，添加指导
+   * User config - level and ratio merged, guidance added
    */
   private generateUserConfig(
     userLevel: UserLevel,
@@ -78,7 +78,7 @@ export class PromptService {
     let ratioPart = '';
     if (replacementRate > 0 && replacementRate <= 1) {
       const percentage = Math.round(replacementRate * 100);
-      const lower = Math.max(0, percentage - 3); // 缩小波动范围，提升一致性
+      const lower = Math.max(0, percentage - 3); // narrow the fluctuation range for better consistency
       const upper = Math.min(100, percentage + 3);
       ratioPart = `Select at most ~${percentage}% of the eligible words/phrases (${lower}%-${upper}% range). This is a hard upper bound: if unsure, output fewer items, not more. Focus on quality over quota; choose natural whole words/phrases.`;
     }
@@ -88,14 +88,14 @@ ${ratioPart}`.trim();
   }
 
   /**
-   * 格式要求 - 强化强调
+   * Format requirements - emphasis strengthened
    */
   private generateFormatRequirements(): string {
     return `MANDATORY FORMAT: Output ONLY lines of "original||translation". One per line. No JSON, quotes, extras, or other formats. Violating this will fail the task.`;
   }
 
   /**
-   * 示例 - 增加2个，覆盖场景
+   * Examples - 2 added to cover more scenarios
    */
   private generateExamples(
     targetLanguage: string,
@@ -117,7 +117,7 @@ ${ratioPart}`.trim();
   }
 }
 
-// ==================== 导出 ====================
+// ==================== Exports ====================
 
 export const promptService = PromptService.getInstance();
 

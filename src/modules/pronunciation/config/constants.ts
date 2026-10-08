@@ -1,8 +1,8 @@
 /**
- * 发音模块常量定义
+ * Pronunciation module constants
  */
 
-// UI相关常量
+// UI-related constants
 export const UI_CONSTANTS = {
   TOOLTIP_Z_INDEX: 10000,
   WORD_TOOLTIP_Z_INDEX: 10001,
@@ -10,15 +10,15 @@ export const UI_CONSTANTS = {
   TOOLTIP_ARROW_SIZE: 8,
 } as const;
 
-// 定时器相关常量
+// Timer-related constants
 export const TIMER_CONSTANTS = {
-  SHOW_DELAY: 300, // 显示延迟（毫秒）
-  HIDE_DELAY: 600, // 隐藏延迟（毫秒）
-  WORD_SHOW_DELAY: 100, // 单词悬浮框显示延迟（毫秒）
-  YOUDAO_TIMEOUT: 10000, // 有道TTS超时时间（毫秒）
+  SHOW_DELAY: 300, // Show delay (ms)
+  HIDE_DELAY: 600, // Hide delay (ms)
+  WORD_SHOW_DELAY: 100, // Word tooltip show delay (ms)
+  YOUDAO_TIMEOUT: 10000, // Youdao TTS timeout (ms)
 } as const;
 
-// CSS类名常量
+// CSS class name constants
 export const CSS_CLASSES = {
   PRONUNCIATION_ENABLED: 'wxt-pronunciation-enabled',
   PRONUNCIATION_LOADING: 'wxt-pronunciation-loading',
@@ -26,21 +26,21 @@ export const CSS_CLASSES = {
   PRONUNCIATION_TOOLTIP: 'wxt-pronunciation-tooltip',
   WORD_TOOLTIP: 'wxt-word-tooltip',
   INTERACTIVE_WORD: 'wxt-interactive-word',
-  MEANING_CONTAINER: 'wxt-meaning-container', // 新增：词义容器
-  MEANING_TEXT: 'wxt-meaning-text', // 新增：词义文本
-  MEANING_LOADING: 'wxt-meaning-loading', // 新增：词义加载状态
-  PHONETIC_LOADING: 'wxt-phonetic-loading', // 新增：音标加载状态
+  MEANING_CONTAINER: 'wxt-meaning-container', // Added: meaning container
+  MEANING_TEXT: 'wxt-meaning-text', // Added: meaning text
+  MEANING_LOADING: 'wxt-meaning-loading', // Added: meaning loading state
+  PHONETIC_LOADING: 'wxt-phonetic-loading', // Added: phonetic loading state
 } as const;
 
-// SVG图标常量
+// SVG icon constants
 export const SVG_ICONS = {
   SPEAKER: `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`,
   SPEAKER_SMALL: `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`,
 } as const;
 
-// API相关常量
+// API-related constants
 export const API_CONSTANTS = {
   YOUDAO_TTS_BASE_URL: 'https://dict.youdao.com/dictvoice',
   DICTIONARY_API_BASE_URL: 'https://api.dictionaryapi.dev/api/v2/entries/en/',
-  AI_TRANSLATION_CACHE_TTL: 86400000, // AI翻译缓存24小时
+  AI_TRANSLATION_CACHE_TTL: 86400000, // AI translation cache: 24 hours
 } as const;

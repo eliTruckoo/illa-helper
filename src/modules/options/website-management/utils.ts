@@ -1,80 +1,80 @@
 /**
- * 网站管理工具函数
- * 提供URL模式生成和域名提取功能
+ * Website management utility functions
+ * Provides URL pattern generation and domain extraction
  */
 
 /**
- * 从URL中提取域名
- * @param url 完整的URL
- * @returns 提取的域名，如果解析失败则返回原URL
+ * Extract the domain from a URL
+ * @param url full URL
+ * @returns the extracted domain, or the original URL if parsing fails
  */
 export function extractDomain(url: string): string {
   try {
     const urlObj = new URL(url);
     return urlObj.hostname;
   } catch (error) {
-    console.warn('URL解析失败，使用原URL:', url, error);
-    // 降级处理：尝试从字符串中提取域名
+    console.warn('URL parsing failed, using original URL:', url, error);
+    // Fallback: try to extract the domain from the string
     const match = url.match(/(?:https?:\/\/)?(?:www\.)?([^\/]+)/);
     return match ? match[1] : url;
   }
 }
 
 /**
- * 生成域名模式（通配符模式）
- * @param domain 域名
- * @returns 域名模式，格式为 *://example.com/*
+ * Generate a domain pattern (wildcard pattern)
+ * @param domain domain
+ * @returns domain pattern in the format *://example.com/*
  */
 export function generateDomainPattern(domain: string): string {
-  // 移除可能的www前缀
+  // Remove a possible www prefix
   const cleanDomain = domain.replace(/^www\./, '');
   return `*://${cleanDomain}/*`;
 }
 
 /**
- * 生成精确URL模式
- * @param url 完整URL
- * @returns 精确URL模式
+ * Generate an exact URL pattern
+ * @param url full URL
+ * @returns exact URL pattern
  */
 export function generateExactPattern(url: string): string {
   try {
     const urlObj = new URL(url);
-    // 移除可能的查询参数和片段，保留路径，并添加通配符以匹配该路径下的所有内容
+    // Strip any query parameters and fragment, keep the path, and add a wildcard to match everything under that path
     const basePath = urlObj.pathname.endsWith('/')
       ? urlObj.pathname
       : `${urlObj.pathname}*`;
     return `${urlObj.protocol}//${urlObj.host}${basePath}`;
   } catch (error) {
-    console.warn('URL解析失败，使用原URL:', url, error);
+    console.warn('URL parsing failed, using original URL:', url, error);
     return url;
   }
 }
 
 /**
- * 生成友好的规则描述
- * @param pattern URL模式
- * @param type 规则类型
- * @returns 描述字符串
+ * Generate a friendly rule description
+ * @param pattern URL pattern
+ * @param type rule type
+ * @returns description string
  */
 export function generateRuleDescription(
   pattern: string,
   type: 'blacklist' | 'whitelist',
 ): string {
-  const typeText = type === 'blacklist' ? '黑名单' : '白名单';
+  const typeText = type === 'blacklist' ? 'Blacklist' : 'Whitelist';
 
   if (pattern.includes('*://') && pattern.endsWith('/*')) {
-    // 域名模式 *://example.com/*
+    // Domain pattern *://example.com/*
     const domain = pattern.replace(/^\*:\/\//, '').replace(/\/\*$/, '');
-    return `${typeText} - 域名: ${domain}`;
+    return `${typeText} - Domain: ${domain}`;
   } else {
-    return `${typeText} - 页面: ${pattern}`;
+    return `${typeText} - Page: ${pattern}`;
   }
 }
 
 /**
- * 判断URL是否为特殊协议或本地地址
- * @param url URL字符串
- * @returns 是否为特殊地址
+ * Determine whether a URL uses a special protocol or is a local address
+ * @param url URL string
+ * @returns whether it is a special address
  */
 export function isSpecialUrl(url: string): boolean {
   const specialProtocols = [
@@ -93,26 +93,30 @@ export function isSpecialUrl(url: string): boolean {
 }
 
 /**
- * 验证URL是否可以添加到规则中
- * @param url URL字符串
- * @returns 验证结果和错误信息
+ * Validate whether a URL can be added to the rules
+ * @param url URL string
+ * @returns validation result and error message
  */
 export function validateUrlForRule(url: string): {
   valid: boolean;
   error?: string;
 } {
   if (!url || url.trim() === '') {
-    return { valid: false, error: 'URL不能为空' };
+    return { valid: false, error: 'URL cannot be empty' };
   }
 
   if (isSpecialUrl(url)) {
-    return { valid: false, error: '无法为浏览器内部页面或本地地址创建规则' };
+    return {
+      valid: false,
+      error:
+        'Cannot create a rule for browser internal pages or local addresses',
+    };
   }
 
   try {
     new URL(url);
     return { valid: true };
   } catch (_) {
-    return { valid: false, error: 'URL格式无效' };
+    return { valid: false, error: 'Invalid URL format' };
   }
 }

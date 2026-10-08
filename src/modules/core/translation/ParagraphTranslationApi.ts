@@ -1,8 +1,8 @@
 /**
- * 段落翻译API服务
+ * Paragraph translation API service
  *
- * 复用项目现有的UniversalApiService架构，专门用于段落级别的完整翻译
- * 与单词替换API不同，这个服务使用简单的翻译prompt
+ * Reuses the existing UniversalApiService architecture, dedicated to full paragraph-level translation.
+ * Unlike the word replacement API, this service uses a simple translation prompt.
  */
 
 import { callAI } from '../../api/services/UniversalApiService';
@@ -11,7 +11,7 @@ import { languageService } from './LanguageService';
 import { cleanParagraphTranslationResult } from './ParagraphTranslationResult';
 
 /**
- * 段落翻译prompt模板
+ * Paragraph translation prompt template
  */
 const PARAGRAPH_TRANSLATION_PROMPT = `You are a professional translator. Translate the following text to {{targetLang}}. 
 
@@ -25,7 +25,7 @@ Text to translate:
 {{input}}`;
 
 /**
- * 段落翻译API服务类
+ * Paragraph translation API service class
  */
 export class ParagraphTranslationApi {
   private static instance: ParagraphTranslationApi | null = null;
@@ -36,7 +36,7 @@ export class ParagraphTranslationApi {
   }
 
   /**
-   * 获取服务实例（单例模式）
+   * Get the service instance (singleton)
    */
   public static getInstance(): ParagraphTranslationApi {
     if (!ParagraphTranslationApi.instance) {
@@ -46,10 +46,10 @@ export class ParagraphTranslationApi {
   }
 
   /**
-   * 翻译段落文本
-   * @param sourceText 源文本
-   * @param targetLanguage 目标语言（可选，默认使用用户设置）
-   * @returns 翻译后的文本
+   * Translate paragraph text
+   * @param sourceText Source text
+   * @param targetLanguage Target language (optional, defaults to user settings)
+   * @returns Translated text
    */
   public async translateParagraph(
     sourceText: string,
@@ -59,11 +59,11 @@ export class ParagraphTranslationApi {
       return '';
     }
 
-    // 清理文本（移除零宽度空格等）
+    // Clean the text (remove zero-width spaces, etc.)
     const cleanSourceText = sourceText.replace(/\u200B/g, '').trim();
 
     try {
-      // 获取用户设置
+      // Get user settings
       const settings = await this.storageService.getUserSettings();
 
       const detectedPageLanguage = await languageService.detectPageLanguage();
@@ -74,21 +74,21 @@ export class ParagraphTranslationApi {
           detectedPageLanguage,
         );
 
-      // 构建段落翻译prompt
+      // Build the paragraph translation prompt
       const prompt = this.buildParagraphTranslationPrompt(
         cleanSourceText,
         finalTargetLanguage,
       );
 
-      console.log(`[ParagraphTranslationApi] 调用API...`);
+      console.log(`[ParagraphTranslationApi] Calling API...`);
       const result = await callAI(prompt);
-      console.log(`[ParagraphTranslationApi] API原始结果:`, result);
+      console.log(`[ParagraphTranslationApi] Raw API result:`, result);
 
       if (!result.success) {
-        throw new Error(result.error || '翻译API调用失败');
+        throw new Error(result.error || 'Translation API call failed');
       }
 
-      // 处理翻译结果
+      // Process the translation result
       const processedResult = cleanParagraphTranslationResult(
         result.content,
         cleanSourceText,
@@ -96,19 +96,19 @@ export class ParagraphTranslationApi {
 
       return processedResult;
     } catch (error) {
-      console.error('段落翻译API调用失败:', error);
+      console.error('Paragraph translation API call failed:', error);
       throw error;
     }
   }
 
   /**
-   * 构建段落翻译prompt
+   * Build the paragraph translation prompt
    */
   private buildParagraphTranslationPrompt(
     sourceText: string,
     targetLanguage: string,
   ): string {
-    // 将语言代码转换为清晰的语言名称
+    // Convert language codes to clear language names
     const languageNames: { [key: string]: string } = {
       zh: 'Chinese',
       'zh-cn': 'Chinese',
@@ -140,11 +140,11 @@ export class ParagraphTranslationApi {
   }
 
   /**
-   * 批量翻译多个段落
-   * @param paragraphs 段落数组
-   * @param targetLanguage 目标语言（可选）
-   * @param concurrency 并发数量（默认3，避免API限流）
-   * @returns 翻译结果数组
+   * Translate multiple paragraphs in batch
+   * @param paragraphs Array of paragraphs
+   * @param targetLanguage Target language (optional)
+   * @param concurrency Concurrency (default 3, to avoid API rate limiting)
+   * @returns Array of translation results
    */
   public async translateMultipleParagraphs(
     paragraphs: string[],
@@ -157,7 +157,7 @@ export class ParagraphTranslationApi {
 
     const results: string[] = new Array(paragraphs.length).fill('');
 
-    // 分批处理，避免API限流
+    // Process in batches to avoid API rate limiting
     for (let i = 0; i < paragraphs.length; i += concurrency) {
       const batch = paragraphs.slice(i, i + concurrency);
       const batchPromises = batch.map(async (paragraph, batchIndex) => {
@@ -169,14 +169,17 @@ export class ParagraphTranslationApi {
           );
           results[actualIndex] = translated;
         } catch (error) {
-          console.warn(`段落翻译失败 [索引${actualIndex}]:`, error);
-          results[actualIndex] = ''; // 翻译失败时返回空字符串
+          console.warn(
+            `Paragraph translation failed [index ${actualIndex}]:`,
+            error,
+          );
+          results[actualIndex] = ''; // Return an empty string when translation fails
         }
       });
 
       await Promise.all(batchPromises);
 
-      // 批次间稍微延迟，避免API限流
+      // Short delay between batches to avoid API rate limiting
       if (i + concurrency < paragraphs.length) {
         await new Promise((resolve) => setTimeout(resolve, 500));
       }

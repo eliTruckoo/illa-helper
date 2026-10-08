@@ -1,3 +1,3 @@
 # Drop Runtime Legacy Compatibility
 
-项目后续重构不再为旧版本配置、旧存储结构和废弃接口保留常驻运行时兼容分支。我们接受直接清理这类代码，把当前版本的数据结构和行为当作唯一真相；如果未来确实需要保数据，使用一次性迁移脚本或导入工具解决，而不是继续把兼容逻辑塞进主路径。
+Future refactors will no longer keep permanent runtime compatibility branches for legacy configuration, legacy storage structures, or deprecated interfaces. We accept deleting such code outright and treating the data structures and behavior of the current version as the single source of truth. If data ever needs to be preserved, solve it with a one-off migration script or import tool instead of keeping compatibility logic in the main path.

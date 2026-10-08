@@ -1,6 +1,6 @@
 /**
- * 常量统一入口
- * 重导出所有常量定义
+ * Constants unified entry point
+ * Re-exports all constant definitions
  */
 
 export * from './defaults';

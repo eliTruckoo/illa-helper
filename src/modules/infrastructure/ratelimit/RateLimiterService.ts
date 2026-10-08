@@ -1,12 +1,12 @@
 /**
- * 速率限制服务
- * 负责API请求的速率控制，防止过快的请求导致服务限制
+ * Rate limiting service
+ * Controls the rate of API requests to prevent overly fast requests from triggering service limits
  */
 
 import { RateLimiterConfig, RateLimiterStatus, RequestFunction } from './types';
 
 /**
- * 简单速率限制器
+ * Simple rate limiter
  */
 class SimpleRateLimiter {
   private requestTimes: number[] = [];
@@ -30,7 +30,7 @@ class SimpleRateLimiter {
       const now = Date.now();
       const windowMs = this.config.windowMs!;
 
-      // 清理过期的请求记录
+      // Clean up expired request records
       while (
         this.requestTimes.length > 0 &&
         now - this.requestTimes[0] >= windowMs
@@ -38,7 +38,7 @@ class SimpleRateLimiter {
         this.requestTimes.shift();
       }
 
-      // 如果当前窗口内请求数已达上限，等待
+      // If the request count in the current window has reached the limit, wait
       if (this.requestTimes.length >= this.config.requestsPerSecond) {
         const oldestRequest = this.requestTimes[0];
         const waitTime =
@@ -48,7 +48,7 @@ class SimpleRateLimiter {
           await new Promise((resolve) => setTimeout(resolve, waitTime));
         }
 
-        // 等待后再次清理
+        // Clean up again after waiting
         const newNow = Date.now();
         while (
           this.requestTimes.length > 0 &&
@@ -58,7 +58,7 @@ class SimpleRateLimiter {
         }
       }
 
-      // 记录本次请求时间
+      // Record the time of this request
       this.requestTimes.push(Date.now());
     });
 
@@ -104,7 +104,7 @@ class SimpleRateLimiter {
 }
 
 /**
- * 速率限制服务
+ * Rate limiting service
  */
 export class RateLimiterService {
   private static instance: RateLimiterService;
@@ -145,7 +145,7 @@ export class RateLimiterService {
   }
 }
 
-// 导出
+// Exports
 export const rateLimiterService = RateLimiterService.getInstance();
 
 export const rateLimitManager = {
@@ -164,7 +164,7 @@ export const rateLimitManager = {
 export { SimpleRateLimiter };
 
 export function debugRateLimiters(): void {
-  console.log('[速率限制调试] 速率限制服务已加载');
+  console.log('[RateLimit Debug] Rate limit service loaded');
 }
 
 export default RateLimiterService;

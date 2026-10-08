@@ -11,7 +11,7 @@ import { TranslationStateManager } from '../ContentManager';
 import { isTranslationCandidateNode } from '../../processing/DomTranslationPolicy';
 
 /**
- * 监听器服务 - 负责消息监听和DOM观察
+ * Listener service - handles message listening and DOM observation
  */
 export class ListenerService implements IListenerService {
   private settings: UserSettings;
@@ -49,21 +49,21 @@ export class ListenerService implements IListenerService {
   }
 
   /**
-   * 设置消息监听器
+   * Set up the message listener
    */
   setupMessageListeners(): void {
     browser.runtime.onMessage.addListener(async (message) => {
       try {
         await this.handleMessage(message);
       } catch (error) {
-        console.error('[ListenerService] 消息处理失败:', error);
+        console.error('[ListenerService] Message handling failed:', error);
       }
     });
   }
 
   /**
-   * 设置DOM观察器。
-   * 手动模式也需要观察：用户触发一次翻译后，异步加载出的正文应继续进入同一翻译管线。
+   * Set up the DOM observer.
+   * Manual mode also needs observation: after the user triggers a translation, asynchronously loaded content should keep flowing into the same translation pipeline.
    */
   setupDomObserver(): void {
     if (!this.settings.isEnabled) return;
@@ -72,7 +72,7 @@ export class ListenerService implements IListenerService {
   }
 
   /**
-   * 销毁服务，清理资源
+   * Destroy the service and clean up resources
    */
   destroy(): void {
     if (this.domObserver) {
@@ -87,7 +87,7 @@ export class ListenerService implements IListenerService {
   }
 
   /**
-   * 处理消息
+   * Handle messages
    */
   private async handleMessage(message: any): Promise<void> {
     if (
@@ -96,7 +96,7 @@ export class ListenerService implements IListenerService {
     ) {
       await this.handleSettingsUpdate(message.settings);
     } else if (message.type === 'translate-page-command') {
-      // 改为状态切换而非直接翻译
+      // Toggle state instead of translating directly
       await this.toggleTranslationState();
     } else if (message.type === 'MANUAL_TRANSLATE') {
       if (this.settings.triggerMode === TriggerMode.MANUAL) {
@@ -124,7 +124,7 @@ export class ListenerService implements IListenerService {
   }
 
   /**
-   * 切换翻译状态
+   * Toggle translation state
    */
   private async toggleTranslationState(): Promise<void> {
     const isConfigValid = await browser.runtime.sendMessage({
@@ -154,7 +154,7 @@ export class ListenerService implements IListenerService {
   }
 
   /**
-   * 处理设置更新
+   * Handle settings updates
    */
   private async handleSettingsUpdate(newSettings: UserSettings): Promise<void> {
     const needsPageReload =
@@ -186,7 +186,7 @@ export class ListenerService implements IListenerService {
   }
 
   /**
-   * 创建DOM观察器
+   * Create the DOM observer
    */
   private createDomObserver(): void {
     const nodesToProcess = new Set<Node>();
@@ -228,7 +228,7 @@ export class ListenerService implements IListenerService {
   }
 
   /**
-   * 防抖处理节点
+   * Debounced node processing
    */
   private debouncedProcessNodes(nodesToProcess: Set<Node>): void {
     if (this.debounceTimer) {
@@ -257,7 +257,7 @@ export class ListenerService implements IListenerService {
           await this.processDynamicNode(node);
         }
       } catch (error) {
-        console.error('[ListenerService] DOM节点处理失败:', error);
+        console.error('[ListenerService] DOM node processing failed:', error);
       }
 
       nodesToProcess.clear();

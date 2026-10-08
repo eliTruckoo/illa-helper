@@ -1,3 +1,3 @@
 # Unify API Config And Isolate Provider Adapters
 
-项目保留统一的用户级 API 配置模型，设置页、存储层和运行时配置只围绕这一个模型工作。运行时只承认 `openai-compatible` 和 `gemini` 两个协议族；OpenAI、DeepSeek、SiliconFlow 只是 OpenAI 兼容接口的 UI 预设，Anthropic 已下线，ProxyGemini 并回 Gemini。协议差异只能存在于适配层，不能继续扩散到 UI、存储修正、连接测试和业务主路径里。
+The project keeps a single unified user-level API configuration model; the settings page, storage layer, and runtime configuration all work around this one model. At runtime only two protocol families are recognized: `openai-compatible` and `gemini`. OpenAI, DeepSeek, and SiliconFlow are merely UI presets for the OpenAI-compatible interface, Anthropic has been retired, and ProxyGemini is merged back into Gemini. Protocol differences may exist only in the adapter layer and must not spread into the UI, storage fixes, connection tests, or the main business path.

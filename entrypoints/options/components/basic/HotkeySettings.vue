@@ -1,6 +1,6 @@
 <template>
   <div class="space-y-6">
-    <!-- 快捷键设置主卡片 -->
+    <!-- Hotkey settings main card -->
     <Card>
       <CardHeader>
         <CardTitle>
@@ -48,7 +48,7 @@
                 {{ $t('hotkeySettings.translatePageDescription') }}
               </p>
 
-              <!-- 当前快捷键显示 -->
+              <!-- Current hotkey display -->
               <div class="p-3 bg-background rounded-lg border border-border">
                 <div class="flex items-center justify-between">
                   <div class="space-y-1">
@@ -79,7 +79,7 @@
                 </div>
               </div>
 
-              <!-- 管理快捷键按钮 -->
+              <!-- Manage hotkey button -->
               <div class="flex justify-end mt-3">
                 <Button
                   @click="openShortcutsPage"
@@ -113,7 +113,7 @@
           </div>
         </div>
 
-        <!-- 使用说明 -->
+        <!-- Usage instructions -->
         <div
           class="text-xs text-muted-foreground bg-blue-50 dark:bg-blue-950/30 p-3 rounded-lg border border-blue-200 dark:border-blue-800"
         >
@@ -135,7 +135,7 @@
       </CardContent>
     </Card>
 
-    <!-- 快捷键状态检查卡片 -->
+    <!-- Hotkey status check card -->
     <Card>
       <CardHeader class="pb-3">
         <CardTitle>
@@ -175,7 +175,7 @@
         </CardTitle>
       </CardHeader>
       <CardContent class="pt-0">
-        <!-- 检查结果显示 -->
+        <!-- Check result display -->
         <div
           v-if="hotkeyStatus"
           class="p-4 rounded-lg border"
@@ -249,7 +249,7 @@
           </div>
         </div>
 
-        <!-- 未检查状态提示 -->
+        <!-- Unchecked state hint -->
         <div v-else class="p-4 rounded-lg border border-border bg-muted/50">
           <div class="text-center space-y-2">
             <div
@@ -288,19 +288,19 @@ import { Label } from '@/components/ui/label';
 
 const { t } = useI18n();
 
-// 当前快捷键
+// Current hotkey
 const currentShortcut = ref<string>('');
 
-// 快捷键状态检查相关
+// Hotkey status check
 const isChecking = ref(false);
 const hotkeyStatus = ref<any>(null);
 
-// 初始化时获取当前快捷键
+// Get the current hotkey on init
 onMounted(async () => {
   await loadCurrentShortcut();
 });
 
-// 加载当前快捷键设置
+// Load the current hotkey settings
 const loadCurrentShortcut = async () => {
   try {
     const commands = await browser.commands.getAll();
@@ -313,26 +313,26 @@ const loadCurrentShortcut = async () => {
   }
 };
 
-// 打开快捷键管理页面
+// Open the hotkey management page
 const openShortcutsPage = () => {
   browser.tabs.create({
     url: 'chrome://extensions/shortcuts',
   });
 };
 
-// 检查快捷键状态
+// Check hotkey status
 const checkHotkeyStatus = async () => {
   isChecking.value = true;
   try {
     const commands = await browser.commands.getAll();
-    console.log('当前注册的命令:', commands);
+    console.log('Currently registered commands:', commands);
 
     const translateCommand = commands.find(
       (cmd) => cmd.name === 'translate-page',
     );
     const isActive = translateCommand && translateCommand.shortcut;
 
-    // 同时更新当前快捷键显示
+    // Also update the current hotkey display
     currentShortcut.value = translateCommand?.shortcut || '';
 
     hotkeyStatus.value = {

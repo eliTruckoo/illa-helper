@@ -1,17 +1,17 @@
 /**
- * TTS相关类型定义
+ * TTS-related type definitions
  */
 
-// TTS结果
+// TTS result
 export interface TTSResult {
   success: boolean;
   error?: string;
 }
 
-// TTS提供者类型
+// TTS provider type
 export type TTSProviderType = 'web-speech' | 'youdao';
 
-// TTS提供者状态
+// TTS provider status
 export interface TTSProviderStatus {
   name: string;
   available: boolean;

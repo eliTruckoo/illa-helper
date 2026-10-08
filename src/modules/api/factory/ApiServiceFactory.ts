@@ -1,5 +1,5 @@
 /**
- * API 服务工厂
+ * API service factory
  */
 
 import { ApiConfigItem } from '../../shared/types/api';
@@ -8,12 +8,12 @@ import { ITranslationProvider } from '../types';
 import { GoogleGeminiProvider, OpenAIProvider } from '../providers';
 
 /**
- * API 服务工厂
- * 根据配置创建相应的翻译提供者
+ * API service factory
+ * Creates the appropriate translation provider based on configuration
  */
 export class ApiServiceFactory {
   /**
-   * 创建翻译提供者实例
+   * Create a translation provider instance
    */
   static createProvider(activeConfig: ApiConfigItem): ITranslationProvider {
     const { protocolFamily, config } = activeConfig;

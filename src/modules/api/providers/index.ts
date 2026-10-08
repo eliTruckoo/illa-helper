@@ -1,5 +1,5 @@
 /**
- * 翻译提供者导出
+ * Translation provider exports
  */
 
 export { GoogleGeminiProvider } from './GoogleGeminiProvider';

@@ -1,35 +1,35 @@
 name: 🚀 Release Build and Publish
 permissions:
-  contents: write # 明确指定写权限，用于创建 Release
+  contents: write # Explicitly grant write permission, needed to create the Release
 
 on:
   push:
     tags:
-      - 'v*.*.*' # 触发条件：版本标签 (例如: v1.8.0)
+      - 'v*.*.*' # Trigger: version tag (e.g. v1.8.0)
 
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. 检出代码
+      # 1. Check out the code
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # 必须获取所有历史记录，以便 git log 能正常工作
+          fetch-depth: 0 # Full history is required so git log works correctly
 
-      # 2. 设置 Node.js 环境
+      # 2. Set up the Node.js environment
       - name: 🔧 Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
 
-      # 3. 安装依赖
+      # 3. Install dependencies
       - name: 📦 Install dependencies
         run: npm ci
 
-      # 4. 验证版本一致性并设置环境变量
+      # 4. Verify version consistency and set environment variables
       - name: ✅ Validate version and set ENV
         run: |
           TAG_NAME=${{ github.ref_name }}
@@ -46,17 +46,17 @@ jobs:
           fi
 
           echo "✅ Version validation passed: $TAG_VERSION"
-          # 将纯版本号存入环境变量，供后续步骤使用
+          # Store the plain version number in an environment variable for later steps
           echo "VERSION=$TAG_VERSION" >> $GITHUB_ENV
 
-      # 5. 代码检查
+      # 5. Code checks
       - name: 🔍 Code quality checks
         run: |
           npm run compile
           npm run check
           npm run lint
 
-      # 6. 构建所有平台的扩展包
+      # 6. Build extension packages for all platforms
       - name: 🏗️ Build extensions for all platforms
         run: |
           echo "🚀 Starting to build extension packages..."
@@ -64,7 +64,7 @@ jobs:
           echo "📁 Build artifacts list:"
           ls -la .output/*.zip
 
-      # 7. 验证构建产物
+      # 7. Verify build artifacts
       - name: ✅ Validate build artifacts
         run: |
           echo "🔍 Validating build artifacts..."
@@ -83,7 +83,7 @@ jobs:
           done
           echo "🎉 All build artifacts validated successfully!"
 
-      # 8. 生成 Release Notes
+      # 8. Generate Release Notes
       - name: 📝 Generate Release Notes
         run: |
           VERSION=${{ env.VERSION }}
@@ -98,11 +98,11 @@ jobs:
           fi
 
           if [ -z "$COMMITS" ]; then
-            RELEASE_NOTES="- 版本更新"
+            RELEASE_NOTES="- Version update"
           else
             RELEASE_NOTES=$(echo "$COMMITS" | awk '
               BEGIN {
-                FS = "[:：]";
+                FS = ":|\357\274\232"; # ASCII or fullwidth colon
                 order_count = 8;
                 order[1] = "feat";     headers["feat"]     = "✨ Features";
                 order[2] = "fix";      headers["fix"]      = "🐛 Bug Fixes";
@@ -148,8 +148,8 @@ jobs:
             ')
           fi
 
-          # -----------------  修改点  -----------------
-          # 生成的 Markdown 文件主标题直接使用版本号
+          # -----------------  Changed  -----------------
+          # The main title of the generated Markdown file is the version number
           cat << EOF > release_notes.md
           # ${{ env.VERSION }}
 
@@ -161,7 +161,7 @@ jobs:
           cat release_notes.md
           echo "---"
 
-      # 9. 创建 GitHub Release 并上传资产
+      # 9. Create the GitHub Release and upload assets
       - name: 🎁 Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -174,7 +174,7 @@ jobs:
             .output/illa-helper-${{ env.VERSION }}-firefox.zip \
             .output/illa-helper-${{ env.VERSION }}-safari.zip
 
-      # 10. 发布成功通知
+      # 10. Release success notification
       - name: 🎉 Release completed
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -182,5 +182,5 @@ jobs:
           echo "🎊 Release successful!"
           RELEASE_URL=$(gh release view "${{ github.ref_name }}" --json url -q .url)
           echo "📦 Release URL: $RELEASE_URL"
-          # 输出的版本号也保持一致
+          # The printed version number is kept consistent too
           echo "🏷️ Version: ${{ env.VERSION }}"

@@ -1,6 +1,6 @@
 /**
- * 有道词典TTS提供者
- * 使用有道词典的语音接口提供朗读功能
+ * Youdao Dictionary TTS provider
+ * Provides read-aloud using the Youdao Dictionary speech API
  */
 
 import { ITTSProvider, TTSProviderConfig } from './ITTSProvider';
@@ -15,7 +15,7 @@ export class YoudaoTTSProvider implements ITTSProvider {
 
   constructor(config: TTSProviderConfig = {}) {
     this.config = {
-      accent: 'us', // 默认美式发音
+      accent: 'us', // default to US pronunciation
       ...config,
     };
   }
@@ -28,42 +28,42 @@ export class YoudaoTTSProvider implements ITTSProvider {
       if (!text || typeof text !== 'string') {
         return {
           success: false,
-          error: '文本参数无效',
+          error: 'Invalid text parameter',
         };
       }
 
-      // 停止当前朗读
+      // Stop current playback
       this.stop();
 
       const finalConfig = { ...this.config, ...config };
       const accent = finalConfig.accent || 'us';
 
-      // 构建有道词典语音URL
-      const type = accent === 'us' ? 2 : 1; // 1=英式, 2=美式
+      // Build the Youdao Dictionary speech URL
+      const type = accent === 'us' ? 2 : 1; // 1=UK, 2=US
       const audioUrl = `${API_CONSTANTS.YOUDAO_TTS_BASE_URL}?type=${type}&audio=${encodeURIComponent(text)}`;
 
       console.log(
-        `[DEBUG] 有道TTS URL: ${audioUrl}, accent: ${accent}, type: ${type}`,
+        `[DEBUG] Youdao TTS URL: ${audioUrl}, accent: ${accent}, type: ${type}`,
       );
 
-      // 创建音频元素
+      // Create the audio element
       const audio = new Audio(audioUrl);
       this.currentAudio = audio;
 
       return new Promise((resolve) => {
         let isResolved = false;
 
-        // 设置超时机制，防止无限等待
+        // Set a timeout to prevent waiting forever
         const timeout = setTimeout(() => {
           if (!isResolved) {
             isResolved = true;
             this.currentAudio = null;
             resolve({
               success: false,
-              error: '有道语音加载超时',
+              error: 'Youdao speech loading timed out',
             });
           }
-        }, TIMER_CONSTANTS.YOUDAO_TIMEOUT); // 有道TTS超时
+        }, TIMER_CONSTANTS.YOUDAO_TIMEOUT); // Youdao TTS timeout
 
         const cleanup = () => {
           clearTimeout(timeout);
@@ -84,46 +84,46 @@ export class YoudaoTTSProvider implements ITTSProvider {
             cleanup();
             resolve({
               success: false,
-              error: '有道语音播放失败',
+              error: 'Youdao speech playback failed',
             });
           }
         };
 
         audio.onloadstart = () => {
-          // 音频开始加载
+          // Audio started loading
         };
 
         audio.oncanplay = () => {
-          // 音频可以播放
+          // Audio can play
           audio.play().catch((error) => {
             if (!isResolved) {
               isResolved = true;
               cleanup();
               resolve({
                 success: false,
-                error: `音频播放失败: ${error.message}`,
+                error: `Audio playback failed: ${error.message}`,
               });
             }
           });
         };
 
-        // 网络错误处理
+        // Network error handling
         audio.onabort = () => {
           if (!isResolved) {
             isResolved = true;
             cleanup();
             resolve({
               success: false,
-              error: '有道语音加载被中断',
+              error: 'Youdao speech loading was interrupted',
             });
           }
         };
 
         audio.onstalled = () => {
-          // 加载停滞，但不立即失败，等待超时处理
+          // Loading stalled; do not fail immediately, wait for timeout handling
         };
 
-        // 开始加载音频
+        // Start loading audio
         try {
           audio.load();
         } catch (error) {
@@ -132,7 +132,7 @@ export class YoudaoTTSProvider implements ITTSProvider {
             cleanup();
             resolve({
               success: false,
-              error: `有道语音初始化失败: ${error}`,
+              error: `Youdao speech initialization failed: ${error}`,
             });
           }
         }
@@ -141,7 +141,7 @@ export class YoudaoTTSProvider implements ITTSProvider {
       this.currentAudio = null;
       return {
         success: false,
-        error: error instanceof Error ? error.message : '未知错误',
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -159,7 +159,7 @@ export class YoudaoTTSProvider implements ITTSProvider {
   }
 
   isAvailable(): boolean {
-    // 检查是否支持Audio API
+    // Check whether the Audio API is supported
     return typeof Audio !== 'undefined';
   }
 
@@ -172,9 +172,9 @@ export class YoudaoTTSProvider implements ITTSProvider {
   }
 
   /**
-   * 预加载音频（可选功能）
-   * @param text 要预加载的文本
-   * @param accent 发音类型
+   * Preload audio (optional feature)
+   * @param text text to preload
+   * @param accent accent type
    */
   async preloadAudio(
     text: string,

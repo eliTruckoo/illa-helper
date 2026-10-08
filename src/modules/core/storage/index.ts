@@ -1,12 +1,12 @@
 /**
- * 存储服务统一入口
- * 导出存储管理相关的所有功能
+ * Unified entry point for the storage service
+ * Exports all storage management functionality
  */
 
-// 服务类导出
+// Service class exports
 export { default as StorageService, storageService } from './StorageService';
 
-// 类型定义导出
+// Type definition exports
 export type {
   StorageOperationResult,
   ConfigurationStats,
@@ -21,5 +21,5 @@ export type {
 
 export { StorageEventType } from './types';
 
-// 默认导出
+// Default export
 export { storageService as default } from './StorageService';

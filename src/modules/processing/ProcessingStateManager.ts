@@ -1,16 +1,16 @@
 /**
- * 全局处理状态管理器
- * 负责统一管理所有文本处理状态，防止重复处理，确保系统的一致性
+ * Global processing state manager
+ * Centrally manages all text processing state, prevents duplicate processing, and keeps the system consistent
  */
 
 export interface ProcessedContentInfo {
-  /** 内容指纹 */
+  /** Content fingerprint */
   fingerprint: string;
-  /** 处理时间戳 */
+  /** Processing timestamp */
   timestamp: number;
-  /** DOM路径 */
+  /** DOM path */
   domPath: string;
-  /** 处理结果摘要 */
+  /** Processing result summary */
   processingResult: {
     replacementCount: number;
     success: boolean;
@@ -18,45 +18,45 @@ export interface ProcessedContentInfo {
 }
 
 export interface ContentSegment {
-  /** 段落唯一标识 */
+  /** Unique segment identifier */
   id: string;
-  /** 文本内容 */
+  /** Text content */
   textContent: string;
-  /** 对应的DOM元素 */
+  /** Corresponding DOM element */
   element: Element;
-  /** 所有相关的DOM元素（用于合并段落） */
+  /** All related DOM elements (used for merged segments) */
   elements: Element[];
-  /** 文本节点列表 */
+  /** List of text nodes */
   textNodes: Text[];
-  /** 内容指纹 */
+  /** Content fingerprint */
   fingerprint: string;
-  /** DOM上下文路径 */
+  /** DOM context path */
   domPath: string;
 }
 
 /**
- * 全局处理状态管理器
+ * Global processing state manager
  *
- * 核心职责：
- * 1. 跟踪所有已处理的内容，防止重复处理
- * 2. 管理正在处理的内容，避免并发冲突
- * 3. 提供内容指纹生成和验证机制
- * 4. 实现处理状态的生命周期管理
+ * Core responsibilities:
+ * 1. Track all processed content to prevent duplicate processing
+ * 2. Manage in-flight content to avoid concurrency conflicts
+ * 3. Provide content fingerprint generation and validation
+ * 4. Manage the lifecycle of processing state
  */
 export class ProcessingStateManager {
-  /** 已处理内容映射表 */
+  /** Map of processed content */
   private processedContent = new Map<string, ProcessedContentInfo>();
 
-  /** 正在处理中的内容集合 */
+  /** Set of content currently being processed */
   private activeProcessing = new Set<string>();
 
-  /** 处理状态清理定时器 */
+  /** Timer for cleaning up processing state */
   private cleanupTimer: number | null = null;
 
-  /** 清理间隔（2小时） */
+  /** Cleanup interval (2 hours) */
   private readonly CLEANUP_INTERVAL = 2 * 60 * 60 * 1000;
 
-  /** 内容有效期（4小时） */
+  /** Content validity period (4 hours) */
   private readonly CONTENT_TTL = 4 * 60 * 60 * 1000;
 
   constructor() {
@@ -64,28 +64,28 @@ export class ProcessingStateManager {
   }
 
   /**
-   * 生成内容指纹。
-   * 指纹必须是确定性的：同一段文本在同一 DOM 位置，任何时间都应该得到同一个值。
-   * 动态内容靠 DOM 路径和文本区分，不能把时间塞进指纹，否则会导致重复处理。
+   * Generate a content fingerprint.
+   * The fingerprint must be deterministic: the same text at the same DOM position must always yield the same value.
+   * Dynamic content is told apart by DOM path and text; do not put time into the fingerprint, or content will be processed repeatedly.
    */
   generateContentFingerprint(textContent: string, domPath: string): string {
     const normalizedText = textContent.trim().replace(/\s+/g, ' ');
     const combinedString = `${normalizedText}|${domPath}`;
 
-    // 使用简单但有效的哈希算法
+    // Use a simple but effective hash algorithm
     let hash = 0;
     for (let i = 0; i < combinedString.length; i++) {
       const char = combinedString.charCodeAt(i);
       hash = (hash << 5) - hash + char;
-      hash = hash & hash; // 转换为32位整数
+      hash = hash & hash; // convert to a 32-bit integer
     }
 
     return Math.abs(hash).toString(36);
   }
 
   /**
-   * 生成DOM路径
-   * 为元素生成唯一的DOM路径标识
+   * Generate the DOM path
+   * Generate a unique DOM path identifier for the element
    */
   generateDomPath(element: Element): string {
     const path: string[] = [];
@@ -94,16 +94,16 @@ export class ProcessingStateManager {
     while (current && current !== document.body) {
       let selector = current.tagName.toLowerCase();
 
-      // 添加类名（如果有且不是处理相关的类）
+      // Add class names (if any and not processing-related)
       const classList = Array.from(current.classList)
         .filter((cls) => !cls.startsWith('wxt-'))
-        .slice(0, 2); // 限制类名数量
+        .slice(0, 2); // limit the number of class names
 
       if (classList.length > 0) {
         selector += '.' + classList.join('.');
       }
 
-      // 添加位置信息（如果有多个同类型兄弟元素）
+      // Add position info (if there are several siblings of the same type)
       const siblings = current.parentElement?.children;
       if (siblings && siblings.length > 1) {
         const index = Array.from(siblings).indexOf(current);
@@ -118,13 +118,13 @@ export class ProcessingStateManager {
   }
 
   /**
-   * 检查内容是否已被处理
+   * Check whether content has already been processed
    */
   isContentProcessed(fingerprint: string): boolean {
     const info = this.processedContent.get(fingerprint);
     if (!info) return false;
 
-    // 检查是否过期
+    // Check whether it has expired
     const now = Date.now();
     if (now - info.timestamp > this.CONTENT_TTL) {
       this.processedContent.delete(fingerprint);
@@ -135,21 +135,21 @@ export class ProcessingStateManager {
   }
 
   /**
-   * 检查内容是否正在处理中
+   * Check whether content is currently being processed
    */
   isContentProcessing(fingerprint: string): boolean {
     return this.activeProcessing.has(fingerprint);
   }
 
   /**
-   * 标记内容开始处理
+   * Mark content as started processing
    */
   markProcessingStart(fingerprint: string): boolean {
     if (
       this.isContentProcessed(fingerprint) ||
       this.isContentProcessing(fingerprint)
     ) {
-      return false; // 已处理或正在处理中
+      return false; // already processed or being processed
     }
 
     this.activeProcessing.add(fingerprint);
@@ -157,7 +157,7 @@ export class ProcessingStateManager {
   }
 
   /**
-   * 标记内容处理完成
+   * Mark content processing as complete
    */
   markProcessingComplete(
     fingerprint: string,
@@ -165,10 +165,10 @@ export class ProcessingStateManager {
     replacementCount: number,
     success: boolean = true,
   ): void {
-    // 移除处理中标记
+    // Remove the in-progress mark
     this.activeProcessing.delete(fingerprint);
 
-    // 添加到已处理列表
+    // Add to the processed list
     this.processedContent.set(fingerprint, {
       fingerprint,
       timestamp: Date.now(),
@@ -181,14 +181,14 @@ export class ProcessingStateManager {
   }
 
   /**
-   * 标记内容处理失败
+   * Mark content processing as failed
    */
   markProcessingFailed(fingerprint: string, domPath: string): void {
     this.markProcessingComplete(fingerprint, domPath, 0, false);
   }
 
   /**
-   * 获取处理统计信息
+   * Get processing statistics
    */
   getProcessingStats(): {
     processedCount: number;
@@ -215,7 +215,7 @@ export class ProcessingStateManager {
   }
 
   /**
-   * 清理过期的处理状态
+   * Clean up expired processing state
    */
   private cleanup(): void {
     const now = Date.now();
@@ -231,11 +231,11 @@ export class ProcessingStateManager {
       this.processedContent.delete(fingerprint);
     });
 
-    // 静默清理过期状态
+    // Silently clean up expired state
   }
 
   /**
-   * 启动清理定时器
+   * Start the cleanup timer
    */
   private startCleanupTimer(): void {
     this.cleanupTimer = window.setInterval(() => {
@@ -244,14 +244,14 @@ export class ProcessingStateManager {
   }
 
   /**
-   * 手动触发清理
+   * Manually trigger cleanup
    */
   forceCleanup(): void {
     this.cleanup();
   }
 
   /**
-   * 重置所有状态（用于测试或紧急情况）
+   * Reset all state (for testing or emergencies)
    */
   reset(): void {
     this.processedContent.clear();
@@ -259,7 +259,7 @@ export class ProcessingStateManager {
   }
 
   /**
-   * 销毁管理器
+   * Destroy the manager
    */
   destroy(): void {
     if (this.cleanupTimer) {
@@ -270,5 +270,5 @@ export class ProcessingStateManager {
   }
 }
 
-// 全局单例实例
+// Global singleton instance
 export const globalProcessingState = new ProcessingStateManager();

@@ -1,9 +1,9 @@
 /**
- * 速率限制服务统一入口
- * 导出速率限制相关的所有功能
+ * Rate limit service unified entry
+ * Exports all rate-limit related functionality
  */
 
-// 服务类导出
+// Service class exports
 export {
   default as RateLimiterService,
   rateLimiterService,
@@ -12,7 +12,7 @@ export {
   debugRateLimiters,
 } from './RateLimiterService';
 
-// 类型定义导出
+// Type definition exports
 export type {
   RateLimiterConfig,
   RateLimiterStatus,
@@ -31,5 +31,5 @@ export type {
 
 export { RateLimiterEventType } from './types';
 
-// 默认导出
+// Default export
 export { rateLimiterService as default } from './RateLimiterService';

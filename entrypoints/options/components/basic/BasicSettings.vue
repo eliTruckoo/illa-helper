@@ -25,7 +25,7 @@
           />
         </div>
 
-        <!-- 界面语言设置 -->
+        <!-- Interface language settings -->
         <div class="border-t border-border pt-6">
           <div class="space-y-1">
             <Label for="interface-language">
@@ -59,13 +59,13 @@
           </div>
         </div>
 
-        <!-- 母语设置 -->
+        <!-- Native language settings -->
         <div class="border-t border-border pt-6">
           <Label class="text-sm mb-3">
             {{ $t('basicSettings.nativeLanguage') }}
           </Label>
           <div class="space-y-4">
-            <!-- 母语选择 -->
+            <!-- Native language selection -->
             <div class="space-y-2">
               <Select
                 id="native-language"
@@ -80,7 +80,7 @@
                   />
                 </SelectTrigger>
                 <SelectContent class="max-h-60">
-                  <!-- 常用语言组 -->
+                  <!-- Popular languages group -->
                   <div
                     class="px-2 py-1.5 text-xs font-medium text-muted-foreground"
                   >
@@ -94,10 +94,10 @@
                     {{ lang.name }} - {{ lang.nativeName }}
                   </SelectItem>
 
-                  <!-- 分隔线 -->
+                  <!-- Divider -->
                   <div class="border-t border-border my-1"></div>
 
-                  <!-- 其他语言组 -->
+                  <!-- Other languages group -->
                   <div
                     class="px-2 py-1.5 text-xs font-medium text-muted-foreground"
                   >
@@ -153,7 +153,7 @@
           </RadioGroup>
         </div>
 
-        <!-- 翻译模式选择 -->
+        <!-- Translation mode selection -->
         <div class="border-t border-border pt-6">
           <div class="space-y-1">
             <Label>{{ $t('basicSettings.translationMode') }}</Label>
@@ -254,7 +254,7 @@
                 </SelectItem>
               </SelectContent>
             </Select>
-            <!-- 自定义CSS编辑框 -->
+            <!-- Custom CSS editor -->
             <div
               v-if="settings.translationStyle === 'custom'"
               class="space-y-2 flex-1"
@@ -300,7 +300,7 @@
                 {{ previewTranslation }}
               </span>
             </template>
-            <span>。</span>
+            <span>.</span>
           </div>
         </div>
       </CardContent>
@@ -369,9 +369,9 @@
         </div>
         <div class="space-y-2">
           <Label for="replacement-rate">
-            {{ $t('basicSettings.replacementRate') }} （{{
+            {{ $t('basicSettings.replacementRate') }} ({{
               Math.round(settings.replacementRate * 100)
-            }}%）
+            }}%)
           </Label>
           <div class="flex items-center space-x-4">
             <Slider
@@ -390,7 +390,7 @@
       </CardContent>
     </Card>
 
-    <!-- 懒加载设置 -->
+    <!-- Lazy loading settings -->
     <Card>
       <CardHeader>
         <CardTitle>
@@ -416,15 +416,15 @@
           />
         </div>
 
-        <!-- 预加载距离设置 -->
+        <!-- Preload distance settings -->
         <div
           v-if="settings.lazyLoading.enabled"
           class="space-y-2 border-t border-border pt-6"
         >
           <Label for="preload-distance">
-            {{ $t('lazyLoading.preloadDistance') }} （{{
+            {{ $t('lazyLoading.preloadDistance') }} ({{
               Math.round(settings.lazyLoading.preloadDistance * 50)
-            }}% ）
+            }}%)
           </Label>
           <div class="flex items-center space-x-4">
             <Slider
@@ -444,7 +444,7 @@
           </p>
         </div>
 
-        <!-- 性能提示 -->
+        <!-- Performance tip -->
         <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
           <div class="flex items-start space-x-2">
             <svg
@@ -535,22 +535,22 @@ const emit = defineEmits<{
   saveMessage: [message: string];
 }>();
 
-// 获取母语选项
+// Get native language options
 const nativeLanguageOptions = computed(() => {
   return languageService.getNativeLanguageOptions();
 });
 
-// 常用母语选项 (基于isPopular属性)
+// Popular native language options (based on isPopular)
 const popularNativeLanguages = computed(() => {
   return nativeLanguageOptions.value.filter((lang) => lang.isPopular);
 });
 
-// 其他母语选项
+// Other native language options
 const otherNativeLanguages = computed(() => {
   return nativeLanguageOptions.value.filter((lang) => !lang.isPopular);
 });
 
-// 用户级别选项
+// User level options
 const userLevelOptions = computed(() => [
   { value: 1, label: t('languageLevel.a1') },
   { value: 2, label: t('languageLevel.a2') },
@@ -563,7 +563,7 @@ const userLevelOptions = computed(() => [
 onMounted(async () => {
   settings.value = await storageService.getUserSettings();
   styleManager.setTranslationStyle(settings.value.translationStyle);
-  // 如果是自定义样式，加载自定义CSS
+  // If using custom style, load custom CSS
   if (settings.value.translationStyle === TranslationStyle.CUSTOM) {
     styleManager.setCustomCSS(settings.value.customTranslationCSS);
   }
@@ -578,7 +578,7 @@ const previewTranslation = computed(() => {
 
 const currentStyleClass = computed(() => {
   styleManager.setTranslationStyle(settings.value.translationStyle);
-  // 如果是自定义样式，更新自定义CSS
+  // If using custom style, update custom CSS
   if (settings.value.translationStyle === TranslationStyle.CUSTOM) {
     styleManager.setCustomCSS(settings.value.customTranslationCSS);
   }
@@ -591,7 +591,7 @@ watch(
     await storageService.saveUserSettings(newSettings);
     emit('saveMessage', t('settings.save'));
     styleManager.setTranslationStyle(newSettings.translationStyle);
-    // 如果是自定义样式，更新自定义CSS
+    // If using custom style, update custom CSS
     if (newSettings.translationStyle === TranslationStyle.CUSTOM) {
       styleManager.setCustomCSS(newSettings.customTranslationCSS);
     }
@@ -605,5 +605,5 @@ watch(
 </script>
 
 <style scoped>
-/* 移除重复的翻译样式CSS - 现在使用StyleManager */
+/* Removed duplicate translation style CSS - StyleManager is used now */
 </style>

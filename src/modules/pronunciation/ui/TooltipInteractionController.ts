@@ -1,8 +1,8 @@
 /**
- * 发音悬浮框交互控制器。
+ * Pronunciation tooltip interaction controller.
  *
- * 这个模块拥有 tooltip 的 DOM 生命周期、鼠标事件、热键状态和异步内容更新。
- * PronunciationService 只需要把元素注册进来，不应该知道 tooltip 怎么显示和隐藏。
+ * This module owns the tooltip's DOM lifecycle, mouse events, hotkey state, and async content updates.
+ * PronunciationService only needs to register elements and should not know how the tooltip is shown or hidden.
  */
 
 import { IPhoneticProvider } from '../phonetic';
@@ -85,7 +85,7 @@ export class TooltipInteractionController {
       this.attachElementEventListeners(element, elementData);
       return true;
     } catch (error) {
-      console.error('添加发音功能失败:', error);
+      console.error('Failed to add pronunciation feature:', error);
       return false;
     }
   }
@@ -148,7 +148,7 @@ export class TooltipInteractionController {
         this.displayInlinePhonetic(elementData);
       }
     } catch (error) {
-      console.error('预加载音标失败:', error);
+      console.error('Failed to preload phonetics:', error);
     } finally {
       elementData.element.classList.remove(CSS_CLASSES.PRONUNCIATION_LOADING);
     }
@@ -222,7 +222,7 @@ export class TooltipInteractionController {
 
       return this.isCtrlPressed;
     } catch (error) {
-      console.error('获取快捷键配置失败:', error);
+      console.error('Failed to get hotkey config:', error);
       return true;
     }
   }
@@ -462,7 +462,7 @@ export class TooltipInteractionController {
       void this.loadPhoneticForWordTooltip(wordTooltip, word);
       void this.loadMeaningForWordTooltip(wordTooltip, word);
     } catch (error) {
-      console.error('显示单词悬浮框失败:', error);
+      console.error('Failed to show word tooltip:', error);
     }
   }
 
@@ -516,11 +516,11 @@ export class TooltipInteractionController {
       }
       elementData.phonetic = phonetic;
     } catch (error) {
-      console.error('获取音标失败:', error);
+      console.error('Failed to get phonetics:', error);
       const currentTranslation = elementData.phonetic?.aiTranslation;
       elementData.phonetic = this.createPhoneticError(
         elementData.word,
-        '音标获取异常',
+        'Phonetic fetch error',
       );
       if (currentTranslation) {
         elementData.phonetic.aiTranslation = currentTranslation;
@@ -556,7 +556,7 @@ export class TooltipInteractionController {
         );
       }
     } catch (error) {
-      console.error('获取AI翻译失败:', error);
+      console.error('Failed to get AI translation:', error);
     }
   }
 
@@ -568,8 +568,8 @@ export class TooltipInteractionController {
     try {
       phonetic = await this.getPhoneticInfo(word);
     } catch (error) {
-      console.error('获取单词悬浮框音标失败:', error);
-      phonetic = this.createPhoneticError(word, '音标获取异常');
+      console.error('Failed to get word tooltip phonetics:', error);
+      phonetic = this.createPhoneticError(word, 'Phonetic fetch error');
     }
 
     if (this.currentWordTooltip === wordTooltip) {
@@ -595,7 +595,7 @@ export class TooltipInteractionController {
         );
       }
     } catch (error) {
-      console.error('获取单词悬浮框词义失败:', error);
+      console.error('Failed to get word tooltip definition:', error);
     }
   }
 
@@ -605,7 +605,10 @@ export class TooltipInteractionController {
       return result.data;
     }
 
-    return this.createPhoneticError(word, result.error || '音标获取失败');
+    return this.createPhoneticError(
+      word,
+      result.error || 'Phonetic fetch failed',
+    );
   }
 
   private createEmptyPhoneticInfo(word: string): PhoneticInfo {

@@ -1,15 +1,15 @@
 /**
- * 消息服务统一入口
- * 导出消息传递相关的所有功能
+ * Messaging service entry point
+ * Exports all messaging-related functionality
  */
 
-// 服务类导出
+// Service class exports
 export {
   default as MessagingService,
   messagingService,
 } from './MessagingService';
 
-// 类型定义导出
+// Type definition exports
 export type {
   MessagingServiceConfig,
   MessageSendResult,
@@ -31,5 +31,5 @@ export type {
 
 export { MessageType } from './types';
 
-// 默认导出
+// Default export
 export { messagingService as default } from './MessagingService';

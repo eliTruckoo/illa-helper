@@ -135,7 +135,7 @@ const importSettings = async () => {
         await storageService.saveUserSettings(importedData.userSettings);
         importStats.settings = true;
 
-        // 导入网站管理数据
+        // Import website management data
         if (importedData.websiteManagement?.rules) {
           importStats.websiteRules = await websiteManager.replaceRules(
             importedData.websiteManagement.rules,
@@ -148,7 +148,7 @@ const importSettings = async () => {
         throw new Error(t('dataManagement.importSettings.unrecognizedFormat'));
       }
 
-      // 重新加载页面以应用更改
+      // Reload the page to apply changes
       setTimeout(() => {
         location.reload();
       }, 2000);

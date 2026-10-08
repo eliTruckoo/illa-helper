@@ -1,5 +1,5 @@
 /**
- * OpenAI 翻译提供者
+ * OpenAI translation provider
  */
 
 import { FullTextAnalysisResponse } from '../../shared/types/api';
@@ -15,7 +15,7 @@ import { StructuredTextParser } from '../utils/structuredTextParser';
 import { languageService } from '../../core/translation/LanguageService';
 
 /**
- * OpenAI API 提供者实现
+ * OpenAI API provider implementation
  */
 export class OpenAIProvider extends BaseProvider {
   protected getProviderName(): string {
@@ -26,7 +26,7 @@ export class OpenAIProvider extends BaseProvider {
     text: string,
     settings: UserSettings,
   ): Promise<FullTextAnalysisResponse> {
-    // 简化后统一使用智能模式
+    // Simplified: always use smart mode
     const systemPrompt = getSystemPromptByConfig({
       targetLanguage: settings.multilingualConfig.targetLanguage,
       userLevel: settings.userLevel,
@@ -65,9 +65,11 @@ export class OpenAIProvider extends BaseProvider {
     const [response] = await rateLimiter.executeBatch([apiRequestFunction]);
 
     if (!response.ok) {
-      console.error(`API 请求失败: ${response.status} ${response.statusText}`);
+      console.error(
+        `API request failed: ${response.status} ${response.statusText}`,
+      );
       throw new Error(
-        `API 请求失败: ${response.status} ${response.statusText}`,
+        `API request failed: ${response.status} ${response.statusText}`,
       );
     }
 
@@ -76,7 +78,7 @@ export class OpenAIProvider extends BaseProvider {
   }
 
   /**
-   * 提取替换信息
+   * Extract replacement info
    */
   private extractReplacements(
     data: any,
@@ -85,19 +87,21 @@ export class OpenAIProvider extends BaseProvider {
   ): FullTextAnalysisResponse {
     try {
       if (!data?.choices?.[0]?.message?.content) {
-        throw new Error('API响应格式错误');
+        throw new Error('Invalid API response format');
       }
 
       const rawContent = data.choices[0].message.content;
-      // 使用结构化文本解析器
+      // Use the structured text parser
       const parseResult = StructuredTextParser.parse(rawContent);
 
       if (!parseResult.success) {
-        console.error(`[OpenAI提取] 解析失败:`, parseResult.errors);
-        throw new Error(`结构化文本解析失败: ${parseResult.errors.join(', ')}`);
+        console.error(`[OpenAI extraction] Parse failed:`, parseResult.errors);
+        throw new Error(
+          `Structured text parsing failed: ${parseResult.errors.join(', ')}`,
+        );
       }
 
-      // 添加位置信息
+      // Add position info
       const replacements = addPositionsToReplacements(
         originalText,
         parseResult.replacements,
@@ -110,7 +114,7 @@ export class OpenAIProvider extends BaseProvider {
         replacements,
       };
     } catch (error) {
-      console.error('提取替换信息失败:', error);
+      console.error('Failed to extract replacement info:', error);
       throw error;
     }
   }

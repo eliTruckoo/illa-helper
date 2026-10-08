@@ -1,6 +1,6 @@
 /**
- * Web Speech API TTS提供者
- * 封装浏览器原生的语音合成功能
+ * Web Speech API TTS provider
+ * Wraps the browser's native speech synthesis
  */
 
 import { ITTSProvider, TTSProviderConfig } from './ITTSProvider';
@@ -28,18 +28,18 @@ export class WebSpeechTTSProvider implements ITTSProvider {
   }
 
   /**
-   * 初始化TTS服务
+   * Initialize the TTS service
    */
   private async initialize(): Promise<void> {
     if (this.isInitialized) return;
 
-    // 等待语音列表加载
+    // Wait for the voice list to load
     await this.loadVoices();
     this.isInitialized = true;
   }
 
   /**
-   * 加载可用的语音
+   * Load available voices
    */
   private loadVoices(): Promise<void> {
     return new Promise((resolve) => {
@@ -50,12 +50,12 @@ export class WebSpeechTTSProvider implements ITTSProvider {
         }
       };
 
-      // 有些浏览器需要异步加载语音
+      // Some browsers load voices asynchronously
       if (this.synthesis.getVoices().length > 0) {
         loadVoicesHandler();
       } else {
         this.synthesis.onvoiceschanged = loadVoicesHandler;
-        // 设置超时防止无限等待
+        // Set a timeout to avoid waiting forever
         setTimeout(() => {
           if (this.voices.length === 0) {
             this.voices = this.synthesis.getVoices();
@@ -74,27 +74,27 @@ export class WebSpeechTTSProvider implements ITTSProvider {
       if (!text || typeof text !== 'string') {
         return {
           success: false,
-          error: '文本参数无效',
+          error: 'Invalid text parameter',
         };
       }
 
-      // 确保已初始化
+      // Ensure initialized
       await this.initialize();
 
-      // 停止当前朗读
+      // Stop current speech
       this.stop();
 
       const finalConfig = { ...this.config, ...config };
       const utterance = new SpeechSynthesisUtterance(text);
       this.currentUtterance = utterance;
 
-      // 设置语音参数
+      // Set voice parameters
       utterance.lang = finalConfig.lang || 'en-US';
       utterance.rate = finalConfig.rate || 1.0;
       utterance.pitch = finalConfig.pitch || 1.0;
       utterance.volume = finalConfig.volume || 1.0;
 
-      // 选择合适的语音
+      // Select a suitable voice
       const voice = this.selectVoice(
         finalConfig.lang || 'en-US',
         finalConfig.voice,
@@ -113,7 +113,7 @@ export class WebSpeechTTSProvider implements ITTSProvider {
           this.currentUtterance = null;
           resolve({
             success: false,
-            error: `朗读失败: ${event.error}`,
+            error: `Speech failed: ${event.error}`,
           });
         };
 
@@ -123,7 +123,7 @@ export class WebSpeechTTSProvider implements ITTSProvider {
       this.currentUtterance = null;
       return {
         success: false,
-        error: error instanceof Error ? error.message : '未知错误',
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -152,14 +152,14 @@ export class WebSpeechTTSProvider implements ITTSProvider {
   }
 
   /**
-   * 获取可用的语音列表
+   * Get the list of available voices
    */
   getVoices(): SpeechSynthesisVoice[] {
     return this.voices;
   }
 
   /**
-   * 获取指定语言的语音
+   * Get voices for the given language
    */
   getVoicesByLanguage(lang: string): SpeechSynthesisVoice[] {
     return this.voices.filter((voice) =>
@@ -168,7 +168,7 @@ export class WebSpeechTTSProvider implements ITTSProvider {
   }
 
   /**
-   * 选择合适的语音
+   * Select a suitable voice
    */
   private selectVoice(
     lang: string,
@@ -176,20 +176,20 @@ export class WebSpeechTTSProvider implements ITTSProvider {
   ): SpeechSynthesisVoice | null {
     if (this.voices.length === 0) return null;
 
-    // 如果指定了特定语音，尝试找到它
+    // If a specific voice is requested, try to find it
     if (preferredVoice) {
       const voice = this.voices.find((v) => v.name === preferredVoice);
       if (voice) return voice;
     }
 
-    // 寻找匹配语言的语音
+    // Find voices matching the language
     const languageVoices = this.getVoicesByLanguage(lang);
     if (languageVoices.length > 0) {
-      // 优先选择本地语音
+      // Prefer local voices
       const localVoice = languageVoices.find((v) => v.localService);
       if (localVoice) return localVoice;
 
-      // 否则返回第一个匹配的语音
+      // Otherwise return the first matching voice
       return languageVoices[0];
     }
 

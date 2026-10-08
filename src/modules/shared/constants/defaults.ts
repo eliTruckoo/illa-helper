@@ -1,6 +1,6 @@
 /**
- * 默认配置常量
- * 包含项目中使用的所有默认设置和配置
+ * Default configuration constants
+ * Contains all default settings and configuration used in the project
  */
 
 import type {
@@ -22,7 +22,7 @@ import {
   TranslationMode,
 } from '../types/core';
 
-// 默认API配置
+// Default API configuration
 export const DEFAULT_API_CONFIG: ApiConfig = {
   ...createEmptyApiConfig(),
   apiKey: import.meta.env.VITE_WXT_DEFAULT_API_KEY || '',
@@ -33,33 +33,33 @@ export const DEFAULT_API_CONFIG: ApiConfig = {
   temperature: parseFloat(import.meta.env.VITE_WXT_DEFAULT_TEMPERATURE) || 0,
 };
 
-// 默认多语言配置 - 极简化版本
+// Default language configuration - minimal version
 export const DEFAULT_MULTILINGUAL_CONFIG: MultilingualConfig = {
-  nativeLanguage: 'zh', // 默认中文为母语
-  targetLanguage: 'en', // 默认英语为目标语言
+  nativeLanguage: 'zh', // Chinese as the default native language
+  targetLanguage: 'en', // English as the default target language
 };
 
-// 默认发音快捷键配置
+// Default pronunciation shortcut configuration
 export const DEFAULT_PRONUNCIATION_HOTKEY: TooltipHotkey = {
   enabled: true,
   modifierKeys: [],
-  description: '快捷键',
+  description: 'Shortcut',
 };
 
-// 默认悬浮球配置
+// Default floating ball configuration
 export const DEFAULT_FLOATING_BALL_CONFIG: FloatingBallConfig = {
   enabled: true,
-  position: 50, // 中间位置
-  opacity: 0.8, // 80% 透明度
+  position: 50, // Middle position
+  opacity: 0.8, // 80% opacity
 };
 
-// 默认懒加载配置 - 简化版本
+// Default lazy loading configuration - simplified version
 export const DEFAULT_LAZY_LOADING_CONFIG: LazyLoadingConfig = {
-  enabled: true, //  懒加载开关
-  preloadDistance: 0.5, // 固定提前半屏预加载
+  enabled: true, //  Lazy loading toggle
+  preloadDistance: 0.5, // Fixed preload of half a screen ahead
 };
 
-// 创建默认API配置项的函数
+// Function to create a default API configuration item
 function createDefaultApiConfigItem(): ApiConfigItem {
   return {
     id: 'default-config',
@@ -69,7 +69,7 @@ function createDefaultApiConfigItem(): ApiConfigItem {
   };
 }
 
-// 默认用户设置
+// Default user settings
 export const DEFAULT_SETTINGS: UserSettings = {
   userLevel: UserLevel.B1,
   replacementRate: 0.3,
@@ -88,7 +88,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   floatingBall: DEFAULT_FLOATING_BALL_CONFIG,
   translationPosition: TranslationPosition.AFTER,
   showParentheses: true,
-  apiRequestTimeout: 0, // 无限制超时
+  apiRequestTimeout: 0, // No timeout limit
   customTranslationCSS: '',
   lazyLoading: DEFAULT_LAZY_LOADING_CONFIG,
 };

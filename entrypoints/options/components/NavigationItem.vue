@@ -10,7 +10,7 @@
         : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
     ]"
   >
-    <!-- 图标 -->
+    <!-- Icon -->
     <component
       :is="item.icon"
       :class="[
@@ -21,7 +21,7 @@
       ]"
     />
 
-    <!-- 文本内容 -->
+    <!-- Text content -->
     <div class="flex-1 min-w-0">
       <div class="text-sm font-medium">{{ item.label }}</div>
       <div
@@ -37,7 +37,7 @@
       </div>
     </div>
 
-    <!-- 活跃状态指示器 -->
+    <!-- Active state indicator -->
     <div
       v-if="isActive"
       class="w-2 h-2 bg-sidebar-primary-foreground rounded-full flex-shrink-0"
@@ -65,19 +65,19 @@ const emit = defineEmits<{
 }>();
 
 const handleClick = (e: MouseEvent) => {
-  // 在移动端增加点击响应面积和更好的触摸反馈
+  // Increase the tap target area and improve touch feedback on mobile
   emit('click');
 };
 </script>
 
 <style scoped>
-/* 去除移动端点击高亮 */
+/* Remove mobile tap highlight */
 .tap-highlight-transparent {
   -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
   touch-action: manipulation;
 }
 
-/* 增强移动端触摸体验 */
+/* Improve mobile touch experience */
 @media (max-width: 767px) {
   a {
     padding: 12px 16px;
@@ -85,7 +85,7 @@ const handleClick = (e: MouseEvent) => {
   }
 }
 
-/* 增加活跃状态指示器的可见性 */
+/* Increase visibility of the active state indicator */
 @media (max-width: 767px) {
   a:active {
     transform: scale(0.98);

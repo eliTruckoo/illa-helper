@@ -1,88 +1,88 @@
-# 浸入式语言助手 - 使用指南与测试文档
+# Immersive Language Helper - Usage Guide and Test Document
 
-## 📋 目录
+## 📋 Table of Contents
 
-- [UniversalApiService 通用AI服务](#universalapiservice-通用ai服务)
-- [API参考与使用示例](#api参考与使用示例)
-- [测试指南](#测试指南)
-- [调试技巧](#调试技巧)
-- [故障排除](#故障排除)
-- [性能优化建议](#性能优化建议)
+- [UniversalApiService: General AI Service](#universalapiservice-general-ai-service)
+- [API Reference and Usage Examples](#api-reference-and-usage-examples)
+- [Testing Guide](#testing-guide)
+- [Debugging Tips](#debugging-tips)
+- [Troubleshooting](#troubleshooting)
+- [Performance Optimization Tips](#performance-optimization-tips)
 
 ---
 
-## 🚀 UniversalApiService 通用AI服务
+## 🚀 UniversalApiService: General AI Service
 
-### 概述
+### Overview
 
-`UniversalApiService` 是一个通用的大模型API调用服务，它封装了底层的API调用逻辑，提供简单易用的接口，让您可以轻松地在任何业务场景中使用AI大模型。
+`UniversalApiService` is a general-purpose LLM API calling service. It wraps the underlying API call logic and exposes a simple interface, so you can easily use AI models in any business scenario.
 
-### 核心特性
+### Core Features
 
-- 🚀 **极简使用**: 一行代码即可调用AI
-- 🔄 **统一接口**: 支持多种Provider（OpenAI、Google Gemini等）
-- ⚙️ **灵活配置**: 支持自定义参数和配置
-- 🛡️ **错误处理**: 完善的错误处理机制
-- 💬 **聊天对话**: 支持多轮对话
-- 📊 **Token统计**: 提供详细的使用统计
+- 🚀 **Minimal usage**: Call the AI with a single line of code
+- 🔄 **Unified interface**: Supports multiple providers (OpenAI, Google Gemini, etc.)
+- ⚙️ **Flexible configuration**: Supports custom parameters and configuration
+- 🛡️ **Error handling**: Thorough error handling
+- 💬 **Chat conversations**: Supports multi-turn conversations
+- 📊 **Token statistics**: Provides detailed usage statistics
 
-### 快速开始
+### Quick Start
 
-#### 基础导入
+#### Basic Import
 
 ```typescript
 import { callAI, quickAI, universalApi } from '@/src/modules/api';
 ```
 
-#### 1. 最简单的调用
+#### 1. The Simplest Call
 
 ```typescript
-// 直接调用，使用默认配置
-const result = await callAI('解释什么是人工智能');
+// Call directly with the default configuration
+const result = await callAI('Explain what artificial intelligence is');
 console.log(result.content);
 ```
 
-#### 2. 快速调用（带系统提示词）
+#### 2. Quick Call (with a System Prompt)
 
 ```typescript
 const result = await quickAI(
-  '分析这段文本的情感倾向',
-  '你是一个专业的情感分析师'
+  'Analyze the sentiment of this text',
+  'You are a professional sentiment analyst'
 );
 console.log(result.content);
 ```
 
-#### 3. 带配置的调用
+#### 3. Call with Configuration
 
 ```typescript
-const result = await callAI('写一首关于春天的诗', {
-  systemPrompt: '你是一位诗人',
+const result = await callAI('Write a poem about spring', {
+  systemPrompt: 'You are a poet',
   temperature: 0.8,
   maxTokens: 500
 });
 ```
 
-### 详细用法
+### Detailed Usage
 
-#### 使用类实例
+#### Using a Class Instance
 
 ```typescript
-// 获取单例实例
+// Get the singleton instance
 const api = universalApi;
 
-// 基本调用
-const result = await api.call('你的提示词', {
-  systemPrompt: '系统提示词',
+// Basic call
+const result = await api.call('Your prompt', {
+  systemPrompt: 'System prompt',
   temperature: 0.7,
   maxTokens: 1000
 });
 
-// 聊天对话
+// Chat conversation
 const messages = [
-  { role: 'system', content: '你是AI助手' },
-  { role: 'user', content: '你好' },
-  { role: 'assistant', content: '你好！有什么可以帮助您的吗？' },
-  { role: 'user', content: '请介绍一下TypeScript' }
+  { role: 'system', content: 'You are an AI assistant' },
+  { role: 'user', content: 'Hello' },
+  { role: 'assistant', content: 'Hello! How can I help you?' },
+  { role: 'user', content: 'Please introduce TypeScript' }
 ];
 
 const chatResult = await api.chat(messages, {
@@ -90,199 +90,199 @@ const chatResult = await api.chat(messages, {
 });
 ```
 
-#### 配置选项详解
+#### Configuration Options
 
 ```typescript
 interface UniversalApiOptions {
-  systemPrompt?: string;        // 系统提示词
-  temperature?: number;         // 模型温度 (0-2)
-  maxTokens?: number;          // 最大输出Token数
-  configId?: string;           // 指定API配置ID
-  forceProvider?: TranslationProvider; // 强制使用特定Provider
-  timeout?: number;            // 请求超时时间(毫秒)
-  customParams?: string;       // 自定义参数JSON字符串
-  rawResponse?: boolean;       // 是否返回原始响应
+  systemPrompt?: string;        // System prompt
+  temperature?: number;         // Model temperature (0-2)
+  maxTokens?: number;          // Maximum output tokens
+  configId?: string;           // Specific API config ID
+  forceProvider?: TranslationProvider; // Force a specific provider
+  timeout?: number;            // Request timeout (milliseconds)
+  customParams?: string;       // Custom parameters as a JSON string
+  rawResponse?: boolean;       // Whether to return the raw response
 }
 ```
 
-#### 返回结果详解
+#### Return Value
 
 ```typescript
 interface UniversalApiResult {
-  success: boolean;            // 是否成功
-  prompt: string;             // 原始提示词
-  content: string;            // AI生成的内容
-  model?: string;             // 使用的模型名称
-  provider?: string;          // 使用的Provider名称
-  usage?: {                   // Token使用统计
+  success: boolean;            // Whether the call succeeded
+  prompt: string;             // Original prompt
+  content: string;            // AI-generated content
+  model?: string;             // Model name used
+  provider?: string;          // Provider name used
+  usage?: {                   // Token usage statistics
     promptTokens?: number;
     completionTokens?: number;
     totalTokens?: number;
   };
-  rawData?: any;             // 原始响应数据
-  error?: string;            // 错误信息
+  rawData?: any;             // Raw response data
+  error?: string;            // Error message
 }
 ```
 
-### 业务场景示例
+### Business Scenario Examples
 
-#### 1. 文本分析
+#### 1. Text Analysis
 
 ```typescript
 const sentiment = await callAI(
-  '请分析以下文本的情感倾向：这个产品太棒了！',
+  'Please analyze the sentiment of the following text: This product is amazing!',
   {
-    systemPrompt: '你是专业的文本情感分析师',
+    systemPrompt: 'You are a professional text sentiment analyst',
     temperature: 0.3
   }
 );
 ```
 
-#### 2. 内容生成
+#### 2. Content Generation
 
 ```typescript
 const content = await callAI(
-  '为智能手表写一段产品介绍',
+  'Write a product introduction for a smartwatch',
   {
-    systemPrompt: '你是专业的产品文案撰写师',
+    systemPrompt: 'You are a professional product copywriter',
     temperature: 0.8,
     maxTokens: 500
   }
 );
 ```
 
-#### 3. 代码解释
+#### 3. Code Explanation
 
 ```typescript
 const explanation = await quickAI(
-  `解释这段代码：\n${codeSnippet}`,
-  '你是编程教师，用简单的语言解释代码'
+  `Explain this code:\n${codeSnippet}`,
+  'You are a programming teacher who explains code in simple language'
 );
 ```
 
-#### 4. 邮件回复
+#### 4. Email Reply
 
 ```typescript
 const reply = await callAI(
-  `帮我回复这封邮件：\n${originalEmail}`,
+  `Help me reply to this email:\n${originalEmail}`,
   {
-    systemPrompt: '你是专业的客服人员，回复要礼貌专业',
+    systemPrompt: 'You are a professional customer service agent; replies should be polite and professional',
     temperature: 0.6
   }
 );
 ```
 
-#### 5. SEO标题生成
+#### 5. SEO Title Generation
 
 ```typescript
 const titles = await callAI(
-  '为"提高工作效率"主题生成5个SEO友好的标题',
+  'Generate 5 SEO-friendly titles for the topic "improving work efficiency"',
   {
-    systemPrompt: '你是SEO专家，标题要吸引点击且包含关键词',
+    systemPrompt: 'You are an SEO expert; titles should attract clicks and include keywords',
     temperature: 0.8
   }
 );
 ```
 
-#### 6. 数据分析建议
+#### 6. Data Analysis Advice
 
 ```typescript
 const advice = await callAI(
-  '我有100万条用户行为数据需要分析，给出处理建议',
+  'I have 1 million rows of user behavior data to analyze; give me processing advice',
   {
-    systemPrompt: '你是数据分析专家',
+    systemPrompt: 'You are a data analysis expert',
     temperature: 0.5
   }
 );
 ```
 
-### 高级功能
+### Advanced Features
 
-#### 1. 指定特定Provider
+#### 1. Specifying a Provider
 
 ```typescript
-const result = await callAI('写一首诗', {
+const result = await callAI('Write a poem', {
   forceProvider: TranslationProvider.GoogleGemini,
   temperature: 0.9
 });
 
-console.log(`使用的Provider: ${result.provider}`);
+console.log(`Provider used: ${result.provider}`);
 ```
 
-#### 2. 获取详细统计信息
+#### 2. Getting Detailed Statistics
 
 ```typescript
-const result = await callAI('解释机器学习', {
+const result = await callAI('Explain machine learning', {
   rawResponse: true
 });
 
-console.log(`Token使用量: ${result.usage?.totalTokens}`);
-console.log(`原始响应:`, result.rawData);
+console.log(`Token usage: ${result.usage?.totalTokens}`);
+console.log(`Raw response:`, result.rawData);
 ```
 
-#### 3. 多轮对话管理
+#### 3. Multi-turn Conversation Management
 
 ```typescript
 let conversation = [
-  { role: 'system', content: '你是编程助手' }
+  { role: 'system', content: 'You are a programming assistant' }
 ];
 
-// 第一轮
-conversation.push({ role: 'user', content: '什么是React Hooks?' });
+// Round 1
+conversation.push({ role: 'user', content: 'What are React Hooks?' });
 let result = await universalApi.chat(conversation);
 conversation.push({ role: 'assistant', content: result.content });
 
-// 第二轮
-conversation.push({ role: 'user', content: '举个useState的例子' });
+// Round 2
+conversation.push({ role: 'user', content: 'Give an example of useState' });
 result = await universalApi.chat(conversation);
 ```
 
-#### 4. 错误处理
+#### 4. Error Handling
 
 ```typescript
-const result = await callAI('你的提示词');
+const result = await callAI('Your prompt');
 
 if (!result.success) {
-  console.error('调用失败:', result.error);
-  // 处理错误逻辑
+  console.error('Call failed:', result.error);
+  // Error handling logic
   return;
 }
 
-// 成功处理
+// Handle success
 console.log(result.content);
 ```
 
-#### 5. 检查API状态
+#### 5. Checking API Status
 
 ```typescript
-// 检查API是否可用
+// Check whether the API is available
 const isAvailable = await universalApi.isAvailable();
 
-// 获取可用的模型列表
+// Get the list of available models
 const models = await universalApi.getAvailableModels();
-console.log('可用模型:', models);
+console.log('Available models:', models);
 ```
 
-### 最佳实践
+### Best Practices
 
-#### 1. 温度设置建议
+#### 1. Temperature Recommendations
 
-- **创意任务** (诗歌、故事): `temperature: 0.8-1.0`
-- **分析任务** (数据分析、情感分析): `temperature: 0.2-0.5`
-- **问答任务** (解释、教学): `temperature: 0.5-0.7`
-- **代码相关** (代码解释、重构): `temperature: 0.3-0.6`
+- **Creative tasks** (poems, stories): `temperature: 0.8-1.0`
+- **Analytical tasks** (data analysis, sentiment analysis): `temperature: 0.2-0.5`
+- **Q&A tasks** (explanation, teaching): `temperature: 0.5-0.7`
+- **Code-related** (code explanation, refactoring): `temperature: 0.3-0.6`
 
-#### 2. 系统提示词优化
+#### 2. System Prompt Optimization
 
 ```typescript
-// ✅ 好的系统提示词
-const goodPrompt = '你是一名资深的前端开发工程师，擅长React和TypeScript，请用简洁专业的语言回答问题。';
+// ✅ A good system prompt
+const goodPrompt = 'You are a senior front-end engineer skilled in React and TypeScript. Answer questions in concise, professional language.';
 
-// ❌ 不够具体的提示词
-const badPrompt = '你是程序员';
+// ❌ A prompt that is not specific enough
+const badPrompt = 'You are a programmer';
 ```
 
-#### 3. 错误处理模式
+#### 3. Error Handling Pattern
 
 ```typescript
 async function safeCallAI(prompt: string, options?: UniversalApiOptions) {
@@ -295,19 +295,19 @@ async function safeCallAI(prompt: string, options?: UniversalApiOptions) {
     
     return result.content;
   } catch (error) {
-    console.error('AI调用失败:', error);
-    return '抱歉，处理您的请求时出现了错误，请稍后重试。';
+    console.error('AI call failed:', error);
+    return 'Sorry, an error occurred while processing your request. Please try again later.';
   }
 }
 ```
 
-#### 4. 性能优化
+#### 4. Performance Optimization
 
 ```typescript
-// 对于不需要详细信息的简单调用
+// For simple calls that do not need detailed information
 const result = await quickAI(prompt, systemPrompt);
 
-// 对于需要控制的复杂调用
+// For complex calls that need control
 const result = await callAI(prompt, {
   systemPrompt,
   temperature: 0.7,
@@ -316,53 +316,53 @@ const result = await callAI(prompt, {
 });
 ```
 
-### 与翻译API的区别
+### Differences from the Translation API
 
-| 特性 | UniversalApiService | 翻译API |
-|------|---------------------|---------|
-| 用途 | 通用AI调用 | 专门用于翻译 |
-| 系统提示词 | 完全自定义 | 固定的翻译提示词 |
-| 返回格式 | 原始AI响应 | 结构化翻译结果 |
-| 业务场景 | 任意AI任务 | 文本翻译替换 |
+| Feature | UniversalApiService | Translation API |
+|---------|---------------------|-----------------|
+| Purpose | General AI calls | Dedicated to translation |
+| System prompt | Fully customizable | Fixed translation prompt |
+| Return format | Raw AI response | Structured translation result |
+| Use cases | Any AI task | Text translation and replacement |
 
 ---
 
-## 🔌 API参考与使用示例
+## 🔌 API Reference and Usage Examples
 
-### API服务使用（重构后模块化架构）
+### Using the API Service (Refactored Modular Architecture)
 
-#### 导入和创建翻译服务
+#### Importing and Creating a Translation Service
 ```typescript
-// 推荐：使用新的模块化API
+// Recommended: use the new modular API
 import { ApiServiceFactory } from '@/src/modules/api';
 
-// 创建翻译提供者实例
+// Create a translation provider instance
 const provider = ApiServiceFactory.createProvider(activeConfig);
 
-// 进行文本翻译
+// Translate text
 const result = await provider.analyzeFullText(text, settings);
 ```
 
-#### 直接使用特定Provider
+#### Using a Specific Provider Directly
 ```typescript
-// 直接导入特定Provider
+// Import a specific provider directly
 import { GoogleGeminiProvider, OpenAIProvider } from '@/src/modules/api';
 
-// 直接创建Gemini Provider
+// Create a Gemini provider directly
 const geminiProvider = new GoogleGeminiProvider(config);
 const result = await geminiProvider.analyzeFullText(text, settings);
 
-// 直接创建OpenAI Provider  
+// Create an OpenAI provider directly  
 const openaiProvider = new OpenAIProvider(config);
 const result = await openaiProvider.analyzeFullText(text, settings);
 ```
 
-#### 扩展新的翻译Provider
+#### Extending with a New Translation Provider
 ```typescript
 import { BaseProvider } from '@/src/modules/api';
 import { ApiConfig, UserSettings, FullTextAnalysisResponse } from '@/src/modules/types';
 
-// 创建自定义Provider
+// Create a custom provider
 class CustomProvider extends BaseProvider {
   protected getProviderName(): string {
     return 'Custom Provider';
@@ -372,7 +372,7 @@ class CustomProvider extends BaseProvider {
     text: string,
     settings: UserSettings,
   ): Promise<FullTextAnalysisResponse> {
-    // 实现自定义翻译逻辑
+    // Implement custom translation logic
     return {
       original: text,
       processed: '',
@@ -381,13 +381,13 @@ class CustomProvider extends BaseProvider {
   }
 }
 
-// 在工厂中使用
-// 需要在 ApiServiceFactory 中添加对应的创建逻辑
+// Use it in the factory
+// The corresponding creation logic must be added to ApiServiceFactory
 ```
 
-### 用户设置API
+### User Settings API
 
-#### 获取用户设置
+#### Getting User Settings
 ```typescript
 import { StorageManager } from '@/src/modules/storageManager';
 
@@ -395,7 +395,7 @@ const storageManager = new StorageManager();
 const settings = await storageManager.getUserSettings();
 ```
 
-#### 保存用户设置
+#### Saving User Settings
 ```typescript
 import { UserLevel, TranslationStyle } from '@/src/modules/types';
 
@@ -406,16 +406,16 @@ await storageManager.saveUserSettings({
 });
 ```
 
-#### 设置更新通知
+#### Settings Update Notifications
 ```typescript
 import { notifySettingsChanged } from '@/src/modules/messaging';
 
 await notifySettingsChanged(newSettings);
 ```
 
-### 发音服务API
+### Pronunciation Service API
 
-#### 初始化发音服务
+#### Initializing the Pronunciation Service
 ```typescript
 import { PronunciationService, DEFAULT_PRONUNCIATION_CONFIG } from '@/src/modules/pronunciation';
 
@@ -429,33 +429,33 @@ const pronunciationService = new PronunciationService({
 });
 ```
 
-#### 为元素添加发音功能
+#### Adding Pronunciation to an Element
 ```typescript
 await pronunciationService.addPronunciationToElement(
-  element,           // HTML元素
-  'hello world',     // 单词或短语
-  false             // 是否为短语
+  element,           // HTML element
+  'hello world',     // Word or phrase
+  false             // Whether it is a phrase
 );
 ```
 
-#### 语音合成
+#### Speech Synthesis
 ```typescript
-// 使用默认TTS
+// Use the default TTS
 const result = await pronunciationService.speakText('Hello World');
 
-// 指定口音
+// Specify an accent
 const result = await pronunciationService.speakTextWithAccent('Hello', 'en-GB');
 ```
 
-#### 获取音标
+#### Getting Phonetics
 ```typescript
 const phoneticResult = await pronunciationService.getPhonetic('hello');
 console.log(phoneticResult.phonetics[0].text); // "/həˈloʊ/"
 ```
 
-### 工具函数API
+### Utility Function API
 
-#### API相关工具函数
+#### API-related Utility Functions
 ```typescript
 import { 
   mergeCustomParams, 
@@ -463,138 +463,138 @@ import {
   validateInputs 
 } from '@/src/modules/api';
 
-// 合并自定义API参数
+// Merge custom API parameters
 const mergedParams = mergeCustomParams(baseParams, '{"temperature": 0.5}');
 
-// 创建错误响应
-const errorResponse = createErrorResponse('原始文本');
+// Create an error response
+const errorResponse = createErrorResponse('original text');
 
-// 验证输入参数
-const isValid = validateInputs('文本内容', 'api-key');
+// Validate input parameters
+const isValid = validateInputs('text content', 'api-key');
 ```
 
-#### 文本处理工具函数
+#### Text Processing Utility Functions
 ```typescript
 import { addPositionsToReplacements } from '@/src/modules/api';
 
-// 为替换项添加位置信息
+// Add position information to replacements
 const replacementsWithPosition = addPositionsToReplacements(
   originalText,
-  [{ original: 'hello', translation: '你好' }]
+  [{ original: 'hello', translation: 'hola' }]
 );
 ```
 
 ---
 
-## 🧪 测试指南
+## 🧪 Testing Guide
 
-### UniversalApiService 测试
+### UniversalApiService Tests
 
-#### 运行完整测试套件
+#### Running the Full Test Suite
 
 ```typescript
 import { UniversalApiTest, quickFunctionTest } from '@/src/modules/api/examples/UniversalApiTest';
 
-// 运行所有测试
+// Run all tests
 await UniversalApiTest.runAllTests();
 
-// 快速功能验证
+// Quick functionality check
 await quickFunctionTest();
 ```
 
-#### 测试覆盖内容
+#### Test Coverage
 
-- ✅ 基本调用功能
-- ✅ Google Gemini Provider测试
-- ✅ OpenAI Provider测试
-- ✅ 聊天对话功能
-- ✅ 原始响应获取
-- ✅ 错误处理验证
-- ✅ API可用性检查
-- ✅ 模型列表获取
+- ✅ Basic call functionality
+- ✅ Google Gemini provider test
+- ✅ OpenAI provider test
+- ✅ Chat conversation functionality
+- ✅ Raw response retrieval
+- ✅ Error handling verification
+- ✅ API availability check
+- ✅ Model list retrieval
 
-#### 单独测试示例
+#### Individual Test Examples
 
 ```typescript
-// 测试基本调用
+// Test a basic call
 const basicResult = await UniversalApiTest.testBasicCall();
 
-// 测试特定Provider
+// Test a specific provider
 const geminiResult = await UniversalApiTest.testGoogleGeminiProvider();
 
-// 测试错误处理
+// Test error handling
 const errorTest = await UniversalApiTest.testErrorHandling();
 ```
 
-### 手动测试检查清单
+### Manual Test Checklist
 
-#### 核心功能测试
-- [ ] 基本翻译功能在不同类型网站上工作正常
-- [ ] 智能语言检测功能正确识别网页源语言
-- [ ] 智能多语言模式翻译准确（测试中英日韩等语言）
-- [ ] AI通用调用功能正常（各种业务场景）
+#### Core Functionality Tests
+- [ ] Basic translation works on different types of websites
+- [ ] Smart language detection correctly identifies the page source language
+- [ ] Smart multilingual mode translates accurately (test Chinese, English, Japanese, Korean, etc.)
+- [ ] General AI calls work (various business scenarios)
 
-#### 发音系统测试
-- [ ] 发音功能音标显示正确（Dictionary API）
-- [ ] TTS语音播放正常（测试有道TTS + Web Speech双TTS）
-- [ ] 悬浮框定位和交互响应正确（避免边界溢出）
-- [ ] 双层学习体验正常（短语→单词交互）
+#### Pronunciation System Tests
+- [ ] Pronunciation feature shows phonetics correctly (Dictionary API)
+- [ ] TTS playback works (test both Youdao TTS and Web Speech TTS)
+- [ ] Tooltip positioning and interaction respond correctly (no boundary overflow)
+- [ ] Two-level learning experience works (phrase → word interaction)
 
-#### 界面和样式测试
-- [ ] 7种翻译样式显示正常（含学习模式模糊效果）
-- [ ] 主题适配正常（深色/浅色自动切换）
-- [ ] 响应式设计在不同设备上正常
-- [ ] UniversalApiService界面调用正常
+#### UI and Style Tests
+- [ ] All 7 translation styles display correctly (including the blur effect for learning mode)
+- [ ] Theme adaptation works (automatic dark/light switching)
+- [ ] Responsive design works on different devices
+- [ ] UniversalApiService UI calls work
 
-#### 设置和配置测试
-- [ ] 设置保存和跨设备同步功能正常
-- [ ] 20+种语言翻译方向正确
-- [ ] API配置切换正常
-- [ ] 自定义参数配置生效
+#### Settings and Configuration Tests
+- [ ] Settings saving and cross-device sync work
+- [ ] 20+ languages have the correct translation direction
+- [ ] API config switching works
+- [ ] Custom parameter configuration takes effect
 
-#### 性能和稳定性测试
-- [ ] 性能表现良好（大页面、动态内容、缓存机制）
-- [ ] 内存使用合理（长时间使用不泄漏）
-- [ ] 错误恢复机制正常
-- [ ] 网络异常处理正常
+#### Performance and Stability Tests
+- [ ] Performance is good (large pages, dynamic content, caching)
+- [ ] Memory usage is reasonable (no leaks during long use)
+- [ ] Error recovery works
+- [ ] Network error handling works
 
 ---
 
-## 🐛 调试技巧
+## 🐛 Debugging Tips
 
-### 基础调试设置
+### Basic Debug Setup
 
-#### 启用调试模式
+#### Enabling Debug Mode
 ```typescript
-// 启用调试日志
+// Enable debug logging
 localStorage.setItem('wxt-debug', 'true');
 
-// 查看详细控制台输出
+// View detailed console output
 console.log('Debug mode enabled');
 ```
 
-#### 检查API配置
+#### Checking the API Configuration
 ```typescript
-// 检查当前API配置
+// Check the current API configuration
 const settings = await browser.storage.sync.get('user_settings');
 console.log('Current settings:', JSON.parse(settings.user_settings));
 
-// 验证API配置有效性
+// Verify the API configuration is valid
 const isAvailable = await universalApi.isAvailable();
 console.log('API Available:', isAvailable);
 
-// 获取模型列表
+// Get the model list
 const models = await universalApi.getAvailableModels();
 console.log('Available models:', models);
 ```
 
-#### UniversalApiService调试
+#### Debugging UniversalApiService
 
 ```typescript
-// 测试基本调用
-const debugResult = await callAI('测试调用', {
+// Test a basic call
+const debugResult = await callAI('Test call', {
   rawResponse: true,
-  systemPrompt: '简短回答'
+  systemPrompt: 'Answer briefly'
 });
 
 console.log('Debug result:', {
@@ -607,15 +607,15 @@ console.log('Debug result:', {
 });
 ```
 
-### 发音系统调试
+### Pronunciation System Debugging
 
-#### 检查发音服务状态
+#### Checking the Pronunciation Service Status
 ```typescript
-// 检查TTS服务状态
+// Check the TTS service status
 const ttsStatus = pronunciationService.getTTSProviderStatus();
 console.log('TTS Status:', ttsStatus);
 
-// 检查浏览器TTS支持
+// Check browser TTS support
 if ('speechSynthesis' in window) {
   console.log('Web Speech API supported');
   console.log('Available voices:', speechSynthesis.getVoices());
@@ -623,13 +623,13 @@ if ('speechSynthesis' in window) {
   console.warn('Web Speech API not supported');
 }
 
-// 检查缓存状态
+// Check the cache status
 console.log('Pronunciation cache status:', pronunciationService.getCacheStatus());
 ```
 
-#### 音标获取调试
+#### Debugging Phonetic Retrieval
 ```typescript
-// 测试音标获取
+// Test phonetic retrieval
 try {
   const phoneticResult = await pronunciationService.getPhonetic('hello');
   console.log('Phonetic result:', phoneticResult);
@@ -638,11 +638,11 @@ try {
 }
 ```
 
-### 网络请求调试
+### Network Request Debugging
 
-#### API请求监控
+#### API Request Monitoring
 ```typescript
-// 监控API请求
+// Monitor API requests
 const originalFetch = window.fetch;
 window.fetch = async (...args) => {
   console.log('API Request:', args[0], args[1]);
@@ -652,20 +652,20 @@ window.fetch = async (...args) => {
 };
 ```
 
-#### 请求性能分析
+#### Request Performance Analysis
 ```typescript
-// 测试请求性能
+// Test request performance
 const startTime = performance.now();
-const result = await callAI('性能测试');
+const result = await callAI('Performance test');
 const endTime = performance.now();
 console.log(`Request took ${endTime - startTime} milliseconds`);
 ```
 
-### 内存和性能调试
+### Memory and Performance Debugging
 
-#### 内存使用监控
+#### Memory Usage Monitoring
 ```typescript
-// 检查内存使用
+// Check memory usage
 if (performance.memory) {
   console.log('Memory usage:', {
     used: Math.round(performance.memory.usedJSHeapSize / 1048576) + ' MB',
@@ -675,9 +675,9 @@ if (performance.memory) {
 }
 ```
 
-#### 性能指标监控
+#### Performance Metrics Monitoring
 ```typescript
-// 监控关键性能指标
+// Monitor key performance metrics
 const performanceMetrics = {
   translationTime: 0,
   tooltipResponseTime: 0,
@@ -685,7 +685,7 @@ const performanceMetrics = {
   cacheHitRate: 0
 };
 
-// 在关键操作前后测量时间
+// Measure time before and after key operations
 const measurePerformance = async (operation: string, fn: Function) => {
   const start = performance.now();
   const result = await fn();
@@ -697,70 +697,70 @@ const measurePerformance = async (operation: string, fn: Function) => {
 
 ---
 
-## 🛠️ 故障排除
+## 🛠️ Troubleshooting
 
-### 常见问题与解决方案
+### Common Problems and Solutions
 
-#### 1. UniversalApiService相关问题
+#### 1. UniversalApiService Issues
 
-**症状**: AI调用失败，返回错误信息
-**排查步骤**:
+**Symptom**: AI calls fail and return an error message
+**Steps**:
 ```typescript
-// 1. 检查API可用性
+// 1. Check API availability
 const isAvailable = await universalApi.isAvailable();
-console.log('API可用性:', isAvailable);
+console.log('API availability:', isAvailable);
 
-// 2. 检查模型列表
+// 2. Check the model list
 const models = await universalApi.getAvailableModels();
-console.log('可用模型:', models);
+console.log('Available models:', models);
 
-// 3. 测试简单调用
+// 3. Test a simple call
 const testResult = await callAI('Hello', { 
   rawResponse: true,
   timeout: 10000 
 });
-console.log('测试结果:', testResult);
+console.log('Test result:', testResult);
 ```
 
-**常见解决方案**:
-- 检查API密钥是否正确配置
-- 验证网络连接是否正常
-- 确认选择的模型是否可用
-- 检查请求参数是否合法
+**Common solutions**:
+- Check that the API key is configured correctly
+- Verify that the network connection is working
+- Confirm that the selected model is available
+- Check that the request parameters are valid
 
-#### 2. API配置问题
+#### 2. API Configuration Issues
 
-**症状**: 翻译功能不工作，显示API配置错误通知
-**解决方案**:
+**Symptom**: Translation does not work and an API configuration error notification is shown
+**Solution**:
 ```typescript
-// 检查API配置
+// Check the API configuration
 const settings = await browser.storage.sync.get('user_settings');
 const userSettings = JSON.parse(settings.user_settings);
 console.log('API Config:', userSettings.apiConfigs);
 
-// 验证API密钥格式
+// Verify the API key format
 const activeConfig = userSettings.apiConfigs.find(
   config => config.id === userSettings.activeApiConfigId
 );
 
 if (!activeConfig?.config?.apiKey) {
-  console.error('API密钥未配置');
+  console.error('API key is not configured');
 } else if (activeConfig.provider === 'OpenAI' && 
            !activeConfig.config.apiKey.startsWith('sk-')) {
-  console.error('OpenAI API密钥格式不正确');
+  console.error('OpenAI API key format is incorrect');
 }
 ```
 
-#### 3. 发音功能无法使用
+#### 3. Pronunciation Feature Not Working
 
-**症状**: 悬浮框显示但音标或TTS不工作
-**解决方案**:
+**Symptom**: The tooltip is shown but phonetics or TTS do not work
+**Solution**:
 ```typescript
-// 检查TTS服务状态
+// Check the TTS service status
 const ttsStatus = pronunciationService.getTTSProviderStatus();
 console.log('TTS Status:', ttsStatus);
 
-// 检查浏览器TTS支持
+// Check browser TTS support
 if ('speechSynthesis' in window) {
   console.log('Web Speech API supported');
   const voices = speechSynthesis.getVoices();
@@ -769,7 +769,7 @@ if ('speechSynthesis' in window) {
   console.warn('Web Speech API not supported');
 }
 
-// 检查Dictionary API连接
+// Check the Dictionary API connection
 try {
   const testPhonetic = await fetch('https://api.dictionaryapi.dev/api/v2/entries/en/test');
   if (testPhonetic.ok) {
@@ -780,32 +780,32 @@ try {
 }
 ```
 
-#### 4. 样式显示异常
+#### 4. Style Display Problems
 
-**症状**: 翻译文本样式不正确或冲突
-**解决方案**:
+**Symptom**: Translated text styles are incorrect or conflicting
+**Solution**:
 ```typescript
-// 检查样式注入
+// Check style injection
 const styleSheets = document.querySelectorAll('style[data-wxt]');
 console.log('WXT stylesheets:', styleSheets.length);
 
-// 检查样式冲突
+// Check for style conflicts
 const conflictingStyles = document.querySelectorAll('[class*="wxt-"]');
 console.log('WXT styled elements:', conflictingStyles.length);
 
-// 重新注入样式
+// Re-inject styles
 if (styleSheets.length === 0) {
-  console.log('样式未正确注入，尝试重新初始化');
-  // 重新初始化样式管理器
+  console.log('Styles were not injected correctly, trying to reinitialize');
+  // Reinitialize the style manager
 }
 ```
 
-#### 5. 设置保存失败
+#### 5. Settings Fail to Save
 
-**症状**: 配置更改后不生效或丢失
-**解决方案**:
+**Symptom**: Configuration changes do not take effect or are lost
+**Solution**:
 ```typescript
-// 检查存储权限
+// Check storage permissions
 try {
   await browser.storage.sync.set({test: 'value'});
   await browser.storage.sync.remove('test');
@@ -814,7 +814,7 @@ try {
   console.error('Storage permission denied:', error);
 }
 
-// 检查存储配额
+// Check the storage quota
 const storageData = await browser.storage.sync.get(null);
 const dataSize = JSON.stringify(storageData).length;
 console.log('Storage usage:', dataSize, 'bytes');
@@ -824,12 +824,12 @@ if (dataSize > 102400) { // 100KB limit for sync storage
 }
 ```
 
-#### 6. 性能问题
+#### 6. Performance Problems
 
-**症状**: 页面响应慢，内存使用过高
-**解决方案**:
+**Symptom**: The page responds slowly and memory usage is too high
+**Solution**:
 ```typescript
-// 检查内存使用
+// Check memory usage
 const checkMemory = () => {
   if (performance.memory) {
     const memory = performance.memory;
@@ -840,40 +840,40 @@ const checkMemory = () => {
   }
 };
 
-// 检查缓存状态
+// Check the cache status
 const cacheStats = pronunciationService.getCacheStatus();
 console.log('Cache statistics:', cacheStats);
 
-// 清理缓存
+// Clear the cache
 if (cacheStats.size > 1000) {
   pronunciationService.clearCache();
   console.log('Cache cleared due to size limit');
 }
 ```
 
-#### 7. 网络连接问题
+#### 7. Network Connection Problems
 
-**症状**: API调用超时或连接失败
-**解决方案**:
+**Symptom**: API calls time out or the connection fails
+**Solution**:
 ```typescript
-// 测试网络连接
+// Test the network connection
 const testConnection = async () => {
   try {
-    // 测试基本网络连接
+    // Test the basic network connection
     const response = await fetch('https://httpbin.org/get', {
       method: 'GET',
       timeout: 5000
     });
     
     if (response.ok) {
-      console.log('网络连接正常');
+      console.log('Network connection OK');
     }
   } catch (error) {
-    console.error('网络连接异常:', error);
+    console.error('Network connection error:', error);
   }
 };
 
-// 测试API端点连接
+// Test the API endpoint connection
 const testApiEndpoint = async (endpoint: string) => {
   try {
     const response = await fetch(endpoint, {
@@ -883,42 +883,42 @@ const testApiEndpoint = async (endpoint: string) => {
       timeout: 10000
     });
     
-    console.log(`API端点 ${endpoint} 状态:`, response.status);
+    console.log(`API endpoint ${endpoint} status:`, response.status);
   } catch (error) {
-    console.error(`API端点 ${endpoint} 连接失败:`, error);
+    console.error(`API endpoint ${endpoint} connection failed:`, error);
   }
 };
 ```
 
-### 错误代码参考
+### Error Code Reference
 
-| 错误代码 | 含义 | 解决方案 |
-|---------|------|---------|
-| `API_KEY_MISSING` | API密钥未配置 | 在设置中配置有效的API密钥 |
-| `API_KEY_INVALID` | API密钥无效 | 检查密钥格式和有效性 |
-| `NETWORK_ERROR` | 网络连接失败 | 检查网络连接和防火墙设置 |
-| `TIMEOUT_ERROR` | 请求超时 | 增加超时时间或检查网络 |
-| `QUOTA_EXCEEDED` | API配额超限 | 检查API使用量和账单 |
-| `MODEL_NOT_FOUND` | 模型不存在 | 检查模型名称是否正确 |
-| `INVALID_REQUEST` | 请求参数无效 | 检查请求参数格式 |
+| Error Code | Meaning | Solution |
+|------------|---------|----------|
+| `API_KEY_MISSING` | API key not configured | Configure a valid API key in settings |
+| `API_KEY_INVALID` | API key invalid | Check the key format and validity |
+| `NETWORK_ERROR` | Network connection failed | Check the network connection and firewall settings |
+| `TIMEOUT_ERROR` | Request timed out | Increase the timeout or check the network |
+| `QUOTA_EXCEEDED` | API quota exceeded | Check API usage and billing |
+| `MODEL_NOT_FOUND` | Model does not exist | Check that the model name is correct |
+| `INVALID_REQUEST` | Invalid request parameters | Check the request parameter format |
 
 ---
 
-## ⚡ 性能优化建议
+## ⚡ Performance Optimization Tips
 
-### UniversalApiService性能优化
+### UniversalApiService Performance Optimization
 
-#### 1. 请求优化
+#### 1. Request Optimization
 
 ```typescript
-// 使用合适的温度设置
+// Use an appropriate temperature
 const optimizedCall = await callAI(prompt, {
-  temperature: 0.3,    // 分析任务使用较低温度
-  maxTokens: 500,      // 限制输出长度
-  timeout: 15000       // 设置合理超时
+  temperature: 0.3,    // Use a lower temperature for analytical tasks
+  maxTokens: 500,      // Limit output length
+  timeout: 15000       // Set a reasonable timeout
 });
 
-// 批量处理多个请求
+// Process multiple requests in a batch
 const batchRequests = await Promise.allSettled([
   callAI(prompt1, options1),
   callAI(prompt2, options2),
@@ -926,10 +926,10 @@ const batchRequests = await Promise.allSettled([
 ]);
 ```
 
-#### 2. 缓存策略
+#### 2. Caching Strategy
 
 ```typescript
-// 实现请求缓存
+// Implement request caching
 const cache = new Map();
 
 const cachedCallAI = async (prompt: string, options: UniversalApiOptions) => {
@@ -946,28 +946,28 @@ const cachedCallAI = async (prompt: string, options: UniversalApiOptions) => {
 };
 ```
 
-### 翻译系统性能优化
+### Translation System Performance Optimization
 
-#### 1. DOM操作优化
+#### 1. DOM Operation Optimization
 ```typescript
-// 批量DOM更新
+// Batch DOM updates
 const fragment = document.createDocumentFragment();
-// 添加所有元素到fragment
+// Add all elements to the fragment
 element.appendChild(fragment);
 
-// 使用Range API精确替换
+// Use the Range API for precise replacement
 const range = document.createRange();
 range.setStart(textNode, startOffset);
 range.setEnd(textNode, endOffset);
 ```
 
-#### 2. 异步处理优化
+#### 2. Asynchronous Processing Optimization
 ```typescript
-// 并行加载音标和词义
+// Load phonetics and meaning in parallel
 const [phoneticResult, aiTranslation] = await Promise.allSettled([
   pronunciationService.getPhonetic(word),
-  universalApi.call(`解释单词"${word}"的含义`, {
-    systemPrompt: '你是英语词典，用简洁的中文解释英语单词',
+  universalApi.call(`Explain the meaning of the word "${word}"`, {
+    systemPrompt: 'You are an English dictionary; explain English words concisely',
     maxTokens: 100
   })
 ]);

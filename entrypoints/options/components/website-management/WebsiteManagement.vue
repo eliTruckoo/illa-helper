@@ -1,6 +1,6 @@
 <template>
   <div class="mx-auto space-y-6">
-    <!-- 页面标题和描述 -->
+    <!-- Page title and description -->
     <Card>
       <CardHeader>
         <CardTitle>
@@ -16,14 +16,14 @@
           </p>
         </div>
 
-        <!-- 操作工具栏 -->
+        <!-- Action toolbar -->
         <div class="bg-card rounded-lg border border-border p-4">
           <div
             class="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between"
           >
-            <!-- 左侧：搜索和筛选 -->
+            <!-- Left: search and filters -->
             <div class="flex flex-col sm:flex-row gap-3 flex-1">
-              <!-- 搜索框 -->
+              <!-- Search box -->
               <div class="relative flex-1 max-w-md">
                 <Search
                   class="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground"
@@ -36,7 +36,7 @@
                 />
               </div>
 
-              <!-- 类型筛选 -->
+              <!-- Type filter -->
               <div class="flex gap-2">
                 <button
                   @click="filterType = 'all'"
@@ -82,7 +82,7 @@
               </div>
             </div>
 
-            <!-- 右侧：操作按钮 -->
+            <!-- Right: action buttons -->
             <div class="flex gap-2">
               <button
                 @click="showAddDialog = true"
@@ -106,7 +106,7 @@
           </div>
         </div>
 
-        <!-- 规则表格 -->
+        <!-- Rules table -->
         <div class="bg-card rounded-lg border border-border">
           <Table>
             <TableHeader>
@@ -260,7 +260,7 @@
             </TableBody>
           </Table>
 
-          <!-- 空状态 -->
+          <!-- Empty state -->
           <div v-if="filteredRules.length === 0" class="text-center py-12">
             <Globe class="w-12 h-12 text-muted-foreground mx-auto mb-4" />
             <h3 class="text-lg font-medium text-foreground mb-2">
@@ -288,7 +288,7 @@
           </div>
         </div>
 
-        <!-- 统计信息 -->
+        <!-- Statistics -->
         <div class="text-sm text-muted-foreground">
           {{ $t('websiteManagement.totalRules', { count: allRules.length }) }}
           <span v-if="searchQuery || filterType !== 'all'">
@@ -309,7 +309,7 @@
           </span>
         </div>
 
-        <!-- 添加/编辑对话框 -->
+        <!-- Add/edit dialog -->
         <WebsiteRuleDialog
           v-if="showAddDialog"
           :rule="editingRule"
@@ -358,7 +358,7 @@ const { t } = useI18n();
 
 const manager = new WebsiteManager();
 
-// 响应式数据
+// Reactive data
 const allRules = ref<WebsiteRule[]>([]);
 const searchQuery = ref('');
 const filterType = ref<'all' | 'blacklist' | 'whitelist'>('all');
@@ -367,7 +367,7 @@ const selectAll = ref(false);
 const showAddDialog = ref(false);
 const editingRule = ref<WebsiteRule | null>(null);
 
-// 计算属性
+// Computed properties
 const blacklistCount = computed(() => {
   return allRules.value.filter((rule) => rule.type === 'blacklist').length;
 });
@@ -379,12 +379,12 @@ const whitelistCount = computed(() => {
 const filteredRules = computed(() => {
   let rules = allRules.value;
 
-  // 按类型筛选
+  // Filter by type
   if (filterType.value !== 'all') {
     rules = rules.filter((rule) => rule.type === filterType.value);
   }
 
-  // 按搜索关键词筛选
+  // Filter by search keyword
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase();
     rules = rules.filter(
@@ -397,12 +397,12 @@ const filteredRules = computed(() => {
   return rules;
 });
 
-// 生命周期
+// Lifecycle
 onMounted(async () => {
   await loadRules();
 });
 
-// 方法
+// Methods
 const loadRules = async () => {
   try {
     allRules.value = await manager.getRules();
@@ -429,10 +429,10 @@ const handleSaveRule = async (
 ) => {
   try {
     if (editingRule.value) {
-      // 编辑现有规则
+      // Edit an existing rule
       await manager.updateRule(editingRule.value.id, ruleData);
     } else {
-      // 添加新规则
+      // Add a new rule
       await manager.addRule(
         ruleData.pattern,
         ruleData.type,
@@ -497,11 +497,11 @@ const toggleRule = async (id: string) => {
 const copyToClipboard = async (text: string) => {
   try {
     await navigator.clipboard.writeText(text);
-    // 这里可以添加一个toast提示
-    console.log('已复制到剪贴板:', text);
+    // A toast notification could be added here
+    console.log('Copied to clipboard:', text);
   } catch (error) {
     console.error(t('errors.copyFailed'), error);
-    // 降级方案
+    // Fallback
     const textArea = document.createElement('textarea');
     textArea.value = text;
     document.body.appendChild(textArea);

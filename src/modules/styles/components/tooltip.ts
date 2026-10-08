@@ -1,11 +1,11 @@
 /**
- * 工具提示样式
- * 重新设计：OLED Dark + Glassmorphism + Shimmer Loading
- * 视觉层级：单词 > 音标 > 词义，清晰分离
+ * Tooltip styles
+ * Redesigned: OLED Dark + Glassmorphism + Shimmer Loading
+ * Visual hierarchy: word > phonetic > meaning, clearly separated
  */
 
 export const TOOLTIP_STYLES = `
-/* ===== 动画定义 ===== */
+/* ===== Animation definitions ===== */
 @keyframes wxt-tooltip-appear {
   from {
     opacity: 0;
@@ -53,7 +53,7 @@ export const TOOLTIP_STYLES = `
   50% { opacity: 1; }
 }
 
-/* ===== 减少动画偏好 ===== */
+/* ===== Reduced motion preference ===== */
 @media (prefers-reduced-motion: reduce) {
   .wxt-pronunciation-tooltip,
   .wxt-word-tooltip,
@@ -65,7 +65,7 @@ export const TOOLTIP_STYLES = `
   }
 }
 
-/* ===== 主悬浮框容器 ===== */
+/* ===== Main tooltip container ===== */
 .wxt-pronunciation-tooltip {
   position: fixed;
   z-index: 10000;
@@ -73,7 +73,7 @@ export const TOOLTIP_STYLES = `
   animation: wxt-tooltip-appear 0.2s cubic-bezier(0.2, 0.6, 0.35, 1) forwards;
 }
 
-/* ===== 卡片主体 ===== */
+/* ===== Card body ===== */
 .wxt-tooltip-card {
   background: rgba(22, 22, 24, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -92,7 +92,7 @@ export const TOOLTIP_STYLES = `
   backdrop-filter: blur(40px) saturate(180%);
 }
 
-/* 顶部高光线 */
+/* Top highlight line */
 .wxt-tooltip-card::before {
   content: '';
   position: absolute;
@@ -104,7 +104,7 @@ export const TOOLTIP_STYLES = `
   z-index: 1;
 }
 
-/* ===== Header 区域 ===== */
+/* ===== Header area ===== */
 .wxt-tooltip-header {
   padding: 14px 16px 12px;
   display: flex;
@@ -119,7 +119,7 @@ export const TOOLTIP_STYLES = `
   gap: 12px;
 }
 
-/* Header 底部分隔线 */
+/* Header bottom divider */
 .wxt-tooltip-header::after {
   content: '';
   position: absolute;
@@ -130,7 +130,7 @@ export const TOOLTIP_STYLES = `
   background: rgba(255, 255, 255, 0.06);
 }
 
-/* ===== Body 区域 ===== */
+/* ===== Body area ===== */
 .wxt-tooltip-body {
   font-size: 12px;
 }
@@ -139,7 +139,7 @@ export const TOOLTIP_STYLES = `
   padding: 10px 14px 14px;
 }
 
-/* ===== 单词信息 ===== */
+/* ===== Word info ===== */
 .wxt-word-info {
   flex: 1;
   min-width: 0;
@@ -155,7 +155,7 @@ export const TOOLTIP_STYLES = `
   line-height: 1.25;
 }
 
-/* ===== 音标区域 ===== */
+/* ===== Phonetic area ===== */
 .wxt-phonetic-row {
   margin-top: 8px;
 }
@@ -188,7 +188,7 @@ export const TOOLTIP_STYLES = `
   letter-spacing: 0.01em;
 }
 
-/* ===== 音标加载 - Shimmer ===== */
+/* ===== Phonetic loading - Shimmer ===== */
 .wxt-phonetic-loading {
   height: 22px;
   width: 100px;
@@ -211,7 +211,7 @@ export const TOOLTIP_STYLES = `
   display: none;
 }
 
-/* ===== 词义区域 ===== */
+/* ===== Meaning area ===== */
 .wxt-meaning-container {
   margin-top: 10px;
   padding-top: 10px;
@@ -230,7 +230,7 @@ export const TOOLTIP_STYLES = `
   border: none;
 }
 
-/* ===== 词义加载 - Shimmer ===== */
+/* ===== Meaning loading - Shimmer ===== */
 .wxt-meaning-loading {
   display: flex;
   flex-direction: column;
@@ -274,7 +274,7 @@ export const TOOLTIP_STYLES = `
   border: none;
 }
 
-/* ===== 原文显示 ===== */
+/* ===== Original text display ===== */
 .wxt-original-text {
   font-size: 11px;
   color: #8e8e93;
@@ -295,7 +295,7 @@ export const TOOLTIP_STYLES = `
   color: rgba(100, 255, 218, 0.6);
 }
 
-/* ===== 音频播放按钮 ===== */
+/* ===== Audio play button ===== */
 .wxt-audio-btn {
   background: rgba(100, 255, 218, 0.12);
   border: 1px solid rgba(100, 255, 218, 0.2);
@@ -346,7 +346,7 @@ export const TOOLTIP_STYLES = `
   z-index: 1;
 }
 
-/* ===== 箭头指示器 ===== */
+/* ===== Arrow indicator ===== */
 .wxt-tooltip-arrow {
   position: absolute;
   bottom: -5px;
@@ -371,7 +371,7 @@ export const TOOLTIP_STYLES = `
   border-right: none;
 }
 
-/* ===== 短语悬浮框 ===== */
+/* ===== Phrase tooltip ===== */
 .wxt-phrase-info-card {
   flex: 1;
   min-width: 0;
@@ -407,7 +407,7 @@ export const TOOLTIP_STYLES = `
   align-self: flex-start;
 }
 
-/* 按钮重置 */
+/* Button reset */
 .wxt-pronunciation-tooltip button {
   min-width: 20px !important;
   padding: 0 !important;
@@ -420,7 +420,7 @@ export const TOOLTIP_STYLES = `
   margin: 0 !important;
 }
 
-/* ===== 短语单词列表 ===== */
+/* ===== Phrase word list ===== */
 .wxt-phrase-words {
   padding: 6px;
   font-size: 12px;
@@ -481,7 +481,7 @@ export const TOOLTIP_STYLES = `
   background: rgba(100, 255, 218, 0.18);
 }
 
-/* ===== 嵌套单词悬浮框 ===== */
+/* ===== Nested word tooltip ===== */
 .wxt-word-tooltip {
   position: fixed;
   z-index: 10001;
@@ -571,7 +571,7 @@ export const TOOLTIP_STYLES = `
   box-shadow: none;
 }
 
-/* ===== 标题行布局（嵌套单词） ===== */
+/* ===== Title row layout (nested word) ===== */
 .wxt-word-title-row {
   display: flex;
   align-items: center;
@@ -588,7 +588,7 @@ export const TOOLTIP_STYLES = `
   flex-shrink: 0;
 }
 
-/* ===== 口音按钮组 ===== */
+/* ===== Accent button group ===== */
 .wxt-accent-buttons {
   display: flex;
   align-items: center;
@@ -641,7 +641,7 @@ export const TOOLTIP_STYLES = `
   background: rgba(100, 255, 218, 0.25);
 }
 
-/* ===== 嵌套悬浮框中的词义/音标 ===== */
+/* ===== Meaning/phonetic in nested tooltip ===== */
 .wxt-word-tooltip .wxt-meaning-container {
   margin-top: 8px;
   padding-top: 8px;
@@ -666,7 +666,7 @@ export const TOOLTIP_STYLES = `
   width: 60%;
 }
 
-/* ===== 响应式 ===== */
+/* ===== Responsive ===== */
 @media (max-width: 480px) {
   .wxt-tooltip-card {
     min-width: 200px;

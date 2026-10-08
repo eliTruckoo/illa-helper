@@ -8,7 +8,7 @@ import prettierConfig from 'eslint-config-prettier';
 
 export default defineConfig([
   {
-    ignores: ['**/.wxt/**', '**/.output/**'], // 忽略所有 .wxt 文件
+    ignores: ['**/.wxt/**', '**/.output/**'], // Ignore all .wxt files
   },
   {
     files: ['**/*.{js,mjs,cjs,ts,mts,cts,vue}'],
@@ -27,16 +27,16 @@ export default defineConfig([
   },
   {
     rules: {
-      // 以下是常见支持 --fix 的规则
-      semi: ['error', 'always'], // 要求分号
-      quotes: ['error', 'single'], // 要求单引号
-      indent: ['error', 2], // 2 空格缩进
-      'comma-dangle': ['error', 'always-multiline'], // 要求多行对象/数组末尾加逗号
-      'no-trailing-spaces': 'error', // 删除行尾空格
-      'eol-last': ['error', 'always'], // 要求文件末尾空行
-      'no-multiple-empty-lines': ['error', { max: 1 }], // 限制连续空行
-      'object-curly-spacing': ['error', 'always'], // 对象花括号内空格
-      'array-bracket-spacing': ['error', 'never'], // 数组括号内无空格
+      // Common rules that support --fix
+      semi: ['error', 'always'], // Require semicolons
+      quotes: ['error', 'single'], // Require single quotes
+      indent: ['error', 2], // 2-space indentation
+      'comma-dangle': ['error', 'always-multiline'], // Require trailing commas in multiline objects/arrays
+      'no-trailing-spaces': 'error', // Remove trailing spaces
+      'eol-last': ['error', 'always'], // Require newline at end of file
+      'no-multiple-empty-lines': ['error', { max: 1 }], // Limit consecutive blank lines
+      'object-curly-spacing': ['error', 'always'], // Spaces inside object braces
+      'array-bracket-spacing': ['error', 'never'], // No spaces inside array brackets
       'no-unused-vars': 'off',
       '@typescript-eslint/no-empty-object-type': 'off',
       'no-empty': 'off',

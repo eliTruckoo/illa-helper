@@ -1,15 +1,15 @@
 /**
- * 存储服务相关类型定义
- * 包含存储管理、配置统计、数据验证等相关类型
+ * Storage service type definitions
+ * Includes types for storage management, config statistics, data validation, etc.
  */
 
 import { UserSettings } from '../../shared/types/storage';
 import { ApiConfig, ApiConfigItem } from '../../shared/types/api';
 
-// ==================== 存储操作类型 ====================
+// ==================== Storage operation types ====================
 
 /**
- * 存储操作结果
+ * Storage operation result
  */
 export interface StorageOperationResult {
   success: boolean;
@@ -18,7 +18,7 @@ export interface StorageOperationResult {
 }
 
 /**
- * 配置统计信息
+ * Configuration statistics
  */
 export interface ConfigurationStats {
   intelligentModeEnabled: boolean;
@@ -28,7 +28,7 @@ export interface ConfigurationStats {
 }
 
 /**
- * 存储服务配置
+ * Storage service configuration
  */
 export interface StorageServiceConfig {
   enableAutoBackup?: boolean;
@@ -38,7 +38,7 @@ export interface StorageServiceConfig {
 }
 
 /**
- * 数据验证结果
+ * Data validation result
  */
 export interface ValidationResult {
   isValid: boolean;
@@ -48,7 +48,7 @@ export interface ValidationResult {
 }
 
 /**
- * 存储事件类型
+ * Storage event types
  */
 export enum StorageEventType {
   SETTINGS_LOADED = 'settings_loaded',
@@ -61,7 +61,7 @@ export enum StorageEventType {
 }
 
 /**
- * 存储事件数据
+ * Storage event data
  */
 export interface StorageEventData {
   type: StorageEventType;
@@ -71,10 +71,10 @@ export interface StorageEventData {
 }
 
 /**
- * 存储服务事件监听器
+ * Storage service event listener
  */
 export type StorageEventListener = (event: StorageEventData) => void;
 
-// ==================== 导出汇总 ====================
+// ==================== Export summary ====================
 
 export type { UserSettings, ApiConfig, ApiConfigItem };

@@ -1,12 +1,12 @@
 /**
- * 速率限制服务相关类型定义
- * 包含速率限制器、管理器、配置等相关类型
+ * Rate limit service type definitions
+ * Includes types for rate limiters, managers, configuration, etc.
  */
 
-// ==================== 速率限制配置 ====================
+// ==================== Rate limit configuration ====================
 
 /**
- * 速率限制器配置
+ * Rate limiter configuration
  */
 export interface RateLimiterConfig {
   requestsPerSecond: number;
@@ -16,7 +16,7 @@ export interface RateLimiterConfig {
 }
 
 /**
- * 速率限制器状态
+ * Rate limiter state
  */
 export interface RateLimiterStatus {
   enabled: boolean;
@@ -27,7 +27,7 @@ export interface RateLimiterStatus {
 }
 
 /**
- * 批量执行配置
+ * Batch execution configuration
  */
 export interface BatchExecutionConfig {
   maxConcurrency?: number;
@@ -36,7 +36,7 @@ export interface BatchExecutionConfig {
 }
 
 /**
- * 批量执行结果
+ * Batch execution result
  */
 export interface BatchExecutionResult<T> {
   results: T[];
@@ -47,7 +47,7 @@ export interface BatchExecutionResult<T> {
 }
 
 /**
- * 批量执行进度
+ * Batch execution progress
  */
 export interface BatchProgress {
   total: number;
@@ -57,22 +57,22 @@ export interface BatchProgress {
   estimatedTimeRemaining?: number;
 }
 
-// ==================== 请求函数类型 ====================
+// ==================== Request function types ====================
 
 /**
- * 请求函数类型
+ * Request function types
  */
 export type RequestFunction<T = any> = () => Promise<T>;
 
 /**
- * 进度回调函数类型
+ * Progress callback function type
  */
 export type ProgressCallback = (progress: BatchProgress) => void;
 
-// ==================== 服务配置 ====================
+// ==================== Service configuration ====================
 
 /**
- * 速率限制服务配置
+ * Rate limit service configuration
  */
 export interface RateLimiterServiceConfig {
   enableLogging?: boolean;
@@ -83,7 +83,7 @@ export interface RateLimiterServiceConfig {
 }
 
 /**
- * 速率限制器事件类型
+ * Rate limiter event types
  */
 export enum RateLimiterEventType {
   REQUEST_ALLOWED = 'request_allowed',
@@ -97,7 +97,7 @@ export enum RateLimiterEventType {
 }
 
 /**
- * 速率限制器事件数据
+ * Rate limiter event data
  */
 export interface RateLimiterEventData {
   type: RateLimiterEventType;
@@ -108,14 +108,14 @@ export interface RateLimiterEventData {
 }
 
 /**
- * 事件监听器类型
+ * Event listener type
  */
 export type RateLimiterEventListener = (event: RateLimiterEventData) => void;
 
-// ==================== 统计和指标 ====================
+// ==================== Statistics and metrics ====================
 
 /**
- * 速率限制统计信息
+ * Rate limit statistics
  */
 export interface RateLimiterStats {
   totalRequests: number;
@@ -127,7 +127,7 @@ export interface RateLimiterStats {
 }
 
 /**
- * 端点统计信息
+ * Endpoint statistics
  */
 export interface EndpointStats {
   endpoint: string;
@@ -139,10 +139,10 @@ export interface EndpointStats {
   config: RateLimiterConfig;
 }
 
-// ==================== 工厂和管理器类型 ====================
+// ==================== Factory and manager types ====================
 
 /**
- * 速率限制器工厂选项
+ * Rate limiter factory options
  */
 export interface LimiterFactoryOptions {
   defaultConfig?: Partial<RateLimiterConfig>;
@@ -151,7 +151,7 @@ export interface LimiterFactoryOptions {
 }
 
 /**
- * 管理器状态
+ * Manager state
  */
 export interface ManagerStatus {
   totalLimiters: number;

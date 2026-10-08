@@ -17,7 +17,7 @@
           option.color,
         ]"
       >
-        <!-- 选中指示器 -->
+        <!-- Selected indicator -->
         <div
           v-if="selectedType === option.value"
           class="absolute top-2 right-2 w-4 h-4 bg-primary rounded-full flex items-center justify-center"
@@ -25,7 +25,7 @@
           <Check class="w-2.5 h-2.5 text-primary-foreground" />
         </div>
 
-        <!-- 图标和标题 -->
+        <!-- Icon and title -->
         <div class="flex items-start space-x-3">
           <div class="flex-shrink-0 mt-0.5">
             <component
@@ -48,7 +48,7 @@
           </div>
         </div>
 
-        <!-- 单选按钮 -->
+        <!-- Radio button -->
         <input
           type="radio"
           :value="option.value"

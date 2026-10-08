@@ -1,5 +1,5 @@
 /**
- * Background Script - 使用现代化服务架构
+ * Background Script - uses a modern service architecture
  */
 
 import { browser } from 'wxt/browser';
@@ -16,7 +16,7 @@ import {
 import { MessageType } from '@/src/modules/core/messaging/types';
 
 export default defineBackground(() => {
-  // 服务实例
+  // Service instances
   const storageService = StorageService.getInstance();
   const notificationService = NotificationService.getInstance();
   const apiProxyService = ApiProxyService.getInstance();
@@ -24,50 +24,50 @@ export default defineBackground(() => {
   const initializationService = InitializationService.getInstance();
   const updateCheckService = UpdateCheckService.getInstance();
 
-  // 传统管理器已移除 - 统一到InitializationService中管理
+  // Legacy managers removed - now managed uniformly in InitializationService
 
   /**
-   * 初始化所有服务
+   * Initialize all services
    */
   async function initializeServices(): Promise<void> {
     try {
-      // 初始化命令服务
+      // Initialize command service
       commandService.initialize();
 
-      // 初始化更新检查服务
+      // Initialize update check service
       await updateCheckService.init();
 
-      console.log('[Background] 所有服务初始化完成');
+      console.log('[Background] All services initialized');
     } catch (error) {
-      console.error('[Background] 服务初始化失败:', error);
+      console.error('[Background] Service initialization failed:', error);
     }
   }
 
   /**
-   * 处理扩展安装事件
+   * Handle extension install event
    */
   browser.runtime.onInstalled.addListener(async (details) => {
     try {
       const result = await initializationService.handleInstallation(details);
 
       if (result.success) {
-        console.log('[Background] 安装处理成功');
+        console.log('[Background] Install handled successfully');
         if (result.warnings.length > 0) {
-          console.warn('[Background] 安装警告:', result.warnings);
+          console.warn('[Background] Install warnings:', result.warnings);
         }
       } else {
-        console.error('[Background] 安装处理失败:', result.errors);
+        console.error('[Background] Install handling failed:', result.errors);
       }
     } catch (error) {
-      console.error('[Background] 安装处理异常:', error);
+      console.error('[Background] Install handling error:', error);
     }
   });
 
   /**
-   * 处理运行时消息
+   * Handle runtime messages
    */
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log(`[Background] 收到消息: ${message.type}`);
+    console.log(`[Background] Received message: ${message.type}`);
 
     switch (message.type) {
       case MESSAGE_TYPES.SHOW_NOTIFICATION:
@@ -84,55 +84,55 @@ export default defineBackground(() => {
 
       case MESSAGE_TYPES.VALIDATE_CONFIG:
         handleValidateConfiguration(message, sendResponse);
-        return true; // 保持消息通道开放
+        return true; // Keep the message channel open
 
       case MESSAGE_TYPES.API_REQUEST:
         handleApiRequest(message, sendResponse);
-        return true; // 保持消息通道开放
+        return true; // Keep the message channel open
 
       case MessageType.CONTEXT_MENU_ACTION:
         handleContextMenuAction(message, sendResponse);
-        return true; // 保持消息通道开放
+        return true; // Keep the message channel open
 
-      // 处理更新检查相关消息
+      // Handle update-check related messages
       case 'CHECK_UPDATE':
       case 'CLEAR_UPDATE_BADGE':
       case 'DISMISS_UPDATE':
       case 'GET_UPDATE_INFO':
         handleUpdateMessage(message, sendResponse);
-        return true; // 保持消息通道开放
+        return true; // Keep the message channel open
 
       default:
-        console.warn(`[Background] 未知消息类型: ${message.type}`);
+        console.warn(`[Background] Unknown message type: ${message.type}`);
         return false;
     }
   });
 
   /**
-   * 处理显示通知消息
+   * Handle show-notification message
    */
   async function handleShowNotification(message: any): Promise<void> {
     try {
       await notificationService.showNotification({
         type: 'basic',
-        title: message.options.title || '通知',
+        title: message.options.title || 'Notification',
         message: message.options.message || '',
         iconUrl: message.options.iconUrl,
       });
     } catch (error) {
-      console.error('[Background] 显示通知失败:', error);
+      console.error('[Background] Failed to show notification:', error);
     }
   }
 
   /**
-   * 处理打开popup消息
+   * Handle open-popup message
    */
   async function handleOpenPopup(): Promise<void> {
     try {
       browser.action.openPopup();
     } catch (error) {
-      console.error('[Background] 无法打开popup:', error);
-      // 回退到打开options页面
+      console.error('[Background] Unable to open popup:', error);
+      // Fall back to opening the options page
       const optionsUrl = browser.runtime.getURL(
         BACKGROUND_CONSTANTS.OPTIONS_PATH,
       );
@@ -141,7 +141,7 @@ export default defineBackground(() => {
   }
 
   /**
-   * 处理打开选项页面消息
+   * Handle open-options-page message
    */
   async function handleOpenOptions(): Promise<void> {
     const optionsUrl = browser.runtime.getURL(
@@ -151,7 +151,7 @@ export default defineBackground(() => {
   }
 
   /**
-   * 处理验证配置消息
+   * Handle validate-config message
    */
   function handleValidateConfiguration(
     message: any,
@@ -161,7 +161,7 @@ export default defineBackground(() => {
       try {
         const settings = await storageService.getUserSettings();
 
-        // 检查多配置系统中的活跃配置
+        // Check the active config in the multi-config system
         const activeConfig = settings.apiConfigs?.find(
           (config) => config.id === settings.activeApiConfigId,
         );
@@ -172,18 +172,18 @@ export default defineBackground(() => {
           return;
         }
 
-        // 配置无效时显示通知
+        // Show a notification when the config is invalid
         await notificationService.showApiConfigError(message.source);
         sendResponse(false);
       } catch (error) {
-        console.error('[Background] 配置验证失败:', error);
+        console.error('[Background] Config validation failed:', error);
         sendResponse(false);
       }
     })();
   }
 
   /**
-   * 处理API请求消息
+   * Handle API request message
    */
   function handleApiRequest(
     message: any,
@@ -194,11 +194,11 @@ export default defineBackground(() => {
         const response = await apiProxyService.handleApiRequest(message);
         sendResponse(response);
       } catch (error) {
-        console.error('[Background] API请求处理失败:', error);
+        console.error('[Background] API request handling failed:', error);
         sendResponse({
           success: false,
           error: {
-            message: error instanceof Error ? error.message : '未知错误',
+            message: error instanceof Error ? error.message : 'Unknown error',
           },
         });
       }
@@ -206,7 +206,7 @@ export default defineBackground(() => {
   }
 
   /**
-   * 处理右键菜单动作消息
+   * Handle context menu action message
    */
   function handleContextMenuAction(
     message: any,
@@ -214,20 +214,23 @@ export default defineBackground(() => {
   ): void {
     (async () => {
       try {
-        console.log('[Background] 处理右键菜单动作:', message.data);
+        console.log('[Background] Handling context menu action:', message.data);
 
-        // 通过InitializationService获取ContextMenuManager实例
-        // 这里暂时返回成功，因为实际的处理逻辑已经在ContextMenuManager中
+        // Get the ContextMenuManager instance via InitializationService
+        // Return success for now, since the actual handling logic is already in ContextMenuManager
         sendResponse({
           success: true,
-          message: '右键菜单动作已处理',
+          message: 'Context menu action handled',
         });
       } catch (error) {
-        console.error('[Background] 右键菜单动作处理失败:', error);
+        console.error(
+          '[Background] Context menu action handling failed:',
+          error,
+        );
         sendResponse({
           success: false,
           error: {
-            message: error instanceof Error ? error.message : '未知错误',
+            message: error instanceof Error ? error.message : 'Unknown error',
           },
         });
       }
@@ -235,7 +238,7 @@ export default defineBackground(() => {
   }
 
   /**
-   * 处理更新检查相关消息
+   * Handle update-check related messages
    */
   function handleUpdateMessage(
     message: any,
@@ -250,21 +253,21 @@ export default defineBackground(() => {
         if (!handled) {
           sendResponse({
             success: false,
-            error: { message: '未知的更新消息类型' },
+            error: { message: 'Unknown update message type' },
           });
         }
       } catch (error) {
-        console.error('[Background] 更新消息处理失败:', error);
+        console.error('[Background] Update message handling failed:', error);
         sendResponse({
           success: false,
           error: {
-            message: error instanceof Error ? error.message : '未知错误',
+            message: error instanceof Error ? error.message : 'Unknown error',
           },
         });
       }
     })();
   }
 
-  // 初始化服务
+  // Initialize services
   initializeServices();
 });

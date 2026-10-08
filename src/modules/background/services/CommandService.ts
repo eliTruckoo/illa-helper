@@ -1,5 +1,5 @@
 /**
- * 命令服务 - 处理扩展命令
+ * Command service - handles extension commands
  */
 
 import { browser } from 'wxt/browser';
@@ -26,7 +26,7 @@ export class CommandService {
   }
 
   /**
-   * 获取单例实例
+   * Get the singleton instance
    */
   public static getInstance(): CommandService {
     if (!CommandService.instance) {
@@ -36,36 +36,38 @@ export class CommandService {
   }
 
   /**
-   * 初始化命令监听器
+   * Initialize the command listener
    */
   public initialize(): void {
     browser.commands.onCommand.addListener(this.handleCommand.bind(this));
-    console.log('[CommandService] 命令监听器已初始化');
+    console.log('[CommandService] Command listener initialized');
   }
 
   /**
-   * 处理扩展命令
+   * Handle extension commands
    */
   private async handleCommand(command: string): Promise<void> {
-    console.log(`[CommandService] 收到命令: ${command}`);
+    console.log(`[CommandService] Received command: ${command}`);
 
     if (!this.isCommandEnabled(command as ExtensionCommand)) {
-      console.warn(`[CommandService] 命令未启用: ${command}`);
+      console.warn(`[CommandService] Command not enabled: ${command}`);
       return;
     }
 
     try {
       const result = await this.executeCommand(command as ExtensionCommand);
       if (!result.success && result.error) {
-        console.error(`[CommandService] 命令执行失败: ${result.error}`);
+        console.error(
+          `[CommandService] Command execution failed: ${result.error}`,
+        );
       }
     } catch (error) {
-      console.error(`[CommandService] 命令执行异常:`, error);
+      console.error(`[CommandService] Command execution error:`, error);
     }
   }
 
   /**
-   * 执行具体命令
+   * Execute a specific command
    */
   private async executeCommand(
     command: ExtensionCommand,
@@ -76,28 +78,28 @@ export class CommandService {
       default:
         return {
           success: false,
-          error: `未知命令: ${command}`,
+          error: `Unknown command: ${command}`,
         };
     }
   }
 
   /**
-   * 处理翻译页面命令
+   * Handle the translate-page command
    */
   private async handleTranslatePageCommand(): Promise<CommandHandlerResult> {
     try {
-      // 验证API配置
+      // Validate the API configuration
       if (this.config.requiresValidation) {
         const validation = await this.validateApiConfiguration();
         if (!validation.isValid) {
           return {
             success: false,
-            error: 'API配置无效',
+            error: 'Invalid API configuration',
           };
         }
       }
 
-      // 获取当前活动标签页
+      // Get the current active tab
       const tabs = await browser.tabs.query({
         active: true,
         currentWindow: true,
@@ -106,11 +108,11 @@ export class CommandService {
       if (!tabs[0]?.id) {
         return {
           success: false,
-          error: '无法获取当前标签页',
+          error: 'Unable to get the current tab',
         };
       }
 
-      // 向content script发送翻译命令
+      // Send the translate command to the content script
       await browser.tabs.sendMessage(tabs[0].id, {
         type: 'translate-page-command',
       });
@@ -118,22 +120,22 @@ export class CommandService {
         success: true,
       };
     } catch (error) {
-      console.error('[CommandService] 翻译页面命令执行失败:', error);
+      console.error('[CommandService] Translate-page command failed:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : '未知错误',
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
 
   /**
-   * 验证API配置
+   * Validate the API configuration
    */
   private async validateApiConfiguration(): Promise<ConfigValidationResult> {
     try {
       const settings = await this.storageService.getUserSettings();
 
-      // 检查多配置系统中的活跃配置
+      // Check the active config in the multi-config system
       const activeConfig = settings.apiConfigs?.find(
         (config) => config.id === settings.activeApiConfigId,
       );
@@ -143,7 +145,7 @@ export class CommandService {
       if (!isValid) {
         return {
           isValid: false,
-          errors: ['API密钥未设置'],
+          errors: ['API key is not set'],
         };
       }
 
@@ -157,69 +159,71 @@ export class CommandService {
         errors: [],
       };
     } catch (error) {
-      console.error('[CommandService] 配置验证失败:', error);
+      console.error('[CommandService] Config validation failed:', error);
       return {
         isValid: false,
-        errors: ['配置验证过程中发生错误'],
+        errors: ['An error occurred during config validation'],
       };
     }
   }
 
   /**
-   * 检查命令是否启用
+   * Check whether a command is enabled
    */
   private isCommandEnabled(command: ExtensionCommand): boolean {
     return this.config.enabledCommands.includes(command);
   }
 
   /**
-   * 启用命令
+   * Enable a command
    */
   public enableCommand(command: ExtensionCommand): void {
     if (!this.config.enabledCommands.includes(command)) {
       this.config.enabledCommands.push(command);
-      console.log(`[CommandService] 命令已启用: ${command}`);
+      console.log(`[CommandService] Command enabled: ${command}`);
     }
   }
 
   /**
-   * 禁用命令
+   * Disable a command
    */
   public disableCommand(command: ExtensionCommand): void {
     const index = this.config.enabledCommands.indexOf(command);
     if (index > -1) {
       this.config.enabledCommands.splice(index, 1);
-      console.log(`[CommandService] 命令已禁用: ${command}`);
+      console.log(`[CommandService] Command disabled: ${command}`);
     }
   }
 
   /**
-   * 获取启用的命令列表
+   * Get the list of enabled commands
    */
   public getEnabledCommands(): ExtensionCommand[] {
     return [...this.config.enabledCommands];
   }
 
   /**
-   * 设置是否需要验证
+   * Set whether validation is required
    */
   public setRequiresValidation(requiresValidation: boolean): void {
     this.config.requiresValidation = requiresValidation;
-    console.log(`[CommandService] 验证要求已设置为: ${requiresValidation}`);
+    console.log(
+      `[CommandService] Validation requirement set to: ${requiresValidation}`,
+    );
   }
 
   /**
-   * 手动执行命令（供其他服务调用）
+   * Manually execute a command (for use by other services)
    */
   public async executeManualCommand(
     command: ExtensionCommand,
   ): Promise<CommandHandlerResult> {
-    console.log(`[CommandService] 手动执行命令: ${command}`);
+    console.log(`[CommandService] Manually executing command: ${command}`);
 
     if (!this.isCommandEnabled(command)) {
       return {
         success: false,
-        error: `命令未启用: ${command}`,
+        error: `Command not enabled: ${command}`,
       };
     }
 
@@ -227,32 +231,32 @@ export class CommandService {
   }
 
   /**
-   * 获取可用命令列表
+   * Get the list of available commands
    */
   public getAvailableCommands(): ExtensionCommand[] {
     return Object.values(EXTENSION_COMMANDS) as ExtensionCommand[];
   }
 
   /**
-   * 更新配置
+   * Update configuration
    */
   public updateConfig(newConfig: Partial<CommandServiceConfig>): void {
     this.config = {
       ...this.config,
       ...newConfig,
     };
-    console.log('[CommandService] 配置已更新:', this.config);
+    console.log('[CommandService] Config updated:', this.config);
   }
 
   /**
-   * 获取当前配置
+   * Get the current configuration
    */
   public getConfig(): CommandServiceConfig {
     return { ...this.config };
   }
 
   /**
-   * 获取命令统计信息
+   * Get command statistics
    */
   public getCommandStats(): {
     enabledCommands: number;
@@ -267,12 +271,12 @@ export class CommandService {
   }
 
   /**
-   * 销毁服务
+   * Destroy the service
    */
   public destroy(): void {
-    // Chrome extensions API 不提供移除监听器的方法
-    // 这里只是清理实例
-    console.log('[CommandService] 服务已销毁');
+    // The Chrome extensions API provides no way to remove listeners
+    // Only the instance is cleaned up here
+    console.log('[CommandService] Service destroyed');
     CommandService.instance = null;
   }
 }

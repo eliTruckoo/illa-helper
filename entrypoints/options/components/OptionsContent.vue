@@ -1,6 +1,6 @@
 <template>
   <div class="flex-1 overflow-y-auto bg-background">
-    <!-- 内容区域 -->
+    <!-- Content area -->
     <div :class="['p-4 md:p-6', { 'pt-20': isMobile }]">
       <div class="max-w-4xl mx-auto">
         <Transition name="fade" mode="out-in">
@@ -42,7 +42,7 @@ const emit = defineEmits<{
   saveMessage: [message: string];
 }>();
 
-// 组件映射
+// Component map
 const componentMap: Record<string, any> = {
   basic: BasicSettings,
   translation: TranslationSettings,
@@ -61,7 +61,7 @@ const handleSaveMessage = (message: string) => {
   emit('saveMessage', message);
 };
 
-// 检查设备是否为移动端
+// Check whether the device is mobile
 const checkIfMobile = () => {
   isMobile.value = window.innerWidth < 768;
 };
@@ -89,10 +89,10 @@ onUnmounted(() => {
 
 .anchor-section {
   scroll-margin-top: 80px;
-  /* 考虑顶部导航栏高度 */
+  /* Account for top navigation bar height */
 }
 
-/* 移动端适配样式 */
+/* Mobile adaptation styles */
 @media (max-width: 767px) {
   .anchor-section {
     scroll-margin-top: 60px;

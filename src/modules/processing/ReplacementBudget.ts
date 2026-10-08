@@ -5,8 +5,8 @@ export function countTranslationUnits(text: string): number {
   const latinWords = text.match(/[A-Za-z]+(?:[-'][A-Za-z]+)*/g) ?? [];
   const cjkChars = text.match(/[\p{Script=Han}]/gu) ?? [];
 
-  // 中文没有天然空格分词。按单字计算会让低替换率明显偏高；
-  // 这里用两字≈一个学习单位的保守估算，避免为限额引入分词依赖。
+  // Chinese has no natural whitespace word boundaries. Counting per character would noticeably inflate low replacement rates;
+  // so we conservatively estimate two characters as roughly one learning unit, avoiding a word-segmentation dependency for the limit.
   return latinWords.length + Math.ceil(cjkChars.length / 2);
 }
 

@@ -1,6 +1,6 @@
 /**
- * 右键菜单管理器
- * 负责管理浏览器右键菜单状态更新，不再动态创建删除菜单项
+ * Context menu manager
+ * Manages browser context menu state updates; no longer creates or deletes menu items dynamically
  */
 
 import { browser } from 'wxt/browser';
@@ -26,25 +26,25 @@ export class ContextMenuManager {
   }
 
   /**
-   * 初始化菜单管理器
+   * Initialize the menu manager
    */
   async init(): Promise<void> {
     try {
-      // 监听菜单点击事件
+      // Listen for menu click events
       browser.contextMenus.onClicked.addListener(
         this.handleMenuClick.bind(this),
       );
 
-      // 监听标签页更新事件，动态更新菜单状态
+      // Listen for tab update events and update menu state dynamically
       browser.tabs.onUpdated.addListener(this.handleTabUpdate.bind(this));
       browser.tabs.onActivated.addListener(this.handleTabActivated.bind(this));
 
-      // 监听导航事件，确保SPA应用路由变化时也能更新菜单
+      // Listen for navigation events so the menu also updates on SPA route changes
       browser.webNavigation.onCommitted.addListener(
         this.handleNavigation.bind(this),
       );
 
-      // 初始化当前标签页的菜单状态
+      // Initialize the menu state for the current tab
       const tabs = await browser.tabs.query({
         active: true,
         currentWindow: true,
@@ -53,130 +53,135 @@ export class ContextMenuManager {
         await this.updateMenuState(tabs[0].id, tabs[0].url);
       }
     } catch (error) {
-      console.error('菜单管理器初始化失败:', error);
+      console.error('Failed to initialize menu manager:', error);
     }
   }
 
   /**
-   * 更新菜单状态
+   * Update menu state
    */
   private async updateMenuState(tabId: number, url: string): Promise<void> {
-    console.log(`[ContextMenu] 更新菜单状态 - TabID: ${tabId}, URL: ${url}`);
+    console.log(
+      `[ContextMenu] Updating menu state - TabID: ${tabId}, URL: ${url}`,
+    );
 
     if (!url || !url.startsWith('http')) {
-      console.log(`[ContextMenu] 无效URL，隐藏所有菜单: ${url}`);
+      console.log(`[ContextMenu] Invalid URL, hiding all menus: ${url}`);
       await this.hideAllDynamicMenus();
       return;
     }
 
     try {
-      // 验证URL
+      // Validate URL
       const validation = validateUrlForRule(url);
       if (!validation.valid) {
         console.log(
-          `[ContextMenu] URL验证失败，隐藏所有菜单: ${validation.error || '未知原因'}`,
+          `[ContextMenu] URL validation failed, hiding all menus: ${validation.error || 'unknown reason'}`,
         );
         await this.hideAllDynamicMenus();
         return;
       }
 
-      // 获取当前网站状态
+      // Get current website status
       const websiteStatus = await this.websiteManager.getWebsiteStatus(url);
       const domain = extractDomain(url);
 
       console.log(
-        `[ContextMenu] 网站状态 - Domain: ${domain}, Status: ${websiteStatus}`,
+        `[ContextMenu] Website status - Domain: ${domain}, Status: ${websiteStatus}`,
       );
 
-      // 根据网站状态更新菜单可见性和标题
+      // Update menu visibility and titles based on website status
       await this.updateMenuVisibility(url, domain, websiteStatus);
     } catch (error) {
-      console.error('[ContextMenu] 更新菜单状态失败:', {
-        error: error instanceof Error ? error.message : '未知错误',
+      console.error('[ContextMenu] Failed to update menu state:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
         url,
         tabId,
         stack: error instanceof Error ? error.stack : undefined,
       });
-      // 不立即隐藏菜单，先重试一次
+      // Do not hide the menu immediately; retry once first
       try {
-        console.log('[ContextMenu] 尝试重新获取网站状态...');
+        console.log('[ContextMenu] Retrying to get website status...');
         const websiteStatus = await this.websiteManager.getWebsiteStatus(url);
         const domain = extractDomain(url);
         await this.updateMenuVisibility(url, domain, websiteStatus);
       } catch (retryError) {
-        console.error('[ContextMenu] 重试失败，隐藏所有菜单:', retryError);
+        console.error(
+          '[ContextMenu] Retry failed, hiding all menus:',
+          retryError,
+        );
         await this.hideAllDynamicMenus();
       }
     }
   }
 
   /**
-   * 根据网站状态更新菜单可见性
+   * Update menu visibility based on website status
    */
   private async updateMenuVisibility(
     url: string,
     domain: string,
     websiteStatus: 'blacklisted' | 'whitelisted' | 'normal',
   ): Promise<void> {
-    // 先隐藏所有动态菜单项
+    // Hide all dynamic menu items first
     await this.hideAllDynamicMenus();
 
     try {
-      // 根据当前状态显示相应的操作选项
+      // Show the relevant action options for the current status
       if (websiteStatus === 'blacklisted') {
-        // 当前在黑名单中，显示移除选项和添加到白名单选项
+        // Currently blacklisted: show remove option and add-to-whitelist options
         await browser.contextMenus.update('illa-remove-blacklist', {
           visible: true,
-          title: `从黑名单中移除 ${domain}`,
+          title: `Remove ${domain} from blacklist`,
         });
         await browser.contextMenus.update('illa-add-whitelist-domain', {
           visible: true,
-          title: `添加 ${domain} 到白名单`,
+          title: `Add ${domain} to whitelist`,
         });
         await browser.contextMenus.update('illa-add-whitelist-exact', {
           visible: true,
-          title: '添加当前页面到白名单',
+          title: 'Add current page to whitelist',
         });
       } else if (websiteStatus === 'whitelisted') {
-        // 当前在白名单中，显示移除选项和添加到黑名单选项
+        // Currently whitelisted: show remove option and add-to-blacklist options
         await browser.contextMenus.update('illa-remove-whitelist', {
           visible: true,
-          title: `从白名单中移除 ${domain}`,
+          title: `Remove ${domain} from whitelist`,
         });
         await browser.contextMenus.update('illa-add-blacklist-domain', {
           visible: true,
-          title: `添加 ${domain} 到黑名单`,
+          title: `Add ${domain} to blacklist`,
         });
         await browser.contextMenus.update('illa-add-blacklist-exact', {
           visible: true,
-          title: '添加当前页面到黑名单',
+          title: 'Add current page to blacklist',
         });
       } else {
-        // 正常状态，显示添加选项
+        // Normal status: show add options
         await browser.contextMenus.update('illa-add-blacklist-domain', {
           visible: true,
-          title: `添加 ${domain} 到黑名单`,
+          title: `Add ${domain} to blacklist`,
         });
         await browser.contextMenus.update('illa-add-blacklist-exact', {
           visible: true,
-          title: '添加当前页面到黑名单',
+          title: 'Add current page to blacklist',
         });
         await browser.contextMenus.update('illa-add-whitelist-domain', {
           visible: true,
-          title: `添加 ${domain} 到白名单`,
+          title: `Add ${domain} to whitelist`,
         });
         await browser.contextMenus.update('illa-add-whitelist-exact', {
           visible: true,
-          title: '添加当前页面到白名单',
+          title: 'Add current page to whitelist',
         });
       }
     } catch (error) {
-      console.error('更新菜单可见性失败:', error);
+      console.error('Failed to update menu visibility:', error);
     }
   }
 
   /**
-   * 隐藏所有动态菜单项
+   * Hide all dynamic menu items
    */
   private async hideAllDynamicMenus(): Promise<void> {
     const dynamicMenuIds = [
@@ -192,23 +197,26 @@ export class ContextMenuManager {
       try {
         await browser.contextMenus.update(menuId, { visible: false });
       } catch (error) {
-        console.error('更新菜单可见性失败:', error);
-        // 忽略更新失败的错误
+        console.error('Failed to update menu visibility:', error);
+        // Ignore update failure errors
       }
     }
   }
 
   /**
-   * 处理菜单点击事件
+   * Handle menu click events
    */
   private async handleMenuClick(info: any, tab: any): Promise<void> {
     console.log(
-      `[ContextMenu] 菜单点击事件 - MenuID: ${info.menuItemId}, URL: ${tab?.url}`,
+      `[ContextMenu] Menu click event - MenuID: ${info.menuItemId}, URL: ${tab?.url}`,
     );
 
     if (!tab?.url) {
-      console.warn('[ContextMenu] 缺少标签页URL信息');
-      this.showNotification('操作失败', '无法获取当前页面信息');
+      console.warn('[ContextMenu] Missing tab URL information');
+      this.showNotification(
+        'Operation failed',
+        'Unable to get current page information',
+      );
       return;
     }
 
@@ -216,14 +224,14 @@ export class ContextMenuManager {
       const url = tab.url;
       const domain = extractDomain(url);
 
-      // 验证当前URL是否与菜单显示时的URL一致
+      // Verify the current URL matches the URL when the menu was shown
       console.log(
-        `[ContextMenu] 处理右键页面 - URL: ${url}, Domain: ${domain}`,
+        `[ContextMenu] Handling right-clicked page - URL: ${url}, Domain: ${domain}`,
       );
 
-      // 解析菜单ID
+      // Parse menu ID
       if (info.menuItemId === 'illa-open-settings') {
-        console.log('[ContextMenu] 打开设置页面');
+        console.log('[ContextMenu] Opening settings page');
         const optionsUrl = browser.runtime.getURL(
           '/options.html#website-management',
         );
@@ -231,26 +239,29 @@ export class ContextMenuManager {
         return;
       }
 
-      // 处理添加/移除操作
+      // Handle add/remove actions
       if (typeof info.menuItemId === 'string') {
         console.log(
-          `[ContextMenu] 处理菜单操作 - Action: ${info.menuItemId}, Domain: ${domain}`,
+          `[ContextMenu] Handling menu action - Action: ${info.menuItemId}, Domain: ${domain}`,
         );
         await this.processMenuAction(info.menuItemId, url, domain);
       }
     } catch (error) {
-      console.error('[ContextMenu] 处理菜单点击失败:', {
-        error: error instanceof Error ? error.message : '未知错误',
+      console.error('[ContextMenu] Failed to handle menu click:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
         menuItemId: info.menuItemId,
         url: tab?.url,
         stack: error instanceof Error ? error.stack : undefined,
       });
-      this.showNotification('操作失败', '处理菜单操作时发生错误');
+      this.showNotification(
+        'Operation failed',
+        'An error occurred while handling the menu action',
+      );
     }
   }
 
   /**
-   * 处理菜单操作
+   * Handle menu action
    */
   private async processMenuAction(
     menuItemId: string,
@@ -261,7 +272,7 @@ export class ContextMenuManager {
     let patternType: UrlPatternType;
     let pattern: string;
 
-    // 解析菜单ID
+    // Parse menu ID
     if (menuItemId.includes('add-blacklist-domain')) {
       action = 'add-to-blacklist';
       patternType = 'domain';
@@ -287,15 +298,15 @@ export class ContextMenuManager {
       patternType = 'domain';
       pattern = generateDomainPattern(domain);
     } else {
-      return; // 未知的菜单项
+      return; // Unknown menu item
     }
 
-    // 执行操作
+    // Execute action
     await this.executeAction(action, pattern, patternType, url);
   }
 
   /**
-   * 执行网站管理操作
+   * Execute website management action
    */
   private async executeAction(
     action: ContextMenuActionType,
@@ -304,7 +315,7 @@ export class ContextMenuManager {
     url: string,
   ): Promise<void> {
     console.log(
-      `[ContextMenu] 执行操作 - Action: ${action}, Pattern: ${pattern}, Type: ${patternType}`,
+      `[ContextMenu] Executing action - Action: ${action}, Pattern: ${pattern}, Type: ${patternType}`,
     );
 
     try {
@@ -312,50 +323,51 @@ export class ContextMenuManager {
       const description = generateRuleDescription(pattern, type);
 
       if (action.startsWith('add-to-')) {
-        // 添加规则
+        // Add rule
         console.log(
-          `[ContextMenu] 添加规则 - Type: ${type}, Pattern: ${pattern}`,
+          `[ContextMenu] Adding rule - Type: ${type}, Pattern: ${pattern}`,
         );
         await this.websiteManager.addRule(pattern, type, description);
 
-        const actionText = type === 'blacklist' ? '黑名单' : '白名单';
-        const patternText = patternType === 'domain' ? '网站' : '页面';
+        const actionText = type === 'blacklist' ? 'blacklist' : 'whitelist';
+        const patternText = patternType === 'domain' ? 'website' : 'page';
         this.showNotification(
-          '规则添加成功',
-          `已将${patternText}添加到${actionText}`,
+          'Rule added',
+          `Added the ${patternText} to the ${actionText}`,
         );
       } else if (action.startsWith('remove-from-')) {
-        // 移除规则 - 查找匹配的规则并删除
+        // Remove rule: find matching rules and delete them
         console.log(
-          `[ContextMenu] 移除规则 - Type: ${type}, Pattern: ${pattern}`,
+          `[ContextMenu] Removing rule - Type: ${type}, Pattern: ${pattern}`,
         );
         const rules = await this.websiteManager.getRulesByType(type);
         const domain = extractDomain(url);
         const domainPattern = generateDomainPattern(domain);
 
-        // 查找匹配的当前规则：域名菜单只移除当前域名规则。
+        // Find matching rules: the domain menu only removes the current domain rule.
         const matchingRules = rules.filter((rule) => {
           return rule.pattern === pattern || rule.pattern === domainPattern;
         });
 
         console.log(
-          `[ContextMenu] 找到匹配规则 - Count: ${matchingRules.length}`,
+          `[ContextMenu] Found matching rules - Count: ${matchingRules.length}`,
         );
 
         for (const rule of matchingRules) {
           await this.websiteManager.removeRule(rule.id);
         }
 
-        const actionText = type === 'blacklist' ? '黑名单' : '白名单';
-        const patternText = matchingRules.length > 0 ? '相关规则' : '匹配规则';
+        const actionText = type === 'blacklist' ? 'blacklist' : 'whitelist';
+        const patternText =
+          matchingRules.length > 0 ? 'related rules' : 'matching rules';
         this.showNotification(
-          '规则移除成功',
-          `已从${actionText}中移除${patternText}`,
+          'Rule removed',
+          `Removed ${patternText} from the ${actionText}`,
         );
       }
 
-      // 操作完成后，刷新菜单状态
-      console.log('[ContextMenu] 操作完成，刷新菜单状态');
+      // Refresh menu state after the action completes
+      console.log('[ContextMenu] Action complete, refreshing menu state');
       const tabs = await browser.tabs.query({
         active: true,
         currentWindow: true,
@@ -364,20 +376,23 @@ export class ContextMenuManager {
         await this.updateMenuState(tabs[0].id, tabs[0].url);
       }
     } catch (error) {
-      console.error('[ContextMenu] 执行操作失败:', {
-        error: error instanceof Error ? error.message : '未知错误',
+      console.error('[ContextMenu] Failed to execute action:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
         action,
         pattern,
         patternType,
         url,
         stack: error instanceof Error ? error.stack : undefined,
       });
-      this.showNotification('操作失败', '执行操作时发生错误');
+      this.showNotification(
+        'Operation failed',
+        'An error occurred while executing the action',
+      );
     }
   }
 
   /**
-   * 显示通知
+   * Show notification
    */
   private showNotification(title: string, message: string): void {
     browser.notifications.create({
@@ -389,28 +404,28 @@ export class ContextMenuManager {
   }
 
   /**
-   * 处理标签页更新事件
+   * Handle tab update events
    */
   private async handleTabUpdate(
     tabId: number,
     changeInfo: any,
     tab: any,
   ): Promise<void> {
-    // 扩展更新条件：URL变化、加载完成、或者标题变化（SPA应用）
+    // Update when the URL changes, loading completes, or the title changes (SPA apps)
     if (
       changeInfo.url ||
       (changeInfo.status === 'complete' && tab.url) ||
       changeInfo.title
     ) {
       console.log(
-        `[ContextMenu] 标签页更新 - TabID: ${tabId}, URL: ${tab.url}, Status: ${changeInfo.status}`,
+        `[ContextMenu] Tab updated - TabID: ${tabId}, URL: ${tab.url}, Status: ${changeInfo.status}`,
       );
       await this.updateMenuState(tabId, tab.url!);
     }
   }
 
   /**
-   * 处理标签页激活事件
+   * Handle tab activation events
    */
   private async handleTabActivated(activeInfo: any): Promise<void> {
     try {
@@ -419,19 +434,19 @@ export class ContextMenuManager {
         await this.updateMenuState(activeInfo.tabId, tab.url);
       }
     } catch (error) {
-      // 忽略获取标签页信息失败的错误
-      console.error('处理标签页激活事件失败:', error);
+      // Ignore errors from failing to get tab info
+      console.error('Failed to handle tab activation event:', error);
     }
   }
 
   /**
-   * 处理导航事件（用于SPA应用）
+   * Handle navigation events (for SPA apps)
    */
   private async handleNavigation(details: any): Promise<void> {
-    // 只处理主框架的导航事件
+    // Only handle main-frame navigation events
     if (details.frameId === 0 && details.url) {
       console.log(
-        `[ContextMenu] 导航事件 - URL: ${details.url}, TabID: ${details.tabId}`,
+        `[ContextMenu] Navigation event - URL: ${details.url}, TabID: ${details.tabId}`,
       );
       await this.updateMenuState(details.tabId, details.url);
     }

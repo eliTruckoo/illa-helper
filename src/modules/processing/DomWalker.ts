@@ -1,13 +1,13 @@
 /**
- * DOM Walker - 统一的 DOM 遍历与标记模块
+ * DOM Walker - unified DOM traversal and marking module
  *
- * 参考 read-frog 的 walk-label 设计：
- * 1. 深度优先遍历 DOM 树
- * 2. 基于 getComputedStyle 判断 block/inline（语义标签强制 block）
- * 3. 含有 inline 子内容的节点标记为 "paragraph"（翻译基本单元）
- * 4. walkId 防重，避免并发冲突和重复遍历
+ * Based on the walk-label design from read-frog:
+ * 1. Depth-first traversal of the DOM tree
+ * 2. Determine block/inline via getComputedStyle (semantic tags are forced to block)
+ * 3. Nodes containing inline children are marked as "paragraph" (the basic translation unit)
+ * 4. walkId deduplication avoids concurrent conflicts and repeated traversal
  *
- * 单词翻译和段落翻译共用此模块获取 DOM 节点。
+ * Word translation and paragraph translation share this module to obtain DOM nodes.
  */
 
 import {
@@ -22,22 +22,22 @@ import {
 } from './DomTranslationPolicy';
 
 // ============================================================
-// 类型定义
+// Type definitions
 // ============================================================
 
 export interface WalkResult {
-  /** 是否强制为 block */
+  /** Whether forced to block */
   forceBlock: boolean;
-  /** 是否为 inline 节点 */
+  /** Whether this is an inline node */
   isInline: boolean;
 }
 
 export interface ParagraphInfo {
-  /** 段落元素 */
+  /** Paragraph element */
   element: HTMLElement;
-  /** 提取的文本内容 */
+  /** Extracted text content */
   textContent: string;
-  /** 段落内的文本节点 */
+  /** Text nodes within the paragraph */
   textNodes: Text[];
 }
 
@@ -54,40 +54,40 @@ function createWalkId(): string {
 }
 
 // ============================================================
-// 元素分类判断
+// Element classification
 // ============================================================
 
-/** 是否应该完全跳过（不遍历、不翻译） */
+/** Whether to skip entirely (no traversal, no translation) */
 function shouldSkipEntirely(element: HTMLElement): boolean {
   return shouldSkipSubtree(element);
 }
 
-/** 是否为原子 inline 元素（不深入遍历，但文本参与父级翻译） */
+/** Whether this is an atomic inline element (not traversed, but its text takes part in the parent's translation) */
 function isAtomicInline(element: HTMLElement): boolean {
   return ATOMIC_INLINE_TAGS.has(element.tagName);
 }
 
-/** 基于计算样式判断是否为 inline 元素 */
+/** Determine whether an element is inline based on computed style */
 function isInlineElement(element: HTMLElement): boolean {
-  // 无文本内容的元素不算 inline
+  // Elements without text content do not count as inline
   if (!element.textContent?.trim()) return false;
 
-  // 强制 block 标签
+  // Forced block tags
   if (FORCE_BLOCK_TAGS.has(element.tagName)) return false;
 
   const style = window.getComputedStyle(element);
   const display = style.display;
 
-  // inline / inline-block / inline-flex / contents 视为 inline
+  // inline / inline-block / inline-flex / contents treated as inline
   return display.includes('inline') || display === 'contents';
 }
 
 // ============================================================
-// 文本提取
+// Text extraction
 // ============================================================
 
 /**
- * 从段落节点中提取文本内容，保留合理的空白
+ * Extract text content from a paragraph node, preserving sensible whitespace
  */
 function extractTextFromNode(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) {
@@ -95,7 +95,7 @@ function extractTextFromNode(node: Node): string {
     const trimmed = text.trim();
     if (!trimmed) return '';
 
-    // 保留有意义的前后空格（非换行空白）
+    // Keep meaningful leading/trailing spaces (non-newline whitespace)
     const hasLeading = /^\s/.test(text) && !/^\n/.test(text);
     const hasTrailing = /\s$/.test(text) && !/\n$/.test(text);
     return (hasLeading ? ' ' : '') + trimmed + (hasTrailing ? ' ' : '');
@@ -107,15 +107,15 @@ function extractTextFromNode(node: Node): string {
 
   if (element.tagName === 'BR') return '\n';
 
-  // 跳过完全忽略的元素
+  // Skip fully ignored elements
   if (shouldSkipEntirely(element)) return '';
 
-  // 原子 inline 元素 - 直接取文本
+  // Atomic inline element - take its text directly
   if (isAtomicInline(element)) {
     return element.textContent?.trim() ?? '';
   }
 
-  // 递归子节点
+  // Recurse into child nodes
   let result = '';
   for (const child of element.childNodes) {
     result += extractTextFromNode(child);
@@ -124,7 +124,7 @@ function extractTextFromNode(node: Node): string {
 }
 
 /**
- * 收集段落内的文本节点
+ * Collect text nodes within a paragraph
  */
 function collectTextNodes(element: HTMLElement): Text[] {
   const textNodes: Text[] = [];
@@ -144,40 +144,40 @@ function collectTextNodes(element: HTMLElement): Text[] {
 }
 
 // ============================================================
-// 核心遍历逻辑
+// Core traversal logic
 // ============================================================
 
 /**
- * 遍历并标记 DOM 元素
+ * Traverse and mark DOM elements
  *
- * 递归遍历 element 的子树，给每个节点打上语义标签：
- * - data-illa-walked: 已遍历（值为 walkId）
- * - data-illa-paragraph: 段落节点（含有 inline 子内容，是翻译单元）
- * - data-illa-block: 块级节点
- * - data-illa-inline: 行内节点
+ * Recursively traverse the subtree of element, tagging each node semantically:
+ * - data-illa-walked: traversed (value is walkId)
+ * - data-illa-paragraph: paragraph node (contains inline children, is a translation unit)
+ * - data-illa-block: block-level node
+ * - data-illa-inline: inline node
  */
 function walkAndLabel(element: HTMLElement, walkId: string): WalkResult {
-  // 已经被本次 walk 遍历过，跳过
+  // Already traversed in this walk, skip
   if (element.getAttribute(DOM_LABELS.WALKED) === walkId) {
     return { forceBlock: false, isInline: false };
   }
 
-  // 原子 inline - 不深入，标记为 inline
+  // Atomic inline - do not descend, mark as inline
   if (isAtomicInline(element)) {
     return { forceBlock: false, isInline: true };
   }
 
-  // 完全跳过
+  // Skip entirely
   if (shouldSkipEntirely(element)) {
     return { forceBlock: false, isInline: false };
   }
 
-  // 标记已遍历
+  // Mark as traversed
   element.setAttribute(DOM_LABELS.WALKED, walkId);
 
   let hasInlineChild = false;
 
-  // 遍历子节点
+  // Traverse child nodes
   for (const child of element.childNodes) {
     if (child.nodeType === Node.TEXT_NODE) {
       if (child.textContent?.trim()) {
@@ -191,12 +191,12 @@ function walkAndLabel(element: HTMLElement, walkId: string): WalkResult {
     }
   }
 
-  // 标记段落：含有 inline 子内容的节点
+  // Mark paragraph: node containing inline children
   if (hasInlineChild) {
     element.setAttribute(DOM_LABELS.PARAGRAPH, '');
   }
 
-  // 判断 block / inline
+  // Determine block / inline
   const inline = isInlineElement(element);
   if (inline) {
     element.setAttribute(DOM_LABELS.INLINE, '');
@@ -208,7 +208,7 @@ function walkAndLabel(element: HTMLElement, walkId: string): WalkResult {
 }
 
 /**
- * 清除 walk 标记
+ * Clear walk markers
  */
 function clearLabels(root: HTMLElement): void {
   const labeled = root.querySelectorAll(
@@ -220,7 +220,7 @@ function clearLabels(root: HTMLElement): void {
     el.removeAttribute(DOM_LABELS.BLOCK);
     el.removeAttribute(DOM_LABELS.INLINE);
   }
-  // 也清除 root 自身
+  // Also clear the root itself
   root.removeAttribute(DOM_LABELS.WALKED);
   root.removeAttribute(DOM_LABELS.PARAGRAPH);
   root.removeAttribute(DOM_LABELS.BLOCK);
@@ -228,26 +228,26 @@ function clearLabels(root: HTMLElement): void {
 }
 
 // ============================================================
-// 公开 API
+// Public API
 // ============================================================
 
 /**
- * 遍历 DOM 并收集所有段落信息
+ * Traverse the DOM and collect all paragraph info
  *
- * 这是两种翻译模式共用的入口：
- * - 单词翻译模式：用返回的 ParagraphInfo 构建 ContentSegment
- * - 段落翻译模式：用返回的 ParagraphInfo.element 作为翻译单元
+ * This is the entry point shared by both translation modes:
+ * - Word translation mode: build ContentSegment from the returned ParagraphInfo
+ * - Paragraph translation mode: use the returned ParagraphInfo.element as the translation unit
  *
- * @param root 遍历的根节点
- * @returns 段落信息列表（按文档顺序）
+ * @param root root node to traverse
+ * @returns list of paragraph info (in document order)
  */
 export function walkAndCollectParagraphs(root: HTMLElement): ParagraphInfo[] {
   const walkId = createWalkId();
 
-  // 第一步：遍历并标记
+  // Step 1: traverse and mark
   walkAndLabel(root, walkId);
 
-  // 第二步：收集所有段落节点
+  // Step 2: collect all paragraph nodes
   const paragraphElements = [
     ...(root.hasAttribute(DOM_LABELS.PARAGRAPH) ? [root] : []),
     ...Array.from(
@@ -258,13 +258,13 @@ export function walkAndCollectParagraphs(root: HTMLElement): ParagraphInfo[] {
   const paragraphs: ParagraphInfo[] = [];
 
   for (const element of paragraphElements) {
-    // 跳过内部包含其他段落的节点（只取叶子段落）
-    // 但如果段落内有 block 子节点，仍然保留（后续由调用方处理混合内容）
+    // Skip nodes that contain other paragraphs (take leaf paragraphs only)
+    // But keep it if the paragraph has block children (the caller handles mixed content later)
     const childParagraphs = element.querySelectorAll(
       `[${DOM_LABELS.PARAGRAPH}]`,
     );
     if (childParagraphs.length > 0) {
-      // 检查是否所有子段落都是 inline 的（即这个节点本身就是最终段落）
+      // Check whether all child paragraphs are inline (i.e. this node itself is the final paragraph)
       let hasBlockParagraphChild = false;
       for (const cp of childParagraphs) {
         if (cp.hasAttribute(DOM_LABELS.BLOCK)) {
@@ -272,7 +272,7 @@ export function walkAndCollectParagraphs(root: HTMLElement): ParagraphInfo[] {
           break;
         }
       }
-      // 如果有 block 子段落，跳过当前节点（让子段落各自处理）
+      // If there are block child paragraphs, skip this node (let the children handle themselves)
       if (hasBlockParagraphChild) continue;
     }
 
@@ -285,14 +285,14 @@ export function walkAndCollectParagraphs(root: HTMLElement): ParagraphInfo[] {
     paragraphs.push({ element, textContent, textNodes });
   }
 
-  // 第三步：清除标记，避免污染 DOM
+  // Step 3: clear markers to avoid polluting the DOM
   clearLabels(root);
 
   return paragraphs;
 }
 
 /**
- * 判断一个元素是否应该被跳过（供外部模块使用）
+ * Determine whether an element should be skipped (for use by external modules)
  */
 export {
   shouldSkipEntirely,
