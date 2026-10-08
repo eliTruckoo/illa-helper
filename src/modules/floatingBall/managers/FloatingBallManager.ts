@@ -6,7 +6,7 @@
 import type { FloatingBallConfig } from '../../shared/types/ui';
 import type { FloatingBallState, FloatingBallActionType } from '../types';
 import { FLOATING_BALL_STYLES, DRAG_CONFIG, MENU_ACTIONS } from '../config';
-import { safeSetInnerHTML } from '@/src/utils';
+import { safeSetInnerHTML } from '../../../utils';
 import { StorageService } from '../../core/storage';
 
 export class FloatingBallManager {
@@ -35,7 +35,6 @@ export class FloatingBallManager {
   private isTouchDevice = false;
   // Menu hover related
   private menuHoverTimer: number | null = null;
-  private menuItemsEventsBound = false; // Prevent duplicate binding of menu item events
 
   constructor(config: FloatingBallConfig) {
     this.config = config;
@@ -122,8 +121,9 @@ export class FloatingBallManager {
       this.setupEventListeners();
       this.state.isVisible = true;
     } else if (!config.enabled && wasEnabled) {
-      // Changed from enabled to disabled
-      this.destroy();
+      // Changed from enabled to disabled. Keep the translate callback: the ball
+      // is re-created when it is enabled again and must still work.
+      this.teardown();
       this.state.isVisible = false;
     } else if (config.enabled && this.ballElement) {
       // Update styles
@@ -689,7 +689,7 @@ export class FloatingBallManager {
     } = FLOATING_BALL_STYLES;
 
     // Mouse enter effect
-    this.ballElement.addEventListener('mouseenter', () => {
+    this.bindEventListener(this.ballElement, 'mouseenter', () => {
       if (!this.state.isDragging && this.ballElement) {
         this.ballElement.style.background = hoverBackground;
         this.ballElement.style.transform = `translateY(-50%) scale(${hoverScale})`;
@@ -698,7 +698,7 @@ export class FloatingBallManager {
     });
 
     // Mouse leave effect
-    this.ballElement.addEventListener('mouseleave', () => {
+    this.bindEventListener(this.ballElement, 'mouseleave', () => {
       if (!this.state.isDragging && this.ballElement) {
         this.ballElement.style.background = background;
         this.ballElement.style.transform = 'translateY(-50%) scale(1)';
@@ -707,7 +707,7 @@ export class FloatingBallManager {
     });
 
     // Click active effect
-    this.ballElement.addEventListener('mousedown', () => {
+    this.bindEventListener(this.ballElement, 'mousedown', () => {
       if (this.ballElement) {
         this.ballElement.style.background = activeBackground;
         this.ballElement.style.boxShadow = activeBoxShadow;
@@ -715,7 +715,7 @@ export class FloatingBallManager {
     });
 
     // Click release effect
-    this.ballElement.addEventListener('mouseup', () => {
+    this.bindEventListener(this.ballElement, 'mouseup', () => {
       if (!this.state.isDragging && this.ballElement) {
         setTimeout(() => {
           if (this.ballElement) {
@@ -746,6 +746,18 @@ export class FloatingBallManager {
     // Keep the menu visible while hovering over the menu container
     this.bindEventListener(this.menuContainer, 'mouseenter', () => {
       this.showMenuOnHover();
+    });
+
+    // One delegated click listener for all panel buttons, bound together with
+    // the panel so it can never be bound twice
+    this.bindEventListener(this.menuContainer, 'click', (e) => {
+      const button = (e.target as Element | null)?.closest?.('.wxt-panel-btn');
+      if (!button) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const action = (button as HTMLElement).dataset
+        .action as FloatingBallActionType;
+      this.handleMenuAction(action);
     });
 
     // Hide menu when leaving the menu container
@@ -1239,12 +1251,6 @@ export class FloatingBallManager {
       // Ensure the menu position is correct
       this.updateMenuStyle();
 
-      // Only bind event listeners on the first display
-      if (!this.menuItemsEventsBound) {
-        this.bindMenuItemListeners();
-        this.menuItemsEventsBound = true;
-      }
-
       // On touch devices, close the menu automatically after a delay
       if (this.isTouchDevice) {
         this.menuHoverTimer = window.setTimeout(() => {
@@ -1272,53 +1278,6 @@ export class FloatingBallManager {
       }
       this.menuHoverTimer = null;
     }, 300);
-  }
-
-  /**
-   * Toggle the menu expanded/collapsed state
-   */
-  private toggleMenu(): void {
-    this.state.isMenuExpanded = !this.state.isMenuExpanded;
-    this.updateMenuStyle();
-
-    // Add a global click listener to close the menu
-    if (this.state.isMenuExpanded) {
-      this.bindEventListener(
-        document,
-        'click',
-        this.handleDocumentClick.bind(this),
-        true,
-      );
-
-      // Only bind event listeners on the first display
-      if (!this.menuItemsEventsBound) {
-        this.bindMenuItemListeners();
-        this.menuItemsEventsBound = true;
-      }
-    }
-  }
-
-  /**
-   * Handle document click events (used to close the menu)
-   */
-  private handleDocumentClick(e: MouseEvent): void {
-    if (!this.ballElement || !this.menuContainer) return;
-
-    const target = e.target as HTMLElement;
-
-    // If the click is on the floating ball or inside the menu, do not close the menu
-    if (
-      this.ballElement.contains(target) ||
-      this.menuContainer.contains(target)
-    ) {
-      return;
-    }
-
-    // Close the menu
-    if (this.state.isMenuExpanded) {
-      this.state.isMenuExpanded = false;
-      this.updateMenuStyle();
-    }
   }
 
   /**
@@ -1392,37 +1351,15 @@ export class FloatingBallManager {
       this.clickDebounceTimer = null;
     }
 
-    // Reset menu state
+    // Collapse the menu (it stays usable if the ball is shown again)
     this.state.isMenuExpanded = false;
-    this.menuItemsEventsBound = false;
+    this.updateMenuStyle();
 
     // Hide the element
     this.state.isVisible = false;
     if (this.ballElement) {
       this.ballElement.style.display = 'none';
     }
-    if (this.menuContainer) {
-      this.menuContainer.style.display = 'none';
-    }
-  }
-
-  /**
-   * Bind menu item event listeners
-   */
-  private bindMenuItemListeners(): void {
-    if (!this.menuContainer) return;
-
-    const menuItems = this.menuContainer.querySelectorAll('.wxt-panel-btn');
-    menuItems.forEach((item) => {
-      const element = item as HTMLElement;
-      const action = element.dataset.action as FloatingBallActionType;
-
-      this.bindEventListener(element, 'click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.handleMenuAction(action);
-      });
-    });
   }
 
   /**
@@ -1527,50 +1464,18 @@ export class FloatingBallManager {
   }
 
   /**
-   * Show a notification message
-   */
-  private showNotification(message: string): void {
-    // Create a simple notification
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: #333;
-      color: white;
-      padding: 12px 16px;
-      border-radius: 8px;
-      font-size: 14px;
-      z-index: 10001;
-      opacity: 0;
-      transition: opacity 0.3s ease;
-      max-width: 300px;
-      word-wrap: break-word;
-    `;
-    notification.textContent = message;
-
-    document.body.appendChild(notification);
-
-    // Show animation
-    setTimeout(() => {
-      notification.style.opacity = '1';
-    }, 10);
-
-    // Disappear automatically after 3 seconds
-    setTimeout(() => {
-      notification.style.opacity = '0';
-      setTimeout(() => {
-        if (notification.parentNode) {
-          notification.parentNode.removeChild(notification);
-        }
-      }, 300);
-    }, 3000);
-  }
-
-  /**
    * Destroy the floating ball (full resource cleanup)
    */
   destroy(): void {
+    this.teardown();
+    this.onTranslateCallback = undefined;
+  }
+
+  /**
+   * Remove the floating ball DOM, listeners and timers while keeping the
+   * configuration and translate callback, so it can be re-created later.
+   */
+  private teardown(): void {
     // Remove the floating ball element
     if (this.ballElement) {
       this.ballElement.remove();
@@ -1620,7 +1525,5 @@ export class FloatingBallManager {
     this.dragStartY = 0;
     this.ballStartY = 0;
     this.lastClickTime = 0;
-    this.menuItemsEventsBound = false;
-    this.onTranslateCallback = undefined;
   }
 }

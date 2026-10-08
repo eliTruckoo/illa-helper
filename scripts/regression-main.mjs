@@ -993,4 +993,70 @@ pronunciationService.destroy();
   managers[0].cleanup();
 }
 
+// ------------------------------------------------------------
+// Floating ball: callback survives disable/enable, single menu handler (illa-helper-bfn.8)
+// ------------------------------------------------------------
+
+{
+  // linkedom only creates <body> for full documents, so wrap fragments
+  const { DOMParser: LinkedomParser } = await import('linkedom');
+  globalThis.DOMParser = class {
+    parseFromString(html, type) {
+      return new LinkedomParser().parseFromString(
+        `<!doctype html><html><body>${html}</body></html>`,
+        type,
+      );
+    }
+  };
+  const { FloatingBallManager } = await import(
+    '../src/modules/floatingBall/managers/FloatingBallManager.ts'
+  );
+  const { DEFAULT_FLOATING_BALL_CONFIG } = await import(
+    '../src/modules/shared/constants/defaults.ts'
+  );
+
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const click = (target) => {
+    target.dispatchEvent(new window.Event('click', { bubbles: true }));
+  };
+  const ballRoot = () =>
+    document.getElementById('illa-floating-root')?.shadowRoot;
+
+  let translateCalls = 0;
+  const enabledConfig = { ...DEFAULT_FLOATING_BALL_CONFIG, enabled: true };
+  const floatingBall = new FloatingBallManager({ ...enabledConfig });
+  floatingBall.init(() => {
+    translateCalls += 1;
+  });
+
+  floatingBall.updateConfig({ ...enabledConfig, enabled: false });
+  assert.equal(ballRoot(), undefined, 'disabling removes the floating ball');
+  floatingBall.updateConfig({ ...enabledConfig });
+
+  click(ballRoot().querySelector('.wxt-floating-ball'));
+  await wait(150);
+  assert.equal(
+    translateCalls,
+    1,
+    'clicking the ball still translates after disable -> enable',
+  );
+
+  // Menu buttons trigger their action exactly once, also after closing and
+  // re-showing the ball
+  const panelButton = (action) =>
+    [...ballRoot().querySelectorAll('.wxt-panel-btn')].find(
+      (button) => button.getAttribute('data-action') === action,
+    );
+  const translateButton = () => panelButton('translate');
+  click(translateButton());
+  assert.equal(translateCalls, 2, 'menu action runs once');
+  click(panelButton('close'));
+  floatingBall.updateConfig({ ...enabledConfig });
+  click(translateButton());
+  assert.equal(translateCalls, 3, 'menu handlers are never bound twice');
+
+  floatingBall.destroy();
+  assert.equal(ballRoot(), undefined);
+}
+
 console.log('main regression passed');
