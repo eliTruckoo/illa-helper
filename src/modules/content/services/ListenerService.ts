@@ -64,6 +64,7 @@ export class ListenerService implements IListenerService {
   private translationStateManager: TranslationStateManager;
   private pageLanguage?: string;
   private domObserver?: MutationObserver;
+  private messageListener?: (message: any) => Promise<void>;
   private pendingNodes = new Set<Node>();
   private pendingOverflow = false;
   private isFlushing = false;
@@ -101,13 +102,15 @@ export class ListenerService implements IListenerService {
    * Set up the message listener
    */
   setupMessageListeners(): void {
-    browser.runtime.onMessage.addListener(async (message) => {
+    if (this.messageListener) return;
+    this.messageListener = async (message: any) => {
       try {
         await this.handleMessage(message);
       } catch (error) {
         console.error('[ListenerService] Message handling failed:', error);
       }
-    });
+    };
+    browser.runtime.onMessage.addListener(this.messageListener);
   }
 
   /**
@@ -124,6 +127,11 @@ export class ListenerService implements IListenerService {
    * Destroy the service and clean up resources
    */
   destroy(): void {
+    if (this.messageListener) {
+      browser.runtime.onMessage.removeListener(this.messageListener);
+      this.messageListener = undefined;
+    }
+
     if (this.domObserver) {
       this.domObserver.disconnect();
       this.domObserver = undefined;

@@ -19,6 +19,7 @@ import {
   globalProcessingState,
 } from '../processing/ProcessingStateManager';
 import { languageService } from '../core/translation/LanguageService';
+import { cancelPendingApiRequests } from '@/src/modules/api/utils/requestUtils';
 
 /**
  * Translation display state manager
@@ -316,6 +317,7 @@ export class ContentManager implements IContentManager {
       ],
       ['floating ball', () => services?.floatingBallManager?.destroy()],
       ['processing state', () => globalProcessingState.destroy()],
+      ['pending API requests', () => cancelPendingApiRequests()],
     ];
 
     for (const [name, step] of steps) {
