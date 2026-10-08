@@ -6,6 +6,8 @@ import { IProcessingService, ProcessingParams } from '../types';
 import { ContentSegment } from '../../processing/ProcessingStateManager';
 import { ProcessingCoordinator } from '../../processing/ProcessingCoordinator';
 import { ReplacementBudget } from '../../processing/ReplacementBudget';
+import { PageGlossary } from '../../processing/PageGlossary';
+import type { PageGlossaryRunOptions } from '../../processing/ProcessingContracts';
 
 /**
  * Page processing service
@@ -17,6 +19,15 @@ export class ProcessingService implements IProcessingService {
   private lazyLoadingService?: LazyLoadingService;
   private processingParams!: ProcessingParams;
   private pageReplacementBudget?: ReplacementBudget;
+  // Page glossary (opt-in): page-scoped like the budget, shared by every run on this page
+  private pageGlossary?: PageGlossary;
+  private pageGlossaryOptions = {
+    enabled: false,
+    promptHint: false,
+    economyMode: false,
+  };
+  /** Settings the learned translations depend on; a change discards the glossary */
+  private pageGlossaryFingerprint = '';
   // One coordinator per tab so manual, lazy-loading and dynamic-content runs share its serial queue
   private coordinator: ProcessingCoordinator;
 
@@ -68,6 +79,7 @@ export class ProcessingService implements IProcessingService {
       segments,
       this.textReplacer.getConfig().replacementRate,
     );
+    this.resetPageGlossary();
 
     await this.processSegments(segments, false);
   }
@@ -83,6 +95,7 @@ export class ProcessingService implements IProcessingService {
       segments,
       this.textReplacer.getConfig().replacementRate,
     );
+    this.resetPageGlossary();
 
     this.lazyLoadingService!.setProcessingCallback(
       this.processSegmentsLazy.bind(this),
@@ -147,7 +160,65 @@ export class ProcessingService implements IProcessingService {
       this.processingParams.showParentheses,
       isLazyLoading,
       this.pageReplacementBudget,
+      this.getPageGlossaryRunOptions(),
     );
+  }
+
+  /**
+   * Glossary options for a run, or undefined when the page glossary is disabled.
+   */
+  private getPageGlossaryRunOptions(): PageGlossaryRunOptions | undefined {
+    if (!this.pageGlossaryOptions.enabled) {
+      return undefined;
+    }
+    if (!this.pageGlossary) {
+      this.pageGlossary = new PageGlossary();
+    }
+    return {
+      glossary: this.pageGlossary,
+      promptHint: this.pageGlossaryOptions.promptHint,
+      economyMode: this.pageGlossaryOptions.economyMode,
+    };
+  }
+
+  /**
+   * Start a fresh glossary together with a fresh page budget.
+   */
+  private resetPageGlossary(): void {
+    this.pageGlossary = this.pageGlossaryOptions.enabled
+      ? new PageGlossary()
+      : undefined;
+  }
+
+  /**
+   * Apply the glossary settings; learned pairs are dropped when the glossary is turned off or when
+   * a setting that changes the translations (provider, model, target language, level) changes.
+   */
+  private updatePageGlossarySettings(settings: UserSettings): void {
+    const config = settings.pageGlossary;
+    this.pageGlossaryOptions = {
+      enabled: config?.enabled === true,
+      promptHint: config?.promptHint === true,
+      economyMode: config?.economyMode === true,
+    };
+
+    const activeConfig = settings.apiConfigs?.find(
+      (item) => item.id === settings.activeApiConfigId,
+    );
+    const fingerprint = JSON.stringify([
+      settings.activeApiConfigId,
+      activeConfig?.config?.model ?? '',
+      settings.multilingualConfig?.targetLanguage ?? '',
+      settings.userLevel,
+    ]);
+
+    if (
+      !this.pageGlossaryOptions.enabled ||
+      fingerprint !== this.pageGlossaryFingerprint
+    ) {
+      this.pageGlossary = undefined;
+    }
+    this.pageGlossaryFingerprint = fingerprint;
   }
 
   /**
@@ -202,6 +273,7 @@ export class ProcessingService implements IProcessingService {
       translationPosition: settings.translationPosition,
       showParentheses: settings.showParentheses,
     };
+    this.updatePageGlossarySettings(settings);
   }
 
   // State query methods

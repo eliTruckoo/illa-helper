@@ -764,4 +764,27 @@ assert.equal(
   'incognito tabs record nothing',
 );
 
+// Hinted answers are stored complete (model pairs + glossary hint pairs)
+const hintStores = [];
+const hintExecutor = new BatchTranslationExecutor(
+  new SegmentTranslationCache(20),
+  executorBackend,
+  { maxItems: 8, maxChars: 2500 },
+  {
+    lookup: async (texts) => texts.map(() => null),
+    store: (items) => hintStores.push(...items),
+  },
+);
+await hintExecutor.translate(
+  ['hinted text'],
+  ['hinted text'],
+  [{ pairs: [{ original: 'hinted', translation: 'HINT' }], maxPairs: 5 }],
+);
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.deepEqual(
+  hintStores[0].outcome.pairs.map((pair) => pair.translation),
+  ['single', 'HINT'],
+  'the stored outcome includes the hint pairs (withHintPairs before store)',
+);
+
 console.log('translation memory regression passed');

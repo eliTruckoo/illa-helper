@@ -10,7 +10,11 @@ import type {
   MultilingualConfig,
 } from '../types/api';
 import type { FloatingBallConfig, TooltipHotkey } from '../types/ui';
-import type { TranslationCacheConfig, UserSettings } from '../types/storage';
+import type {
+  PageGlossaryConfig,
+  TranslationCacheConfig,
+  UserSettings,
+} from '../types/storage';
 import type { LazyLoadingConfig } from '../types/core';
 import { createEmptyApiConfig } from '../ApiConfigHelpers';
 import {
@@ -76,6 +80,13 @@ function createDefaultApiConfigItem(): ApiConfigItem {
   };
 }
 
+// Default page glossary configuration (opt-in)
+export const DEFAULT_PAGE_GLOSSARY_CONFIG: PageGlossaryConfig = {
+  enabled: false,
+  promptHint: false,
+  economyMode: false,
+};
+
 // Default user settings
 export const DEFAULT_SETTINGS: UserSettings = {
   userLevel: UserLevel.B1,
@@ -100,4 +111,5 @@ export const DEFAULT_SETTINGS: UserSettings = {
   customTranslationCSS: '',
   lazyLoading: DEFAULT_LAZY_LOADING_CONFIG,
   translationCache: DEFAULT_TRANSLATION_CACHE_CONFIG,
+  pageGlossary: DEFAULT_PAGE_GLOSSARY_CONFIG,
 };

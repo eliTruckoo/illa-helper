@@ -15,7 +15,10 @@ import type {
   FullTextAnalysisResponse,
   Replacement,
 } from '../shared/types/api';
-import { ReplacementBudget } from './ReplacementBudget';
+import {
+  ReplacementBudget,
+  calculateReplacementLimit,
+} from './ReplacementBudget';
 import {
   buildTextFromNodes,
   planStableReplacements,
@@ -26,10 +29,17 @@ import { wordExposureRecorder } from '../core/translation/WordExposureRecorder';
 import {
   TRANSLATION_BATCH_MAX_ITEMS,
   TRANSLATION_WAVE_SIZE,
+  type PageGlossaryRunOptions,
   type PronunciationRegistrar,
   type TextReplacementEngine,
+  type TranslationHint,
   type TranslationStyleProvider,
 } from './ProcessingContracts';
+import {
+  countGlossaryCoverage,
+  mergeWithGlossary,
+  type PageGlossary,
+} from './PageGlossary';
 
 /** Concurrent single-segment requests per wave when batching is unavailable */
 const SINGLE_REQUEST_CONCURRENCY = 8;
@@ -126,6 +136,7 @@ export class ProcessingCoordinator {
     showParentheses: boolean,
     isLazyLoading: boolean = false,
     replacementBudget?: ReplacementBudget,
+    pageGlossary?: PageGlossaryRunOptions,
   ): Promise<ProcessingResult> {
     const startTime = Date.now();
 
@@ -140,6 +151,7 @@ export class ProcessingCoordinator {
         startTime,
         isLazyLoading,
         replacementBudget,
+        pageGlossary,
       );
     });
     // A failed run must not break the queue for later runs sharing this coordinator
@@ -159,6 +171,7 @@ export class ProcessingCoordinator {
     startTime: number,
     isLazyLoading: boolean = false,
     replacementBudget?: ReplacementBudget,
+    pageGlossary?: PageGlossaryRunOptions,
   ): Promise<ProcessingResult> {
     let processedCount = 0;
     let skippedCount = 0;
@@ -228,13 +241,12 @@ export class ProcessingCoordinator {
         );
         i += wave.length;
 
-        const translations = useBatching
-          ? await this.collectWaveReplacements(wave, textReplacer)
-          : await Promise.all(
-              wave.map((segment) =>
-                this.collectSegmentReplacements(segment, textReplacer),
-              ),
-            );
+        const translations = await this.collectWaveTranslations(
+          wave,
+          textReplacer,
+          useBatching,
+          pageGlossary,
+        );
 
         // API requests may run concurrently, but budget consumption and DOM writes must run in segment order.
         translations.forEach((translation) => {
@@ -246,6 +258,7 @@ export class ProcessingCoordinator {
               translationPosition,
               showParentheses,
               activeBudget,
+              pageGlossary,
             ),
           );
         });
@@ -313,11 +326,122 @@ export class ProcessingCoordinator {
   }
 
   /**
+   * Fetch candidate replacements for a wave, in wave order.
+   * With the page glossary, economy mode may serve segments locally and the prompt hint lists the
+   * glossary words present in each requested segment.
+   */
+  private async collectWaveTranslations(
+    wave: ContentSegment[],
+    textReplacer: TextReplacementEngine,
+    useBatching: boolean,
+    pageGlossary?: PageGlossaryRunOptions,
+  ): Promise<SegmentTranslationResult[]> {
+    const replacementRate = textReplacer.getConfig().replacementRate;
+    const local = new Map<ContentSegment, SegmentTranslationResult>();
+    const requested: ContentSegment[] = [];
+
+    wave.forEach((segment) => {
+      if (
+        pageGlossary?.economyMode &&
+        this.canServeFromGlossary(
+          segment,
+          pageGlossary.glossary,
+          replacementRate,
+        )
+      ) {
+        // The glossary fills this segment's quota: no request, replacements come from the glossary merge
+        translationStats.recordEconomySkipped();
+        local.set(segment, { segment, success: true, replacements: [] });
+      } else {
+        requested.push(segment);
+      }
+    });
+
+    const hints = pageGlossary?.promptHint
+      ? requested.map((segment) =>
+          this.buildGlossaryHint(
+            segment,
+            pageGlossary.glossary,
+            replacementRate,
+          ),
+        )
+      : undefined;
+
+    let fetched: SegmentTranslationResult[] = [];
+    if (requested.length > 0) {
+      fetched = useBatching
+        ? await this.collectWaveReplacements(requested, textReplacer, hints)
+        : await Promise.all(
+            requested.map((segment, index) =>
+              this.collectSegmentReplacements(
+                segment,
+                textReplacer,
+                hints?.[index],
+              ),
+            ),
+          );
+    }
+
+    const fetchedBySegment = new Map(
+      fetched.map((translation) => [translation.segment, translation]),
+    );
+    return wave.map(
+      (segment) => local.get(segment) ?? fetchedBySegment.get(segment)!,
+    );
+  }
+
+  /**
+   * Economy mode: whether the glossary alone fills the segment's replacement limit
+   * (PageGlossary.shouldSkipRequest never allows two segments in a row).
+   */
+  private canServeFromGlossary(
+    segment: ContentSegment,
+    glossary: PageGlossary,
+    replacementRate?: number,
+  ): boolean {
+    const limit = calculateReplacementLimit(
+      segment.textContent,
+      replacementRate,
+    );
+    if (limit === 0) {
+      // Nothing to translate: neither a skip nor a source of new words
+      return false;
+    }
+    const coverage =
+      limit === undefined
+        ? 0
+        : countGlossaryCoverage(
+            glossary,
+            buildTextFromNodes(segment.textNodes),
+          );
+    return glossary.shouldSkipRequest(coverage, limit);
+  }
+
+  /**
+   * "Already handled" hint for one segment: glossary words present in the text sent to the model.
+   */
+  private buildGlossaryHint(
+    segment: ContentSegment,
+    glossary: PageGlossary,
+    replacementRate?: number,
+  ): TranslationHint | undefined {
+    const pairs = glossary.hintFor(segment.textContent);
+    if (pairs.length === 0) {
+      return undefined;
+    }
+    return {
+      pairs,
+      maxPairs: calculateReplacementLimit(segment.textContent, replacementRate),
+    };
+  }
+
+  /**
    * Fetch candidate replacements for a whole wave through the batching engine; the page budget is not consumed here.
    */
   private async collectWaveReplacements(
     segments: ContentSegment[],
     textReplacer: TextReplacementEngine,
+    hints?: Array<TranslationHint | undefined>,
   ): Promise<SegmentTranslationResult[]> {
     segments.forEach((segment) => {
       segment.elements.forEach((element) => {
@@ -328,9 +452,10 @@ export class ProcessingCoordinator {
     let responses: Array<FullTextAnalysisResponse | undefined>;
     let waveError: string | undefined;
     try {
-      responses = await textReplacer.replaceTexts!(
-        segments.map((segment) => segment.textContent),
-      );
+      const texts = segments.map((segment) => segment.textContent);
+      responses = hints
+        ? await textReplacer.replaceTexts!(texts, hints)
+        : await textReplacer.replaceTexts!(texts);
     } catch (error) {
       responses = [];
       waveError = error instanceof Error ? error.message : String(error);
@@ -371,13 +496,16 @@ export class ProcessingCoordinator {
   private async collectSegmentReplacements(
     segment: ContentSegment,
     textReplacer: TextReplacementEngine,
+    hint?: TranslationHint,
   ): Promise<SegmentTranslationResult> {
     try {
       segment.elements.forEach((element) => {
         this.addProcessingFeedback(element);
       });
 
-      const result = await textReplacer.replaceText(segment.textContent);
+      const result = hint
+        ? await textReplacer.replaceText(segment.textContent, hint)
+        : await textReplacer.replaceText(segment.textContent);
       return this.toSegmentTranslation(segment, result);
     } catch (error) {
       return {
@@ -407,6 +535,7 @@ export class ProcessingCoordinator {
     translationPosition: TranslationPosition,
     showParentheses: boolean,
     replacementBudget: ReplacementBudget,
+    pageGlossary?: PageGlossaryRunOptions,
   ): SegmentProcessingResult {
     const { segment } = translationResult;
 
@@ -420,11 +549,20 @@ export class ProcessingCoordinator {
         };
       }
 
-      const replacements = replacementBudget.take(
-        translationResult.replacements,
-      );
+      // Glossary matches fill what the model left (model picks win), capped by the segment's rate
+      const candidates = pageGlossary
+        ? mergeWithGlossary(
+            buildTextFromNodes(segment.textNodes),
+            segment.textContent,
+            translationResult.replacements,
+            pageGlossary.glossary,
+            textReplacer.getConfig().replacementRate,
+          )
+        : translationResult.replacements;
+      const replacements = replacementBudget.take(candidates);
 
       if (replacements.length > 0) {
+        const applied: Replacement[] = [];
         const appliedCount = this.applyReplacements(
           segment,
           replacements,
@@ -432,8 +570,13 @@ export class ProcessingCoordinator {
           originalWordDisplayMode,
           translationPosition,
           showParentheses,
+          applied,
         );
         replacementBudget.restore(replacements.length - appliedCount);
+
+        if (pageGlossary) {
+          this.updateGlossary(pageGlossary.glossary, applied);
+        }
 
         if (this.pronunciationService) {
           setTimeout(() => {
@@ -472,7 +615,19 @@ export class ProcessingCoordinator {
   }
 
   /**
+   * Learn the applied model picks and count the applied glossary replacements (`isNew: false`).
+   */
+  private updateGlossary(glossary: PageGlossary, applied: Replacement[]): void {
+    const fromGlossary = applied.filter((r) => r.isNew === false).length;
+    if (fromGlossary > 0) {
+      translationStats.recordGlossaryHits(fromGlossary);
+    }
+    glossary.learn(applied.filter((r) => r.isNew !== false));
+  }
+
+  /**
    * Apply replacements to the DOM
+   * @param applied optional collector receiving every replacement that was actually written
    */
   private applyReplacements(
     segment: ContentSegment,
@@ -481,6 +636,7 @@ export class ProcessingCoordinator {
     originalWordDisplayMode: OriginalWordDisplayMode,
     translationPosition: TranslationPosition,
     showParentheses: boolean,
+    applied?: Replacement[],
   ): number {
     const reconstructedText = buildTextFromNodes(segment.textNodes);
     const plannedReplacements = planStableReplacements(
@@ -491,7 +647,7 @@ export class ProcessingCoordinator {
       (a, b) => b.position.start - a.position.start,
     );
     let appliedCount = 0;
-    const applied: Replacement[] = [];
+    const shown: Replacement[] = [];
 
     for (const replacement of sortedReplacements) {
       const range = this.findRangeInTextNodes(
@@ -511,13 +667,14 @@ export class ProcessingCoordinator {
         );
         if (wasApplied) {
           appliedCount++;
-          applied.push(replacement);
+          applied?.push(replacement);
+          shown.push(replacement);
         }
       }
     }
 
     // Learning layer: count what the user actually sees (batched, debounced)
-    wordExposureRecorder.record(applied);
+    wordExposureRecorder.record(shown);
 
     return appliedCount;
   }

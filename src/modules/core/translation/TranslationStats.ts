@@ -23,6 +23,10 @@ export interface TranslationStatsSnapshot {
   inflightCoalesced: number;
   /** Segments skipped without a request because the page budget was exhausted */
   budgetSkipped: number;
+  /** Replacements applied from the page glossary instead of a fresh model pick */
+  glossaryHits: number;
+  /** Segments served by the page glossary alone (economy mode), without a request */
+  economySkipped: number;
   /** Failed requests */
   errors: number;
   /** Requests whose response reported token usage */
@@ -48,6 +52,8 @@ const createEmptySnapshot = (): TranslationStatsSnapshot => ({
   memoryHits: 0,
   inflightCoalesced: 0,
   budgetSkipped: 0,
+  glossaryHits: 0,
+  economySkipped: 0,
   errors: 0,
   requestsWithUsage: 0,
   inputTokens: 0,
@@ -117,6 +123,14 @@ export class TranslationStats {
     this.counters.budgetSkipped += count;
   }
 
+  recordGlossaryHits(count: number): void {
+    this.counters.glossaryHits += count;
+  }
+
+  recordEconomySkipped(count: number = 1): void {
+    this.counters.economySkipped += count;
+  }
+
   recordError(): void {
     this.counters.errors++;
   }
@@ -160,6 +174,7 @@ export class TranslationStats {
       `[TranslationStats] ${context}: segments=${s.segments} requests=${s.requests} ` +
         `(batch=${s.batchRequests}/${s.batchedSegments} seg) cacheHits=${s.cacheHits} memoryHits=${s.memoryHits} ` +
         `coalesced=${s.inflightCoalesced} reuse=${reuseRate}% budgetSkipped=${s.budgetSkipped} ` +
+        `glossaryHits=${s.glossaryHits} economySkipped=${s.economySkipped} ` +
         `errors=${s.errors} tokens in/out=${s.inputTokens}/${s.outputTokens} ` +
         `(usage on ${s.requestsWithUsage} req)`,
     );

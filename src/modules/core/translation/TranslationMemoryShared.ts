@@ -362,6 +362,8 @@ export interface WordFingerprintParts {
   batchSystemPrompt: string;
   /** Version of the user-message format and answer parser */
   promptVersion: string;
+  /** Rendered sample of the user message(s), so format edits invalidate too */
+  userPromptFormat?: string;
   targetLanguage: string;
   userLevel: number | string;
   replacementRate: number;
@@ -390,6 +392,7 @@ export function buildWordFingerprintSource(
     systemPrompt: parts.systemPrompt,
     batchSystemPrompt: parts.batchSystemPrompt,
     promptVersion: parts.promptVersion,
+    userPromptFormat: parts.userPromptFormat ?? '',
     targetLanguage: parts.targetLanguage,
     userLevel: parts.userLevel,
     replacementRate: parts.replacementRate,

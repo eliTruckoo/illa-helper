@@ -427,6 +427,61 @@
             />
           </div>
         </div>
+
+        <!-- Page glossary (opt-in) -->
+        <div class="space-y-4 border-t border-border pt-6">
+          <div class="flex items-center justify-between">
+            <div class="space-y-1">
+              <Label for="page-glossary-enabled">
+                {{ $t('pageGlossary.enabled') }}
+              </Label>
+              <p class="text-xs text-muted-foreground">
+                {{ $t('pageGlossary.description') }}
+              </p>
+            </div>
+            <Switch
+              id="page-glossary-enabled"
+              :model-value="pageGlossary.enabled"
+              @update:model-value="updatePageGlossary({ enabled: $event })"
+            />
+          </div>
+          <div
+            v-if="pageGlossary.enabled"
+            class="flex items-center justify-between pl-4"
+          >
+            <div class="space-y-1">
+              <Label for="page-glossary-prompt-hint">
+                {{ $t('pageGlossary.promptHint') }}
+              </Label>
+              <p class="text-xs text-muted-foreground">
+                {{ $t('pageGlossary.promptHintDescription') }}
+              </p>
+            </div>
+            <Switch
+              id="page-glossary-prompt-hint"
+              :model-value="pageGlossary.promptHint"
+              @update:model-value="updatePageGlossary({ promptHint: $event })"
+            />
+          </div>
+          <div
+            v-if="pageGlossary.enabled"
+            class="flex items-center justify-between pl-4"
+          >
+            <div class="space-y-1">
+              <Label for="page-glossary-economy-mode">
+                {{ $t('pageGlossary.economyMode') }}
+              </Label>
+              <p class="text-xs text-muted-foreground">
+                {{ $t('pageGlossary.economyModeDescription') }}
+              </p>
+            </div>
+            <Switch
+              id="page-glossary-economy-mode"
+              :model-value="pageGlossary.economyMode"
+              @update:model-value="updatePageGlossary({ economyMode: $event })"
+            />
+          </div>
+        </div>
       </CardContent>
     </Card>
 
@@ -532,6 +587,8 @@ import {
   TranslationStyle,
   TranslationMode,
   OriginalWordDisplayMode,
+  DEFAULT_PAGE_GLOSSARY_CONFIG,
+  type PageGlossaryConfig,
 } from '@/src/modules/shared/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -625,6 +682,16 @@ onMounted(async () => {
     styleManager.setCustomCSS(settings.value.customTranslationCSS);
   }
 });
+
+// Stored settings from older versions may not have the page glossary yet
+const pageGlossary = computed<PageGlossaryConfig>(() => ({
+  ...DEFAULT_PAGE_GLOSSARY_CONFIG,
+  ...settings.value.pageGlossary,
+}));
+
+const updatePageGlossary = (patch: Partial<PageGlossaryConfig>) => {
+  settings.value.pageGlossary = { ...pageGlossary.value, ...patch };
+};
 
 const previewTranslation = computed(() => {
   if (settings.value.showParentheses) {

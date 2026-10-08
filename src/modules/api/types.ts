@@ -9,12 +9,26 @@ import {
 import { UserSettings } from '../shared/types/storage';
 
 /**
+ * Optional per-request hints for word-mode analysis
+ */
+export interface AnalyzeOptions {
+  /** Page glossary words already shown for this text; the model is asked not to output them */
+  alreadyHandled?: string[];
+}
+
+export interface AnalyzeBatchOptions {
+  /** Per item (same order as the texts): page glossary words the model should not output */
+  alreadyHandled?: Array<string[] | undefined>;
+}
+
+/**
  * Translation provider interface
  */
 export interface ITranslationProvider {
   analyzeFullText(
     text: string,
     settings: UserSettings,
+    options?: AnalyzeOptions,
   ): Promise<FullTextAnalysisResponse>;
   /**
    * Analyze several segments in one request (numbered input/output).
@@ -23,6 +37,7 @@ export interface ITranslationProvider {
   analyzeBatch?(
     texts: string[],
     settings: UserSettings,
+    options?: AnalyzeBatchOptions,
   ): Promise<BatchAnalysisResponse>;
 }
 
