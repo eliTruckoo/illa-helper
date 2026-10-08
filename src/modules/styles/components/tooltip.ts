@@ -1,6 +1,6 @@
 /**
  * Tooltip styles
- * Redesigned: OLED Dark + Glassmorphism + Shimmer Loading
+ * OLED Dark cards (opaque, no backdrop blur) + finite loading pulse
  * Visual hierarchy: word > phonetic > meaning, clearly separated
  */
 
@@ -39,9 +39,10 @@ export const TOOLTIP_STYLES = `
   }
 }
 
-@keyframes wxt-shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+/* Loading skeleton: opacity-only pulse that runs a few times and then stops */
+@keyframes wxt-loading-pulse {
+  from { opacity: 1; }
+  to { opacity: 0.45; }
 }
 
 @keyframes wxt-spin {
@@ -59,7 +60,10 @@ export const TOOLTIP_STYLES = `
   .wxt-word-tooltip,
   .wxt-interactive-word,
   .wxt-audio-btn,
-  .wxt-accent-audio-btn {
+  .wxt-accent-audio-btn,
+  .wxt-phonetic-loading,
+  .wxt-meaning-loading::before,
+  .wxt-meaning-loading::after {
     animation: none !important;
     transition: none !important;
   }
@@ -75,7 +79,8 @@ export const TOOLTIP_STYLES = `
 
 /* ===== Card body ===== */
 .wxt-tooltip-card {
-  background: rgba(22, 22, 24, 0.92);
+  /* Near-opaque instead of backdrop-filter blur, which repaints the page behind */
+  background: rgba(22, 22, 24, 0.98);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
   box-shadow:
@@ -88,8 +93,6 @@ export const TOOLTIP_STYLES = `
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
   position: relative;
   overflow: hidden;
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
 }
 
 /* Top highlight line */
@@ -188,19 +191,13 @@ export const TOOLTIP_STYLES = `
   letter-spacing: 0.01em;
 }
 
-/* ===== Phonetic loading - Shimmer ===== */
+/* ===== Phonetic loading skeleton ===== */
 .wxt-phonetic-loading {
   height: 22px;
   width: 100px;
   border-radius: 6px;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.04) 25%,
-    rgba(255, 255, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.04) 75%
-  );
-  background-size: 200% 100%;
-  animation: wxt-shimmer 1.5s ease-in-out infinite;
+  background: rgba(255, 255, 255, 0.07);
+  animation: wxt-loading-pulse 0.8s ease-in-out 6 alternate;
   display: block;
   font-size: 0;
   color: transparent;
@@ -230,7 +227,7 @@ export const TOOLTIP_STYLES = `
   border: none;
 }
 
-/* ===== Meaning loading - Shimmer ===== */
+/* ===== Meaning loading skeleton ===== */
 .wxt-meaning-loading {
   display: flex;
   flex-direction: column;
@@ -247,14 +244,8 @@ export const TOOLTIP_STYLES = `
   height: 12px;
   width: 100%;
   border-radius: 4px;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.04) 25%,
-    rgba(255, 255, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.04) 75%
-  );
-  background-size: 200% 100%;
-  animation: wxt-shimmer 1.5s ease-in-out infinite;
+  background: rgba(255, 255, 255, 0.07);
+  animation: wxt-loading-pulse 0.8s ease-in-out 6 alternate;
 }
 
 .wxt-meaning-loading::after {
@@ -263,15 +254,17 @@ export const TOOLTIP_STYLES = `
   height: 12px;
   width: 65%;
   border-radius: 4px;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.04) 25%,
-    rgba(255, 255, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.04) 75%
-  );
-  background-size: 200% 100%;
-  animation: wxt-shimmer 1.5s ease-in-out 0.15s infinite;
+  background: rgba(255, 255, 255, 0.07);
+  animation: wxt-loading-pulse 0.8s ease-in-out 0.15s 6 alternate;
   border: none;
+}
+
+/* Definition could not be loaded */
+.wxt-meaning-error {
+  font-size: 12px;
+  color: #8e8e93;
+  font-style: italic;
+  line-height: 1.5;
 }
 
 /* ===== Original text display ===== */
@@ -354,12 +347,10 @@ export const TOOLTIP_STYLES = `
   transform: translateX(-50%) rotate(45deg);
   width: 10px;
   height: 10px;
-  background: rgba(22, 22, 24, 0.92);
+  background: rgba(22, 22, 24, 0.98);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-top: none;
   border-left: none;
-  -webkit-backdrop-filter: blur(40px);
-  backdrop-filter: blur(40px);
 }
 
 .wxt-tooltip-arrow-top {
@@ -498,7 +489,7 @@ export const TOOLTIP_STYLES = `
 }
 
 .wxt-word-tooltip-card {
-  background: rgba(28, 28, 30, 0.94);
+  background: rgba(28, 28, 30, 0.98);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   padding: 12px 14px;
@@ -511,8 +502,6 @@ export const TOOLTIP_STYLES = `
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
   position: relative;
   overflow: hidden;
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
 }
 
 .wxt-word-tooltip-card::before {

@@ -39,13 +39,22 @@ import {
  */
 export class StorageService {
   private static instance: StorageService;
-  private static readonly STORAGE_KEY = 'user_settings';
 
   // Configuration and state
   private readonly config: StorageServiceConfig;
   private readonly storageKey: string;
   private eventListeners: Map<StorageEventType, StorageEventListener[]> =
     new Map();
+
+  // In-memory settings cache (one per JS context). Kept fresh by a single
+  // storage.onChanged listener and by saveUserSettings; never handed out
+  // directly, callers always receive a copy.
+  private cachedSettings: UserSettings | null = null;
+  private pendingSettingsLoad: Promise<UserSettings> | null = null;
+  // Bumped on every cache write/invalidation so a slow storage read that
+  // started earlier cannot overwrite newer data.
+  private cacheGeneration = 0;
+  private storageListenerAttached = false;
 
   /**
    * Private constructor to prevent external instantiation
@@ -142,16 +151,58 @@ export class StorageService {
 
   /**
    * Get user settings
+   * Served from the in-memory cache after the first read; the returned object
+   * is always a private copy that callers may mutate freely.
    * @returns User settings
    */
   public async getUserSettings(): Promise<UserSettings> {
+    this.ensureStorageChangeListener();
+
+    if (this.cachedSettings) {
+      return cloneSettings(this.cachedSettings);
+    }
+
+    // Coalesce concurrent first reads into one storage round-trip
+    let load = this.pendingSettingsLoad;
+    if (!load) {
+      const newLoad = this.loadUserSettingsFromStorage();
+      load = newLoad;
+      this.pendingSettingsLoad = newLoad;
+      void newLoad.finally(() => {
+        if (this.pendingSettingsLoad === newLoad) {
+          this.pendingSettingsLoad = null;
+        }
+      });
+    }
+
+    return cloneSettings(await load);
+  }
+
+  /**
+   * Drop the in-memory settings cache so the next read hits storage.
+   */
+  public invalidateSettingsCache(): void {
+    this.cachedSettings = null;
+    this.pendingSettingsLoad = null;
+    this.cacheGeneration++;
+  }
+
+  /**
+   * Read, validate and cache settings from storage.
+   * This is the only read path that may write: a one-time normalisation
+   * (migration) of stored data that fails validation.
+   */
+  private async loadUserSettingsFromStorage(): Promise<UserSettings> {
+    const generation = this.cacheGeneration;
     try {
-      const result = await browser.storage.sync.get(StorageService.STORAGE_KEY);
-      const serializedData = result[StorageService.STORAGE_KEY];
+      const result = await browser.storage.sync.get(this.storageKey);
+      const serializedData = result[this.storageKey];
 
       if (!serializedData) {
-        this.emitEvent(StorageEventType.SETTINGS_LOADED, DEFAULT_SETTINGS);
-        return DEFAULT_SETTINGS;
+        const defaults = cloneSettings(DEFAULT_SETTINGS);
+        this.setCachedSettings(defaults, generation);
+        this.emitEvent(StorageEventType.SETTINGS_LOADED, defaults);
+        return defaults;
       }
 
       const userSettings: UserSettings = JSON.parse(serializedData);
@@ -161,18 +212,75 @@ export class StorageService {
         await this.saveUserSettings(validatedSettings);
       }
 
-      this.emitEvent(StorageEventType.SETTINGS_LOADED, validatedSettings);
-      return validatedSettings;
+      const settings = cloneSettings(validatedSettings);
+      this.setCachedSettings(settings, generation);
+      this.emitEvent(StorageEventType.SETTINGS_LOADED, settings);
+      return settings;
     } catch (error) {
       const errorMessage = `Failed to get user settings: ${error}`;
       console.error(errorMessage);
-      this.emitEvent(
-        StorageEventType.SETTINGS_LOADED,
-        DEFAULT_SETTINGS,
-        errorMessage,
-      );
-      return DEFAULT_SETTINGS;
+      // Errors are not cached: the next call retries the storage read.
+      const defaults = cloneSettings(DEFAULT_SETTINGS);
+      this.emitEvent(StorageEventType.SETTINGS_LOADED, defaults, errorMessage);
+      return defaults;
     }
+  }
+
+  /**
+   * Store settings in the cache unless a newer write/invalidation happened
+   * since the read identified by `generation` started.
+   */
+  private setCachedSettings(settings: UserSettings, generation: number): void {
+    if (generation !== this.cacheGeneration) {
+      return;
+    }
+    this.cachedSettings = settings;
+  }
+
+  /**
+   * Replace the cache with settings that are known to be current and notify
+   * SETTINGS_CHANGED subscribers.
+   */
+  private updateCachedSettings(settings: UserSettings | null): void {
+    this.cacheGeneration++;
+    this.pendingSettingsLoad = null;
+    this.cachedSettings = settings;
+    this.emitEvent(
+      StorageEventType.SETTINGS_CHANGED,
+      settings ? cloneSettings(settings) : null,
+    );
+  }
+
+  /**
+   * Register the single storage.onChanged listener for this JS context.
+   * Writes from any context (options page, popup, background) refresh the cache.
+   */
+  private ensureStorageChangeListener(): void {
+    if (this.storageListenerAttached) return;
+    this.storageListenerAttached = true;
+
+    const onChanged = browser?.storage?.onChanged;
+    if (!onChanged?.addListener) return;
+
+    onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'sync') return;
+      const change = changes[this.storageKey];
+      if (!change) return;
+
+      if (typeof change.newValue !== 'string') {
+        // Key removed (or unexpected shape): fall back to a fresh read later.
+        this.updateCachedSettings(null);
+        return;
+      }
+
+      try {
+        const parsed: UserSettings = JSON.parse(change.newValue);
+        this.updateCachedSettings(this.validateAndFixSettings(parsed));
+      } catch (error) {
+        console.error('Failed to apply changed user settings:', error);
+        this.updateCachedSettings(null);
+      }
+    });
   }
 
   /**
@@ -194,6 +302,10 @@ export class StorageService {
       await browser.storage.sync.set({
         [this.storageKey]: serializedData,
       });
+
+      // Read-your-writes in this context without waiting for onChanged
+      this.ensureStorageChangeListener();
+      this.updateCachedSettings(JSON.parse(serializedData));
 
       this.emitEvent(StorageEventType.SETTINGS_SAVED, settings);
       return { success: true, data: settings };
@@ -396,6 +508,7 @@ export class StorageService {
   public async clearAllData(): Promise<StorageOperationResult> {
     try {
       await browser.storage.sync.remove(this.storageKey);
+      this.updateCachedSettings(null);
       this.emitEvent(StorageEventType.DATA_CLEARED);
       return { success: true };
     } catch (error) {
@@ -545,6 +658,24 @@ export class StorageService {
       return true; // If the comparison fails, assume it changed
     }
   }
+}
+
+// ==================== Helpers ====================
+
+/**
+ * Deep-copy settings so callers can never mutate the cache or DEFAULT_SETTINGS.
+ * Settings are plain JSON data; the JSON fallback covers contexts without
+ * structuredClone and values structuredClone refuses (e.g. Vue proxies).
+ */
+export function cloneSettings(settings: UserSettings): UserSettings {
+  if (typeof structuredClone === 'function') {
+    try {
+      return structuredClone(settings);
+    } catch {
+      // fall through to JSON copy
+    }
+  }
+  return JSON.parse(JSON.stringify(settings));
 }
 
 // ==================== Exports ====================

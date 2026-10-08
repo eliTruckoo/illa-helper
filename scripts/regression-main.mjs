@@ -624,4 +624,695 @@ assert.deepEqual(
   'small segments must not be merged by default',
 );
 
+// ------------------------------------------------------------
+// Pronunciation: Web Speech is initialised lazily (illa-helper-ei3.5)
+// ------------------------------------------------------------
+
+let speechSynthesisAccesses = 0;
+const voicesChangedListeners = new Set();
+const fakeSpeechSynthesis = {
+  speaking: false,
+  getVoices: () => [],
+  addEventListener: (type, listener) => {
+    if (type === 'voiceschanged') voicesChangedListeners.add(listener);
+  },
+  removeEventListener: (type, listener) => {
+    if (type === 'voiceschanged') voicesChangedListeners.delete(listener);
+  },
+  cancel: () => undefined,
+  speak: (utterance) => {
+    setTimeout(() => utterance.onend?.(), 0);
+  },
+};
+Object.defineProperty(window, 'speechSynthesis', {
+  configurable: true,
+  get() {
+    speechSynthesisAccesses += 1;
+    return fakeSpeechSynthesis;
+  },
+});
+globalThis.SpeechSynthesisUtterance = class {
+  constructor(text) {
+    this.text = text;
+  }
+};
+
+const { PronunciationService } = await import(
+  '../src/modules/pronunciation/services/PronunciationService.ts'
+);
+const pronunciationService = new PronunciationService();
+pronunciationService.stopSpeaking();
+pronunciationService.updateConfig({
+  ttsConfig: { provider: 'web-speech', lang: 'en-GB' },
+});
+assert.equal(
+  speechSynthesisAccesses,
+  0,
+  'creating, stopping and reconfiguring the pronunciation service must not touch speechSynthesis',
+);
+
+const { WebSpeechTTSProvider } = await import(
+  '../src/modules/pronunciation/tts/WebSpeechTTSProvider.ts'
+);
+const webSpeech = new WebSpeechTTSProvider();
+webSpeech.stop();
+assert.equal(webSpeech.isSpeaking(), false);
+assert.equal(speechSynthesisAccesses, 0, 'idle Web Speech provider stays cold');
+const speakResult = await webSpeech.speak('hello');
+assert.equal(speakResult.success, true);
+assert.ok(speechSynthesisAccesses > 0, 'speak() initialises speech synthesis');
+assert.equal(
+  voicesChangedListeners.size,
+  0,
+  'the voiceschanged listener is removed once voice loading settles',
+);
+assert.equal(
+  fakeSpeechSynthesis.onvoiceschanged,
+  undefined,
+  'the page-owned onvoiceschanged handler is never overwritten',
+);
+pronunciationService.destroy();
+
+// ------------------------------------------------------------
+// StorageService: in-memory settings cache (illa-helper-ei3.9)
+// ------------------------------------------------------------
+
+{
+  const { StorageService } = await import(
+    '../src/modules/core/storage/StorageService.ts'
+  );
+  const { StorageEventType } = await import(
+    '../src/modules/core/storage/types.ts'
+  );
+  const { DEFAULT_SETTINGS } = await import(
+    '../src/modules/shared/constants/defaults.ts'
+  );
+
+  const originalStorage = globalThis.browser.storage;
+  const syncStore = {};
+  const changeListeners = [];
+  let syncGets = 0;
+  let syncSets = 0;
+  globalThis.browser.storage = {
+    sync: {
+      get: async (key) => {
+        syncGets += 1;
+        return key in syncStore ? { [key]: syncStore[key] } : {};
+      },
+      set: async (items) => {
+        syncSets += 1;
+        Object.assign(syncStore, items);
+      },
+      remove: async (key) => {
+        delete syncStore[key];
+      },
+    },
+    onChanged: {
+      addListener: (listener) => changeListeners.push(listener),
+    },
+  };
+  const emitStorageChange = (key, newValue) => {
+    for (const listener of changeListeners) {
+      listener({ [key]: { newValue } }, 'sync');
+    }
+  };
+
+  try {
+    const defaultsSnapshot = JSON.stringify(DEFAULT_SETTINGS);
+    const service = new StorageService();
+
+    // Concurrent first reads share one storage round-trip and never write
+    const [first, second] = await Promise.all([
+      service.getUserSettings(),
+      service.getUserSettings(),
+    ]);
+    assert.equal(syncGets, 1, 'concurrent first reads are coalesced');
+    assert.equal(syncSets, 0, 'reading defaults must not write');
+    assert.notEqual(first, second, 'each caller receives its own copy');
+    assert.equal(changeListeners.length, 1, 'one storage.onChanged listener');
+
+    // Mutating a returned object must not leak into the cache or the defaults
+    first.apiConfigs.push({ id: 'mutated' });
+    first.multilingualConfig.targetLanguage = 'mutated';
+    const third = await service.getUserSettings();
+    assert.equal(syncGets, 1, 'later reads are served from memory');
+    assert.equal(
+      third.multilingualConfig.targetLanguage,
+      DEFAULT_SETTINGS.multilingualConfig.targetLanguage,
+    );
+    assert.equal(
+      JSON.stringify(DEFAULT_SETTINGS),
+      defaultsSnapshot,
+      'DEFAULT_SETTINGS must never be mutated through getUserSettings()',
+    );
+
+    // A save updates the cache (read-your-writes) and notifies subscribers
+    const changedEvents = [];
+    const onSettingsChanged = (event) => changedEvents.push(event.data);
+    service.addEventListener(
+      StorageEventType.SETTINGS_CHANGED,
+      onSettingsChanged,
+    );
+    third.triggerMode = 'automatic';
+    await service.saveUserSettings(third);
+    assert.equal((await service.getUserSettings()).triggerMode, 'automatic');
+    assert.equal(syncGets, 1, 'saving does not force a re-read');
+    assert.equal(changedEvents.at(-1)?.triggerMode, 'automatic');
+
+    // A write from another context invalidates via storage.onChanged
+    const external = JSON.parse(syncStore.user_settings);
+    external.triggerMode = 'manual';
+    external.apiRequestTimeout = 12345;
+    syncStore.user_settings = JSON.stringify(external);
+    emitStorageChange('user_settings', syncStore.user_settings);
+    assert.equal((await service.getUserSettings()).apiRequestTimeout, 12345);
+    assert.equal(changedEvents.at(-1)?.apiRequestTimeout, 12345);
+
+    // Unrelated keys and areas are ignored
+    const eventsBefore = changedEvents.length;
+    emitStorageChange('website_management', '{}');
+    for (const listener of changeListeners) {
+      listener({ user_settings: { newValue: '{}' } }, 'local');
+    }
+    assert.equal(changedEvents.length, eventsBefore);
+
+    // Removing the key drops the cache; the next read goes back to storage
+    delete syncStore.user_settings;
+    emitStorageChange('user_settings', undefined);
+    const afterRemoval = await service.getUserSettings();
+    assert.equal(syncGets, 2, 'invalidated cache re-reads storage once');
+    assert.equal(
+      afterRemoval.apiRequestTimeout,
+      DEFAULT_SETTINGS.apiRequestTimeout,
+    );
+    service.removeEventListener(
+      StorageEventType.SETTINGS_CHANGED,
+      onSettingsChanged,
+    );
+
+    // Stored data that needs normalisation is migrated exactly once
+    const legacy = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+    delete legacy.lazyLoading;
+    const migratingService = new StorageService();
+    syncStore.user_settings = JSON.stringify(legacy);
+    const setsBefore = syncSets;
+    await migratingService.getUserSettings();
+    await migratingService.getUserSettings();
+    assert.equal(syncSets - setsBefore, 1, 'normalisation writes only once');
+  } finally {
+    globalThis.browser.storage = originalStorage;
+  }
+}
+
+// ------------------------------------------------------------
+// Tooltip controller: delegated hover, no per-word registry (illa-helper-bfn.2)
+// ------------------------------------------------------------
+
+{
+  const { TooltipInteractionController } = await import(
+    '../src/modules/pronunciation/ui/TooltipInteractionController.ts'
+  );
+  const { TooltipRenderer } = await import(
+    '../src/modules/pronunciation/ui/TooltipRenderer.ts'
+  );
+  const { DEFAULT_PRONUNCIATION_CONFIG, TIMER_CONSTANTS } = await import(
+    '../src/modules/pronunciation/config/index.ts'
+  );
+  const { StorageService } = await import(
+    '../src/modules/core/storage/StorageService.ts'
+  );
+
+  window.innerWidth = 1024;
+  window.scrollX = 0;
+  window.scrollY = 0;
+  globalThis.requestAnimationFrame = (callback) => setTimeout(callback, 0);
+
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const meaningRequests = [];
+  const controller = new TooltipInteractionController({
+    getConfig: () => DEFAULT_PRONUNCIATION_CONFIG,
+    phoneticProvider: {
+      getPhonetic: async (word) => ({
+        success: true,
+        data: { word, phonetics: [{ text: `/${word}/` }] },
+      }),
+    },
+    translationProvider: {
+      getMeaning: async (word) => {
+        meaningRequests.push(word);
+        return { success: false, error: 'offline' };
+      },
+    },
+    renderer: new TooltipRenderer(
+      DEFAULT_PRONUNCIATION_CONFIG.uiConfig,
+      'visible',
+    ),
+    storageService: StorageService.getInstance(),
+    speakText: async () => undefined,
+    speakTextWithAccent: async () => undefined,
+  });
+
+  const hoverHost = document.createElement('p');
+  document.body.appendChild(hoverHost);
+  const words = ['alpha', 'beta', 'gamma'].map((word) => {
+    const element = document.createElement('span');
+    element.textContent = word;
+    const inner = document.createElement('b');
+    inner.textContent = '!';
+    element.appendChild(inner);
+    hoverHost.appendChild(element);
+    return element;
+  });
+  for (const element of words) {
+    assert.equal(
+      await controller.register(element, element.firstChild.textContent),
+      true,
+    );
+  }
+  assert.equal(
+    await controller.register(words[0], 'alpha'),
+    false,
+    'double registration is rejected',
+  );
+  assert.ok(words[0].classList.contains('wxt-pronunciation-enabled'));
+
+  const pointer = (type, target, relatedTarget = null) => {
+    const event = new window.Event(type, { bubbles: true });
+    Object.defineProperty(event, 'relatedTarget', { value: relatedTarget });
+    target.dispatchEvent(event);
+  };
+  const visibleTooltips = () =>
+    document.querySelectorAll('.wxt-pronunciation-tooltip').length;
+
+  const key = (type, keyName) => {
+    const event = new window.Event(type, { bubbles: true });
+    Object.defineProperty(event, 'key', { value: keyName });
+    document.dispatchEvent(event);
+  };
+
+  // With the default hotkey, hovering alone does not open the tooltip
+  pointer('mouseover', words[0]);
+  await wait(TIMER_CONSTANTS.SHOW_DELAY + 50);
+  assert.equal(visibleTooltips(), 0, 'the hotkey is required by default');
+  pointer('mouseout', words[0], hoverHost);
+  key('keydown', 'Control');
+
+  // Hovering a child of a registered word opens exactly one tooltip
+  pointer('mouseover', words[0].firstElementChild);
+  await wait(TIMER_CONSTANTS.SHOW_DELAY + 50);
+  assert.equal(visibleTooltips(), 1, 'hovering a word shows its tooltip');
+  await wait(0);
+  assert.ok(
+    document.querySelector('.wxt-pronunciation-tooltip .wxt-meaning-error'),
+    'a failed definition replaces the loader with an error state',
+  );
+  assert.equal(
+    document.querySelector('.wxt-pronunciation-tooltip .wxt-meaning-loading'),
+    null,
+    'the loading skeleton does not stay on screen after a failure',
+  );
+
+  // Moving inside the word is not a leave
+  pointer('mouseout', words[0].firstElementChild, words[0]);
+  pointer('mouseover', words[0]);
+  await wait(TIMER_CONSTANTS.HIDE_DELAY + 50);
+  assert.equal(
+    visibleTooltips(),
+    1,
+    'moving within the word keeps the tooltip',
+  );
+
+  // Switching words replaces the tooltip instead of stacking them
+  pointer('mouseout', words[0], words[1]);
+  pointer('mouseover', words[1]);
+  await wait(TIMER_CONSTANTS.SHOW_DELAY + 50);
+  assert.equal(visibleTooltips(), 1, 'only one main tooltip at a time');
+
+  // A tooltip whose anchor left the DOM is dropped on the next pointer move
+  words[1].remove();
+  pointer('mouseover', hoverHost);
+  assert.equal(visibleTooltips(), 0, 'disconnected anchors hide their tooltip');
+
+  // Failed definitions are requested once per hover and do not throw
+  assert.ok(meaningRequests.includes('alpha'));
+
+  key('keyup', 'Control');
+
+  // destroy() removes the delegated listeners and the word markers
+  controller.destroy();
+  assert.ok(!words[2].classList.contains('wxt-pronunciation-enabled'));
+  pointer('mouseover', words[2]);
+  await wait(TIMER_CONSTANTS.SHOW_DELAY + 50);
+  assert.equal(visibleTooltips(), 0, 'no tooltips after destroy()');
+  hoverHost.remove();
+}
+
+// ------------------------------------------------------------
+// Styles: one main stylesheet per document, prefixed keyframes (illa-helper-ei3.10)
+// ------------------------------------------------------------
+
+{
+  const { StyleManager } = await import(
+    '../src/modules/styles/core/StyleManager.ts'
+  );
+  const { ALL_STYLES } = await import('../src/modules/styles/index.ts');
+
+  const managers = [new StyleManager(), new StyleManager(), new StyleManager()];
+  assert.equal(
+    document.querySelectorAll('#wxt-main-styles').length,
+    1,
+    'the main stylesheet is injected once regardless of StyleManager instances',
+  );
+  managers[0].setCustomCSS('color: red;');
+  managers[1].setCustomCSS('color: blue;');
+  const customStyles = document.querySelectorAll(
+    '#wxt-custom-translation-style',
+  );
+  assert.equal(customStyles.length, 1, 'custom CSS shares one style element');
+  assert.match(customStyles[0].textContent, /blue/);
+
+  const keyframeNames = [...ALL_STYLES.matchAll(/@keyframes\s+([\w-]+)/g)].map(
+    (match) => match[1],
+  );
+  assert.ok(keyframeNames.length > 0);
+  for (const name of keyframeNames) {
+    assert.ok(name.startsWith('wxt-'), `keyframes "${name}" must be prefixed`);
+  }
+  assert.ok(
+    !/animation:[^;]*\bspin\b/.test(ALL_STYLES.replace(/wxt-spin/g, '')),
+    'no rule references the unprefixed spin keyframes',
+  );
+  managers[0].cleanup();
+}
+
+// ------------------------------------------------------------
+// Floating ball: callback survives disable/enable, single menu handler (illa-helper-bfn.8)
+// ------------------------------------------------------------
+
+{
+  // linkedom only creates <body> for full documents, so wrap fragments
+  const { DOMParser: LinkedomParser } = await import('linkedom');
+  globalThis.DOMParser = class {
+    parseFromString(html, type) {
+      return new LinkedomParser().parseFromString(
+        `<!doctype html><html><body>${html}</body></html>`,
+        type,
+      );
+    }
+  };
+  const { FloatingBallManager } = await import(
+    '../src/modules/floatingBall/managers/FloatingBallManager.ts'
+  );
+  const { DEFAULT_FLOATING_BALL_CONFIG } = await import(
+    '../src/modules/shared/constants/defaults.ts'
+  );
+
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const click = (target) => {
+    target.dispatchEvent(new window.Event('click', { bubbles: true }));
+  };
+  const ballRoot = () =>
+    document.getElementById('illa-floating-root')?.shadowRoot;
+
+  let translateCalls = 0;
+  const enabledConfig = { ...DEFAULT_FLOATING_BALL_CONFIG, enabled: true };
+  const floatingBall = new FloatingBallManager({ ...enabledConfig });
+  floatingBall.init(() => {
+    translateCalls += 1;
+  });
+
+  floatingBall.updateConfig({ ...enabledConfig, enabled: false });
+  assert.equal(ballRoot(), undefined, 'disabling removes the floating ball');
+  floatingBall.updateConfig({ ...enabledConfig });
+
+  click(ballRoot().querySelector('.wxt-floating-ball'));
+  await wait(150);
+  assert.equal(
+    translateCalls,
+    1,
+    'clicking the ball still translates after disable -> enable',
+  );
+
+  // Menu buttons trigger their action exactly once, also after closing and
+  // re-showing the ball
+  const panelButton = (action) =>
+    [...ballRoot().querySelectorAll('.wxt-panel-btn')].find(
+      (button) => button.getAttribute('data-action') === action,
+    );
+  const translateButton = () => panelButton('translate');
+  click(translateButton());
+  assert.equal(translateCalls, 2, 'menu action runs once');
+  click(panelButton('close'));
+  floatingBall.updateConfig({ ...enabledConfig });
+  click(translateButton());
+  assert.equal(translateCalls, 3, 'menu handlers are never bound twice');
+
+  floatingBall.destroy();
+  assert.equal(ballRoot(), undefined);
+}
+
+// ------------------------------------------------------------
+// Floating ball: document drag listeners only while dragging (illa-helper-ei3.11)
+// ------------------------------------------------------------
+
+{
+  const { FloatingBallManager } = await import(
+    '../src/modules/floatingBall/managers/FloatingBallManager.ts'
+  );
+  const activeDocumentListeners = new Map();
+  const originalAdd = document.addEventListener.bind(document);
+  const originalRemove = document.removeEventListener.bind(document);
+  document.addEventListener = (type, listener, options) => {
+    activeDocumentListeners.set(
+      type,
+      (activeDocumentListeners.get(type) ?? 0) + 1,
+    );
+    return originalAdd(type, listener, options);
+  };
+  document.removeEventListener = (type, listener, options) => {
+    activeDocumentListeners.set(
+      type,
+      (activeDocumentListeners.get(type) ?? 0) - 1,
+    );
+    return originalRemove(type, listener, options);
+  };
+  const dragListenerCount = () =>
+    ['mousemove', 'mouseup', 'touchmove', 'touchend'].reduce(
+      (sum, type) => sum + (activeDocumentListeners.get(type) ?? 0),
+      0,
+    );
+
+  try {
+    const floatingBall = new FloatingBallManager({
+      enabled: true,
+      position: 50,
+      opacity: 0.8,
+    });
+    floatingBall.init(() => undefined);
+    assert.equal(
+      dragListenerCount(),
+      0,
+      'no document-level move/up listeners while idle',
+    );
+
+    const ball = document
+      .getElementById('illa-floating-root')
+      .shadowRoot.querySelector('.wxt-floating-ball');
+    assert.ok(
+      !ball.style.cssText.includes('animation'),
+      'the pulse animation is not always on',
+    );
+
+    const mouse = (type, target) => {
+      const event = new window.Event(type, { bubbles: true });
+      Object.defineProperty(event, 'clientY', { value: 100 });
+      Object.defineProperty(event, 'buttons', { value: 1 });
+      target.dispatchEvent(event);
+    };
+    mouse('mousedown', ball);
+    assert.equal(
+      activeDocumentListeners.get('mousemove'),
+      1,
+      'mousemove is attached for the drag gesture',
+    );
+    mouse('mouseup', document);
+    assert.equal(dragListenerCount(), 0, 'drag listeners are released');
+
+    mouse('mousedown', ball);
+    floatingBall.destroy();
+    assert.equal(dragListenerCount(), 0, 'destroy() releases drag listeners');
+  } finally {
+    document.addEventListener = originalAdd;
+    document.removeEventListener = originalRemove;
+  }
+}
+
+// ------------------------------------------------------------
+// Hover lookups: negative cache TTLs + in-flight dedup, Youdao stop()
+// ------------------------------------------------------------
+
+{
+  const { LookupCache } = await import(
+    '../src/modules/pronunciation/utils/LookupCache.ts'
+  );
+  const { API_CONSTANTS } = await import(
+    '../src/modules/pronunciation/config/constants.ts'
+  );
+
+  let clock = 1_000_000;
+  const cache = new LookupCache({ maxEntries: 3, now: () => clock });
+  let loads = 0;
+  const notFound = () => {
+    loads += 1;
+    return Promise.resolve({
+      ok: false,
+      error: 'not found',
+      ttlMs: API_CONSTANTS.NOT_FOUND_CACHE_TTL,
+    });
+  };
+  const failing = () => {
+    loads += 1;
+    return Promise.resolve({
+      ok: false,
+      error: 'boom',
+      ttlMs: API_CONSTANTS.LOOKUP_ERROR_CACHE_TTL,
+    });
+  };
+
+  assert.equal(API_CONSTANTS.NOT_FOUND_CACHE_TTL, 7 * 24 * 60 * 60 * 1000);
+  assert.equal(API_CONSTANTS.LOOKUP_ERROR_CACHE_TTL, 10 * 60 * 1000);
+
+  await cache.resolve('xyzzy', notFound);
+  const cachedMiss = await cache.resolve('xyzzy', notFound);
+  assert.equal(loads, 1, 'a 404 is not requested again');
+  assert.deepEqual(cachedMiss, { ok: false, error: 'not found', cached: true });
+  clock += API_CONSTANTS.NOT_FOUND_CACHE_TTL - 1;
+  await cache.resolve('xyzzy', notFound);
+  assert.equal(loads, 1, '404s stay cached for ~7 days');
+  clock += 2;
+  await cache.resolve('xyzzy', notFound);
+  assert.equal(loads, 2, 'the 404 entry expires after 7 days');
+
+  loads = 0;
+  await cache.resolve('flaky', failing);
+  clock += API_CONSTANTS.LOOKUP_ERROR_CACHE_TTL - 1;
+  await cache.resolve('flaky', failing);
+  assert.equal(loads, 1, 'errors are cached for ~10 minutes');
+  clock += 2;
+  await cache.resolve('flaky', failing);
+  assert.equal(loads, 2, 'errors are retried after 10 minutes');
+  cache.clearFailures();
+  await cache.resolve('flaky', failing);
+  assert.equal(loads, 3, 'clearFailures() forces a retry');
+
+  // Concurrent lookups share one request; ttl 0 is not cached
+  loads = 0;
+  let release;
+  const slow = () => {
+    loads += 1;
+    return new Promise((resolve) => {
+      release = () => resolve({ ok: true, data: { word: 'hi' }, ttlMs: 0 });
+    });
+  };
+  const concurrent = [
+    cache.resolve('hi', slow),
+    cache.resolve('hi', slow),
+    cache.resolve('hi', slow),
+  ];
+  release();
+  const settled = await Promise.all(concurrent);
+  assert.equal(loads, 1, 'concurrent hovers trigger one request');
+  assert.ok(settled.every((result) => result.ok && result.data.word === 'hi'));
+  const uncached = cache.resolve('hi', slow);
+  release();
+  await uncached;
+  assert.equal(loads, 2, 'ttl 0 outcomes are not cached');
+
+  // Lookups started before clear() do not repopulate the cache
+  const beforeClear = cache.resolve('stale', () =>
+    Promise.resolve({ ok: true, data: 'old', ttlMs: 60_000 }),
+  );
+  cache.clear();
+  await beforeClear;
+  assert.equal(cache.get('stale'), null, 'clear() discards in-flight results');
+
+  // Bounded size
+  for (const key of ['a', 'b', 'c', 'd']) {
+    await cache.resolve(key, () =>
+      Promise.resolve({ ok: true, data: key, ttlMs: 60_000 }),
+    );
+  }
+  assert.equal(cache.size, 3);
+  assert.equal(cache.get('a'), null, 'the oldest entry is evicted');
+
+  // DictionaryApiProvider: concurrent hovers + cached 404 => one fetch
+  const { DictionaryApiProvider } = await import(
+    '../src/modules/pronunciation/phonetic/DictionaryApiProvider.ts'
+  );
+  const originalFetch = globalThis.fetch;
+  const originalLocation = globalThis.location;
+  globalThis.location = { href: 'https://example.com/' };
+  let fetches = 0;
+  globalThis.fetch = async () => {
+    fetches += 1;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    return { ok: false, status: 404, statusText: 'Not Found' };
+  };
+  try {
+    const dictionary = new DictionaryApiProvider();
+    const results = await Promise.all([
+      dictionary.getPhonetic('Qwrtz'),
+      dictionary.getPhonetic('qwrtz'),
+    ]);
+    await dictionary.getPhonetic('qwrtz');
+    assert.equal(fetches, 1, 'dictionary 404s are deduplicated and cached');
+    assert.ok(results.every((result) => result.success === false));
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.location = originalLocation;
+  }
+
+  // YoudaoTTSProvider.stop() releases the audio and settles speak()
+  const { YoudaoTTSProvider } = await import(
+    '../src/modules/pronunciation/tts/YoudaoTTSProvider.ts'
+  );
+  const audios = [];
+  const OriginalAudio = globalThis.Audio;
+  globalThis.Audio = class {
+    constructor(src) {
+      this.attributes = new Map([['src', src]]);
+      this.loads = 0;
+      this.paused = true;
+      audios.push(this);
+    }
+    load() {
+      this.loads += 1;
+    }
+    pause() {
+      this.paused = true;
+    }
+    play() {
+      this.paused = false;
+      return Promise.resolve();
+    }
+    removeAttribute(name) {
+      this.attributes.delete(name);
+    }
+  };
+  try {
+    const youdao = new YoudaoTTSProvider();
+    const speaking = youdao.speak('hello');
+    const audio = audios[0];
+    youdao.stop();
+    const stopped = await speaking;
+    assert.deepEqual(stopped, { success: true, stopped: true });
+    assert.ok(!audio.attributes.has('src'), 'stop() clears the audio source');
+    assert.equal(audio.loads, 2, 'stop() calls load() to release the media');
+    assert.equal(audio.onended, null, 'stop() detaches the handlers');
+    assert.equal(youdao.isSpeaking(), false);
+  } finally {
+    globalThis.Audio = OriginalAudio;
+  }
+}
+
 console.log('main regression passed');

@@ -59,8 +59,9 @@ export class TextProcessorService {
       ...config,
     };
 
+    // Glow/processing/learning styles live in the shared main stylesheet
+    // injected once by StyleManager.
     this.initializeServices();
-    this.injectGlowStyle();
   }
 
   /**
@@ -104,127 +105,6 @@ export class TextProcessorService {
     this.processingCoordinator = new ProcessingCoordinator(
       this.pronunciationService,
     );
-  }
-
-  /**
-   * Inject styles
-   * Add the CSS styles required for text processing
-   */
-  private injectGlowStyle(): void {
-    if ((window as any).wxtGlowStyleInjected) return;
-
-    const style = document.createElement('style');
-    style.textContent = `
-      @keyframes wxt-glow-animation {
-        from {
-          background-color: rgba(106, 136, 224, 0.3);
-          box-shadow: 0 0 8px rgba(106, 136, 224, 0.5);
-        }
-        to {
-          background-color: transparent;
-          box-shadow: 0 0 0 transparent;
-        }
-      }
-      .wxt-glow {
-        animation: wxt-glow-animation 0.8s ease-out;
-        border-radius: 3px;
-      }
-      .wxt-original-word--learning {
-        filter: blur(5px);
-        cursor: pointer;
-        transition: filter 0.2s ease-in-out;
-      }
-
-      .wxt-original-word--learning:hover {
-        filter: blur(0) !important;
-      }
-
-      /* Enhance hover support for learning mode inside a tags */
-      a .wxt-original-word--learning:hover,
-      a:hover .wxt-original-word--learning {
-        filter: blur(0) !important;
-      }
-
-      /* Phonetic error message styles */
-      .wxt-phonetic-error {
-        font-family: 'SF Mono', 'Monaco', 'Consolas', 'Roboto Mono', monospace;
-        font-size: 13px;
-        color: #ff9999;
-        font-style: italic;
-        font-weight: 500;
-        background: linear-gradient(135deg, rgba(255, 153, 153, 0.1) 0%, rgba(255, 153, 153, 0.05) 100%);
-        padding: 4px 8px;
-        border-radius: 6px;
-        display: inline-block;
-        border: 1px solid rgba(255, 153, 153, 0.3);
-        letter-spacing: 0.02em;
-        opacity: 0.8;
-      }
-
-      /* Nested word tooltip title row layout */
-      .wxt-word-title-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        margin-bottom: 8px;
-      }
-
-      .wxt-word-title-row .wxt-word-main {
-        flex: 1;
-      }
-
-      .wxt-word-title-row .wxt-accent-buttons {
-        flex-shrink: 0;
-      }
-      @keyframes wxt-processing-animation {
-        0% {
-          background-color: rgba(106, 136, 224, 0.1);
-        }
-        50% {
-          background-color: rgba(106, 136, 224, 0.3);
-        }
-        100% {
-          background-color: rgba(106, 136, 224, 0.1);
-        }
-      }
-      .wxt-processing {
-        animation: wxt-processing-animation 2s infinite ease-in-out;
-        border-radius: 3px;
-        transition: background-color 0.3s ease-out;
-        pointer-events: none !important;
-      }
-      
-      /* Ensure link elements remain clickable while being processed */
-      a.wxt-processing,
-      a.wxt-processing *,
-      .wxt-processing a,
-      .wxt-processing a * {
-        pointer-events: auto !important;
-        cursor: pointer !important;
-      }
-      
-      /* Ensure button elements remain clickable while being processed */
-      button.wxt-processing,
-      button.wxt-processing *,
-      .wxt-processing button,
-      .wxt-processing button * {
-        pointer-events: auto !important;
-        cursor: pointer !important;
-      }
-      
-      /* Ensure clickable elements remain clickable while being processed */
-      [onclick].wxt-processing,
-      [onclick].wxt-processing *,
-      .wxt-processing [onclick],
-      .wxt-processing [onclick] * {
-        pointer-events: auto !important;
-        cursor: pointer !important;
-      }
-    `;
-
-    document.head.appendChild(style);
-    (window as any).wxtGlowStyleInjected = true;
   }
 
   // =================================================================

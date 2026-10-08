@@ -7,17 +7,18 @@
  *
  * Key features:
  * - Uses a purpose-built AI prompt to get accurate Chinese definitions
- * - Implements a 24-hour TTL cache to reduce API calls
+ * - Implements a 24-hour TTL cache (failures: 10 minutes) and in-flight deduplication to reduce API calls
  * - Thorough error handling and timeout control
  * - Supports dynamic API configuration updates
  * - Uses the unified UniversalApiService for API calls
  */
 
-import { AITranslationResult, AITranslationEntry, CacheEntry } from '../types';
+import { AITranslationResult, AITranslationEntry } from '../types';
 import { ApiConfigItem } from '../../shared/types/api';
 import { API_CONSTANTS } from '../config';
-import { cleanMarkdownFromResponse } from '@/src/utils';
+import { cleanMarkdownFromResponse } from '../../../utils';
 import { UniversalApiService } from '../../api/services/UniversalApiService';
+import { LookupCache, LookupOutcome } from '../utils/LookupCache';
 
 export class AITranslationProvider {
   /** Provider name identifier */
@@ -29,8 +30,13 @@ export class AITranslationProvider {
   /** API request timeout in milliseconds */
   private timeout: number = 0;
 
-  /** In-memory cache that stores translation results to reduce API calls */
-  private cache = new Map<string, CacheEntry<AITranslationEntry>>();
+  /**
+   * In-memory cache of definitions and recent failures; concurrent hovers of
+   * the same word share one request
+   */
+  private readonly lookups = new LookupCache<AITranslationEntry>({
+    maxEntries: 500,
+  });
 
   /** Cache time-to-live, 24-hour TTL */
   private readonly cacheTTL = API_CONSTANTS.AI_TRANSLATION_CACHE_TTL;
@@ -77,20 +83,19 @@ export class AITranslationProvider {
 
       const cleanWord = word.toLowerCase().trim();
 
-      // Check the cache
-      const cached = this.getFromCache(cleanWord);
+      // Check the cache (definitions and recent failures)
+      const cached = this.lookups.get(cleanWord);
       if (cached) {
-        return {
-          success: true,
-          data: cached,
-          cached: true,
-        };
+        return cached.ok
+          ? { success: true, data: cached.data, cached: true }
+          : { success: false, error: cached.error };
       }
 
-      const apiConfig = this.apiConfigItem?.config;
+      const apiConfigItem = this.apiConfigItem;
+      const apiConfig = apiConfigItem?.config;
 
       // Pronunciation translation must use an explicit configuration and must not implicitly fall back to the global active configuration.
-      if (!this.apiConfigItem || !apiConfig) {
+      if (!apiConfigItem || !apiConfig) {
         return {
           success: false,
           error: 'No usable AI API configuration found',
@@ -105,6 +110,31 @@ export class AITranslationProvider {
         };
       }
 
+      const result = await this.lookups.resolve(cleanWord, () =>
+        this.requestMeaning(cleanWord, apiConfigItem),
+      );
+
+      return result.ok
+        ? { success: true, data: result.data, cached: result.cached }
+        : { success: false, error: result.error };
+    } catch (error) {
+      console.error('Failed to get word meaning via AI translation:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+
+  /**
+   * Request one definition from the AI and classify the outcome for caching
+   */
+  private async requestMeaning(
+    cleanWord: string,
+    apiConfigItem: ApiConfigItem,
+  ): Promise<LookupOutcome<AITranslationEntry>> {
+    const apiConfig = apiConfigItem.config;
+    try {
       // Build the AI prompt dedicated to word translation
       const systemPrompt = `You are a professional English dictionary assistant. Provide accurate, concise Chinese definitions for the user.
 Requirements:
@@ -124,7 +154,7 @@ Output: adj. \u7f8e\u4e3d\u7684\uff0c\u6f02\u4eae\u7684`;
       // Call the AI via UniversalApiService
       const result = await this.universalApi.call(cleanWord, {
         systemPrompt,
-        configId: this.apiConfigItem.id,
+        configId: apiConfigItem.id,
         temperature: apiConfig.temperature || 0,
         maxTokens: 100,
         timeout: this.timeout,
@@ -133,27 +163,23 @@ Output: adj. \u7f8e\u4e3d\u7684\uff0c\u6f02\u4eae\u7684`;
 
       if (!result.success) {
         return {
-          success: false,
+          ok: false,
           error: result.error || 'AI translation request failed',
+          ttlMs: API_CONSTANTS.LOOKUP_ERROR_CACHE_TTL,
         };
       }
 
-      // Parse the AI response
-      const meaningInfo = this.parseAIResponse(result.content, cleanWord);
-
-      // Store in the cache
-      this.setCache(cleanWord, meaningInfo);
-
       return {
-        success: true,
-        data: meaningInfo,
-        cached: false,
+        ok: true,
+        data: this.parseAIResponse(result.content, cleanWord),
+        ttlMs: this.cacheTTL,
       };
     } catch (error) {
       console.error('Failed to get word meaning via AI translation:', error);
       return {
-        success: false,
+        ok: false,
         error: error instanceof Error ? error.message : 'Unknown error',
+        ttlMs: API_CONSTANTS.LOOKUP_ERROR_CACHE_TTL,
       };
     }
   }
@@ -197,7 +223,10 @@ Output: adj. \u7f8e\u4e3d\u7684\uff0c\u6f02\u4eae\u7684`;
       this.timeout = timeout;
     }
     if (previousKey !== this.getCacheScopeKey()) {
-      this.cache.clear();
+      this.lookups.clear();
+    } else {
+      // Same model, but key/parameters may have been fixed: retry failures
+      this.lookups.clearFailures();
     }
   }
 
@@ -237,42 +266,6 @@ Output: adj. \u7f8e\u4e3d\u7684\uff0c\u6f02\u4eae\u7684`;
         explain: `Definition for ${word} is currently unavailable`,
         source: 'ai-translation',
       };
-    }
-  }
-
-  /**
-   * Get data from the cache
-   */
-  private getFromCache(word: string): AITranslationEntry | null {
-    const entry = this.cache.get(word);
-    if (entry && Date.now() - entry.timestamp < entry.ttl) {
-      return entry.data;
-    }
-
-    // Clean up expired cache entries
-    if (entry) {
-      this.cache.delete(word);
-    }
-
-    return null;
-  }
-
-  /**
-   * Store data in the cache
-   */
-  private setCache(word: string, data: AITranslationEntry): void {
-    this.cache.set(word, {
-      data,
-      timestamp: Date.now(),
-      ttl: this.cacheTTL,
-    });
-
-    // Simple cache size control
-    if (this.cache.size > 500) {
-      const oldestKey = this.cache.keys().next().value;
-      if (oldestKey) {
-        this.cache.delete(oldestKey);
-      }
     }
   }
 }

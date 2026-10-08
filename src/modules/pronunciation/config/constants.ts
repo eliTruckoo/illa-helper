@@ -43,4 +43,6 @@ export const API_CONSTANTS = {
   YOUDAO_TTS_BASE_URL: 'https://dict.youdao.com/dictvoice',
   DICTIONARY_API_BASE_URL: 'https://api.dictionaryapi.dev/api/v2/entries/en/',
   AI_TRANSLATION_CACHE_TTL: 86400000, // AI translation cache: 24 hours
+  NOT_FOUND_CACHE_TTL: 7 * 86400000, // Words the dictionary does not know (404): 7 days
+  LOOKUP_ERROR_CACHE_TTL: 10 * 60000, // Failed lookups (network/API errors): 10 minutes
 } as const;
