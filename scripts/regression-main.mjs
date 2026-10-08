@@ -291,4 +291,86 @@ assert.deepEqual(
   'single-pass DomWalker must match the original walker on the whole page',
 );
 
+// ------------------------------------------------------------
+// ProcessingStateManager: identity keys and bounded fingerprint store
+// ------------------------------------------------------------
+
+window.setInterval = () => 0;
+window.clearInterval = () => undefined;
+
+const { ProcessingStateManager } = await import(
+  '../src/modules/processing/ProcessingStateManager.ts'
+);
+const stateManager = new ProcessingStateManager();
+const sameTextA = document.createElement('p');
+const sameTextB = document.createElement('p');
+assert.equal(
+  stateManager.generateDomPath(sameTextA),
+  stateManager.generateDomPath(sameTextA),
+  'the same element must always get the same identity key',
+);
+assert.notEqual(
+  stateManager.generateContentFingerprint(
+    'Same text',
+    stateManager.generateDomPath(sameTextA),
+  ),
+  stateManager.generateContentFingerprint(
+    'Same text',
+    stateManager.generateDomPath(sameTextB),
+  ),
+  'the same text in a different element must get a different fingerprint',
+);
+for (let i = 0; i <= 5000; i++) {
+  stateManager.markProcessingComplete(`fp-${i}`, 'p#1', 0);
+}
+assert.equal(
+  stateManager.getProcessingStats().processedCount,
+  5000,
+  'the processed fingerprint store must be capped',
+);
+assert.equal(stateManager.isContentProcessed('fp-0'), false);
+assert.equal(stateManager.isContentProcessed('fp-5000'), true);
+stateManager.destroy();
+
+// ------------------------------------------------------------
+// ContentSegmenter: every text node belongs to at most one segment
+// ------------------------------------------------------------
+
+const { ContentSegmenter } = await import(
+  '../src/modules/processing/ContentSegmenter.ts'
+);
+const segmentFixture = document.createElement('section');
+segmentFixture.innerHTML = `
+  <p id="s-nested">This paragraph contains <a id="s-link" href="#">a rather long hyperlink text here</a> and more trailing words.</p>
+  <p id="s-long">${Array.from({ length: 12 }, (_, i) => `<span>Sentence number ${i} is part of a long paragraph.</span>`).join(' ')}</p>
+`;
+document.body.appendChild(segmentFixture);
+
+const segments = await new ContentSegmenter({
+  maxSegmentLength: 200,
+}).segmentContent(segmentFixture);
+const seenTextNodes = new Set();
+for (const segment of segments) {
+  for (const node of segment.textNodes) {
+    assert.ok(
+      !seenTextNodes.has(node),
+      `text node "${node.textContent}" must not appear in two segments`,
+    );
+    seenTextNodes.add(node);
+  }
+}
+assert.ok(
+  !segments.some((segment) => segment.element.id === 's-link'),
+  'a nested inline paragraph must not become its own segment',
+);
+const longSegments = segments.filter(
+  (segment) => segment.element.id === 's-long',
+);
+assert.ok(longSegments.length > 1, 'a long paragraph must be split');
+assert.equal(
+  new Set(longSegments.map((segment) => segment.fingerprint)).size,
+  longSegments.length,
+  'split sub-segments of one element must have distinct fingerprints',
+);
+
 console.log('main regression passed');
