@@ -54,7 +54,7 @@ export class OpenAIProvider extends BaseProvider {
     );
 
     const apiRequestFunction = async () => {
-      const timeout = getApiTimeout(settings.apiRequestTimeout || 0);
+      const timeout = getApiTimeout(settings.apiRequestTimeout);
       return sendApiRequest(requestBody, this.config, timeout);
     };
 

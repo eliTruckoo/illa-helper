@@ -596,6 +596,17 @@ export class StorageService {
         validatedSettings.lazyLoading = DEFAULT_SETTINGS.lazyLoading;
       }
 
+      // One-time migration: 0 ("no timeout") used to be the default, so a
+      // stored 0 from before is moved to the 30 s default. An explicit 0 set
+      // after the migration is kept.
+      if (!validatedSettings.apiTimeoutMigrated) {
+        if (!validatedSettings.apiRequestTimeout) {
+          validatedSettings.apiRequestTimeout =
+            DEFAULT_SETTINGS.apiRequestTimeout;
+        }
+        validatedSettings.apiTimeoutMigrated = true;
+      }
+
       return validatedSettings;
     } catch (error) {
       console.error(`Settings validation error: ${error}`);

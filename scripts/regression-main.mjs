@@ -819,6 +819,21 @@ pronunciationService.destroy();
     await migratingService.getUserSettings();
     await migratingService.getUserSettings();
     assert.equal(syncSets - setsBefore, 1, 'normalisation writes only once');
+
+    // Stored timeout 0 from the old default moves to 30 s once; a later
+    // explicit 0 ("unlimited") is kept
+    const legacyTimeout = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+    legacyTimeout.apiRequestTimeout = 0;
+    delete legacyTimeout.apiTimeoutMigrated;
+    syncStore.user_settings = JSON.stringify(legacyTimeout);
+    const timeoutService = new StorageService();
+    const migrated = await timeoutService.getUserSettings();
+    assert.equal(migrated.apiRequestTimeout, DEFAULT_SETTINGS.apiRequestTimeout);
+    assert.equal(migrated.apiTimeoutMigrated, true);
+    migrated.apiRequestTimeout = 0;
+    await timeoutService.saveUserSettings(migrated);
+    const reloaded = await new StorageService().getUserSettings();
+    assert.equal(reloaded.apiRequestTimeout, 0, 'explicit 0 after migration');
   } finally {
     globalThis.browser.storage = originalStorage;
   }
