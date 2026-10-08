@@ -1,6 +1,8 @@
 /**
  * API proxy service - handles API requests via the background script, bypassing CORS restrictions
  *
+ * - A global priority semaphore caps concurrent upstream requests across all
+ *   tabs; requests from the active tab (and extension pages) go first.
  * - Every attempt is bounded by a timeout (AbortController).
  * - Requests are tracked per tab and per requesting document; they are aborted
  *   when the tab closes or the document's lifetime port disconnects
@@ -22,6 +24,10 @@ import {
   parseRetryAfter,
   resolveRequestTimeout,
 } from '../../infrastructure/ratelimit/retryPolicy';
+import {
+  PriorityLimiter,
+  REQUEST_PRIORITY,
+} from '../../infrastructure/ratelimit/PriorityLimiter';
 
 /**
  * The parts of runtime.MessageSender the proxy relies on
@@ -37,6 +43,10 @@ interface ActiveRequest {
   clientId?: string;
 }
 
+interface LimiterTag {
+  tabId?: number;
+}
+
 const MAX_ERROR_DETAIL_LENGTH = 500;
 
 export class ApiProxyService {
@@ -45,6 +55,9 @@ export class ApiProxyService {
   private activeRequests: Map<string, ActiveRequest> = new Map();
   private requestCounter = 0;
   private listenersRegistered = false;
+  private limiter: PriorityLimiter<LimiterTag>;
+  /** Active tab per window, kept current via tabs.onActivated */
+  private activeTabByWindow: Map<number, number> = new Map();
 
   private constructor() {
     this.config = {
@@ -55,7 +68,11 @@ export class ApiProxyService {
       retryDelay: 1000,
       maxRetryDelay: 8000,
       maxRetryAfter: 20000,
+      maxConcurrentRequests: 4,
     };
+    this.limiter = new PriorityLimiter<LimiterTag>(
+      this.config.maxConcurrentRequests,
+    );
   }
 
   /**
@@ -86,9 +103,57 @@ export class ApiProxyService {
       });
     });
 
-    browser.tabs.onRemoved.addListener((tabId) => {
+    browser.tabs.onRemoved.addListener((tabId, removeInfo) => {
       this.cancelTabRequests(tabId);
+      if (this.activeTabByWindow.get(removeInfo?.windowId) === tabId) {
+        this.activeTabByWindow.delete(removeInfo.windowId);
+      }
     });
+
+    // Queued requests follow the user: the newly active tab jumps the queue
+    browser.tabs.onActivated.addListener(({ tabId, windowId }) => {
+      this.setActiveTab(windowId, tabId);
+    });
+  }
+
+  /**
+   * Record the active tab of a window and reorder queued requests
+   */
+  public setActiveTab(windowId: number, tabId: number): void {
+    const previous = this.activeTabByWindow.get(windowId);
+    this.activeTabByWindow.set(windowId, tabId);
+    if (previous !== undefined && previous !== tabId) {
+      this.limiter.reprioritize(
+        (tag) => tag?.tabId === previous,
+        REQUEST_PRIORITY.BACKGROUND,
+      );
+    }
+    this.limiter.reprioritize(
+      (tag) => tag?.tabId === tabId,
+      REQUEST_PRIORITY.FOREGROUND,
+    );
+  }
+
+  /**
+   * Requests from extension pages (no tab) and from the active tab go first
+   */
+  private getPriority(sender?: ApiRequestSender): number {
+    const tab = sender?.tab;
+    if (!tab || tab.id === undefined) return REQUEST_PRIORITY.FOREGROUND;
+
+    if (tab.windowId !== undefined) {
+      const activeTabId = this.activeTabByWindow.get(tab.windowId);
+      if (activeTabId === undefined) {
+        if (tab.active) this.activeTabByWindow.set(tab.windowId, tab.id);
+      } else {
+        return activeTabId === tab.id
+          ? REQUEST_PRIORITY.FOREGROUND
+          : REQUEST_PRIORITY.BACKGROUND;
+      }
+    }
+    return tab.active
+      ? REQUEST_PRIORITY.FOREGROUND
+      : REQUEST_PRIORITY.BACKGROUND;
   }
 
   /**
@@ -106,15 +171,25 @@ export class ApiProxyService {
       clientId: message.data.clientId,
     });
 
+    let release: (() => void) | undefined;
     try {
+      release = await this.limiter.acquire({
+        priority: this.getPriority(sender),
+        signal: controller.signal,
+        tag: { tabId: sender?.tab?.id },
+      });
       return await this.executeWithRetry(message.data, controller.signal);
     } catch (error: any) {
+      if (controller.signal.aborted) {
+        return createAbortedResponse();
+      }
       console.error('Background API request failed:', error);
       return {
         success: false,
         error: { message: error?.message || 'Request failed' },
       };
     } finally {
+      release?.();
       this.activeRequests.delete(requestId);
     }
   }
@@ -250,10 +325,20 @@ export class ApiProxyService {
   }
 
   /**
-   * Number of requests currently in flight or waiting for a retry
+   * Number of requests queued, in flight or waiting for a retry
    */
   public getActiveRequestCount(): number {
     return this.activeRequests.size;
+  }
+
+  /**
+   * Snapshot of the global request limiter
+   */
+  public getConcurrencyStats(): { running: number; queued: number } {
+    return {
+      running: this.limiter.activeCount,
+      queued: this.limiter.pendingCount,
+    };
   }
 
   /**
@@ -294,6 +379,7 @@ export class ApiProxyService {
       ...this.config,
       ...newConfig,
     };
+    this.limiter.setMaxConcurrent(this.config.maxConcurrentRequests);
   }
 
   /**

@@ -195,6 +195,8 @@ export interface ApiProxyServiceConfig {
   maxRetryDelay: number;
   /** A longer Retry-After gives up instead of waiting (ms) */
   maxRetryAfter: number;
+  /** Global cap on concurrent upstream requests across all tabs */
+  maxConcurrentRequests: number;
 }
 
 export interface CommandServiceConfig {

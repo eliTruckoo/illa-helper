@@ -231,6 +231,104 @@ assert.equal(
 );
 assert.equal(proxy.getActiveRequestCount(), 0);
 
+// ---------- ei3.6: global priority semaphore ----------
+
+const { PriorityLimiter, REQUEST_PRIORITY } = await import(
+  '../src/modules/infrastructure/ratelimit/PriorityLimiter.ts'
+);
+
+const limiter = new PriorityLimiter(2);
+const order = [];
+const releases = [];
+const take = (name, priority, tag) =>
+  limiter.acquire({ priority, tag }).then((release) => {
+    order.push(name);
+    releases.push(release);
+  });
+const granted = [
+  take('a', 1),
+  take('b', 1),
+  take('bg-1', REQUEST_PRIORITY.BACKGROUND, { tabId: 2 }),
+  take('bg-2', REQUEST_PRIORITY.BACKGROUND, { tabId: 3 }),
+  take('fg', REQUEST_PRIORITY.FOREGROUND, { tabId: 1 }),
+];
+await tick(1);
+assert.deepEqual(order, ['a', 'b'], 'never more than maxConcurrent');
+assert.equal(limiter.pendingCount, 3);
+limiter.reprioritize((tag) => tag?.tabId === 3, REQUEST_PRIORITY.FOREGROUND);
+const releaseA = releases.shift();
+releaseA();
+releaseA(); // a double release must not free an extra slot
+releases.shift()();
+await tick(1);
+assert.deepEqual(
+  order,
+  ['a', 'b', 'bg-2', 'fg'],
+  'foreground before background, FIFO within a priority (bg-2 was promoted)',
+);
+assert.equal(limiter.activeCount, 2);
+releases.shift()();
+releases.shift()();
+await Promise.all(granted);
+assert.deepEqual(order.at(-1), 'bg-1');
+releases.shift()();
+assert.equal(limiter.activeCount, 0);
+
+const abortable = new AbortController();
+const blocker = await limiter.acquire();
+const blocker2 = await limiter.acquire();
+const queued = limiter.acquire({ signal: abortable.signal });
+abortable.abort();
+await assert.rejects(queued, { name: 'AbortError' });
+assert.equal(limiter.pendingCount, 0, 'an aborted waiter leaves the queue');
+blocker();
+blocker2();
+
+// The proxy never runs more than maxConcurrentRequests fetches at once,
+// and the active tab's queued request starts before background tabs'.
+proxy.updateConfig({ maxConcurrentRequests: 2 });
+let inFlight = 0;
+let maxInFlight = 0;
+const startedUrls = [];
+const pendingFetches = [];
+globalThis.fetch = (url) =>
+  new Promise((resolve) => {
+    inFlight++;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    startedUrls.push(url);
+    pendingFetches.push(() => {
+      inFlight--;
+      resolve(jsonResponse(200, { ok: true }));
+    });
+  });
+const proxied = [
+  proxy.handleApiRequest(apiMessage({ url: 'bg-a' }), {
+    tab: { id: 11, windowId: 1, active: false },
+  }),
+  proxy.handleApiRequest(apiMessage({ url: 'bg-b' }), {
+    tab: { id: 12, windowId: 1, active: false },
+  }),
+  proxy.handleApiRequest(apiMessage({ url: 'bg-c' }), {
+    tab: { id: 13, windowId: 1, active: false },
+  }),
+  proxy.handleApiRequest(apiMessage({ url: 'active' }), {
+    tab: { id: 14, windowId: 1, active: true },
+  }),
+];
+await tick();
+assert.equal(proxy.getConcurrencyStats().queued, 2);
+pendingFetches.shift()();
+await tick();
+assert.equal(startedUrls[2], 'active', 'the active tab jumps the queue');
+proxy.setActiveTab(1, 13);
+while (pendingFetches.length > 0) {
+  pendingFetches.shift()();
+  await tick();
+}
+assert.ok((await Promise.all(proxied)).every((result) => result.success));
+assert.equal(maxInFlight, 2, 'global concurrency cap holds');
+assert.deepEqual(proxy.getConcurrencyStats(), { running: 0, queued: 0 });
+
 globalThis.fetch = originalFetch;
 
 console.log('transport regression passed');
