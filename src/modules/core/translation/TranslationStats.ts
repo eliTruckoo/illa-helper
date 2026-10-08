@@ -17,6 +17,8 @@ export interface TranslationStatsSnapshot {
   batchedSegments: number;
   /** Segments answered from the in-page cache */
   cacheHits: number;
+  /** Segments answered from the persistent cross-tab translation memory */
+  memoryHits: number;
   /** Segments that reused an identical in-flight or same-run request */
   inflightCoalesced: number;
   /** Segments skipped without a request because the page budget was exhausted */
@@ -47,6 +49,7 @@ const createEmptySnapshot = (): TranslationStatsSnapshot => ({
   batchRequests: 0,
   batchedSegments: 0,
   cacheHits: 0,
+  memoryHits: 0,
   inflightCoalesced: 0,
   budgetSkipped: 0,
   glossaryHits: 0,
@@ -108,6 +111,10 @@ export class TranslationStats {
     this.counters.cacheHits += count;
   }
 
+  recordMemoryHit(count: number = 1): void {
+    this.counters.memoryHits += count;
+  }
+
   recordCoalesced(count: number = 1): void {
     this.counters.inflightCoalesced += count;
   }
@@ -158,11 +165,14 @@ export class TranslationStats {
     const answered = s.segments - s.budgetSkipped;
     const reuseRate =
       answered > 0
-        ? Math.round(((s.cacheHits + s.inflightCoalesced) / answered) * 100)
+        ? Math.round(
+            ((s.cacheHits + s.memoryHits + s.inflightCoalesced) / answered) *
+              100,
+          )
         : 0;
     console.log(
       `[TranslationStats] ${context}: segments=${s.segments} requests=${s.requests} ` +
-        `(batch=${s.batchRequests}/${s.batchedSegments} seg) cacheHits=${s.cacheHits} ` +
+        `(batch=${s.batchRequests}/${s.batchedSegments} seg) cacheHits=${s.cacheHits} memoryHits=${s.memoryHits} ` +
         `coalesced=${s.inflightCoalesced} reuse=${reuseRate}% budgetSkipped=${s.budgetSkipped} ` +
         `glossaryHits=${s.glossaryHits} economySkipped=${s.economySkipped} ` +
         `errors=${s.errors} tokens in/out=${s.inputTokens}/${s.outputTokens} ` +

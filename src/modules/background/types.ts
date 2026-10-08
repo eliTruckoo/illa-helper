@@ -3,6 +3,12 @@
  */
 
 import { UserSettings } from '../shared/types/storage';
+import type {
+  TmClearMessage,
+  TmLookupMessage,
+  TmStatsMessage,
+  TmStoreMessage,
+} from '../core/translation/TranslationMemoryShared';
 
 // ================================
 // Message type definitions
@@ -67,7 +73,11 @@ export type BackgroundMessage =
   | TranslatePageMessage
   | SettingsUpdatedMessage
   | ApiConfigUpdatedMessage
-  | ManualTranslateMessage;
+  | ManualTranslateMessage
+  | TmLookupMessage
+  | TmStoreMessage
+  | TmStatsMessage
+  | TmClearMessage;
 
 // ================================
 // API response type definitions
@@ -273,6 +283,11 @@ export const MESSAGE_TYPES = {
   SETTINGS_UPDATED: 'settings_updated',
   API_CONFIG_UPDATED: 'api_config_updated',
   MANUAL_TRANSLATE: 'MANUAL_TRANSLATE',
+  // Translation memory (see TranslationMemoryShared.TM_MESSAGE_TYPES)
+  TM_LOOKUP: 'tm-lookup',
+  TM_STORE: 'tm-store',
+  TM_STATS: 'tm-stats',
+  TM_CLEAR: 'tm-clear',
 } as const;
 
 export const EXTENSION_COMMANDS = {

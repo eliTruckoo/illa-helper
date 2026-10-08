@@ -25,6 +25,7 @@ import {
 } from './ReplacementPlanner';
 import { applyReplacementToRange as writeReplacementToRange } from './RangeReplacementWriter';
 import { translationStats } from '../core/translation/TranslationStats';
+import { wordExposureRecorder } from '../core/translation/WordExposureRecorder';
 import {
   TRANSLATION_BATCH_MAX_ITEMS,
   TRANSLATION_WAVE_SIZE,
@@ -646,6 +647,7 @@ export class ProcessingCoordinator {
       (a, b) => b.position.start - a.position.start,
     );
     let appliedCount = 0;
+    const shown: Replacement[] = [];
 
     for (const replacement of sortedReplacements) {
       const range = this.findRangeInTextNodes(
@@ -666,9 +668,13 @@ export class ProcessingCoordinator {
         if (wasApplied) {
           appliedCount++;
           applied?.push(replacement);
+          shown.push(replacement);
         }
       }
     }
+
+    // Learning layer: count what the user actually sees (batched, debounced)
+    wordExposureRecorder.record(shown);
 
     return appliedCount;
   }

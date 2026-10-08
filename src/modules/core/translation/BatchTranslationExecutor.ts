@@ -1,7 +1,8 @@
 /**
  * Resolves many segments with as few requests as possible:
- * in-page cache -> in-flight request -> duplicates within the call -> numbered batch requests,
- * with per-item fallback to single requests for items the batch did not answer.
+ * in-page cache -> in-flight request -> duplicates within the call -> persistent translation
+ * memory (one batched lookup) -> numbered batch requests, with per-item fallback to single
+ * requests for items the batch did not answer.
  */
 
 import type {
@@ -12,9 +13,11 @@ import { getResponseStatus } from '../../api/utils/apiUtils';
 import {
   SegmentTranslationCache,
   toTranslationOutcome,
+  type CachedTranslation,
   type TranslationOutcome,
 } from './SegmentTranslationCache';
 import { translationStats } from './TranslationStats';
+import type { TranslationMemoryLayer } from './TranslationMemoryClient';
 import type { TranslationHint } from '../../processing/ProcessingContracts';
 
 export interface BatchTranslationBackend {
@@ -134,6 +137,8 @@ export class BatchTranslationExecutor {
     private readonly cache: SegmentTranslationCache,
     private readonly backend: BatchTranslationBackend,
     private readonly options: BatchTranslationOptions,
+    /** Persistent cross-tab memory; consulted once per call for all in-page misses */
+    private readonly memory?: TranslationMemoryLayer,
   ) {}
 
   /**
@@ -177,27 +182,92 @@ export class BatchTranslationExecutor {
       pending.push({ key, text, hint: hints?.[index] });
     });
 
-    const chunks = chunkBatchItems(
-      pending,
-      this.options.maxItems,
-      this.options.maxChars,
-    );
-    for (const chunk of chunks) {
-      const chunkOutcomes = this.requestChunk(chunk);
-      chunk.forEach((item, position) => {
+    if (pending.length > 0) {
+      // Registered as in-flight before the memory lookup, so concurrent callers coalesce
+      const resolution = this.resolvePending(pending);
+      pending.forEach((item, position) => {
         byKey.set(
           item.key,
           this.cache.track(
             item.key,
-            chunkOutcomes.then((outcomes) =>
-              withHintPairs(outcomes[position], item.hint),
-            ),
+            resolution.then((outcomes) => outcomes[position]),
           ),
         );
       });
     }
 
     return Promise.all(keys.map((key) => byKey.get(key)!));
+  }
+
+  /**
+   * Answer pending items from the translation memory, request the rest in chunks
+   * and remember successful answers. Hinted answers are completed with the hint
+   * pairs (withHintPairs) before they are cached or stored, so stored entries
+   * always describe the whole text. Memory hits are already complete.
+   */
+  private async resolvePending(
+    pending: PendingItem[],
+  ): Promise<Array<Promise<TranslationOutcome>>> {
+    const memory = this.memory;
+    let hits: Array<CachedTranslation | null> = pending.map(() => null);
+    if (memory) {
+      try {
+        hits = await memory.lookup(pending.map((item) => item.text));
+      } catch {
+        // Fail open: treat as misses
+      }
+    }
+
+    const outcomes: Array<Promise<TranslationOutcome>> = new Array(
+      pending.length,
+    );
+    const misses: Array<PendingItem & { position: number }> = [];
+    pending.forEach((item, position) => {
+      const hit = hits[position];
+      if (hit) {
+        translationStats.recordMemoryHit();
+        outcomes[position] = Promise.resolve(hit);
+      } else {
+        misses.push({ ...item, position });
+      }
+    });
+
+    const chunks = chunkBatchItems(
+      misses,
+      this.options.maxItems,
+      this.options.maxChars,
+    );
+    for (const chunk of chunks) {
+      const chunkOutcomes = this.requestChunk(chunk).then((results) =>
+        results.map((outcome, index) =>
+          withHintPairs(outcome, chunk[index].hint),
+        ),
+      );
+      chunk.forEach((item, index) => {
+        outcomes[item.position] = chunkOutcomes.then(
+          (results) => results[index],
+        );
+      });
+      if (memory) {
+        chunkOutcomes
+          .then((results) => {
+            const successful: Array<{
+              text: string;
+              outcome: CachedTranslation;
+            }> = [];
+            chunk.forEach((item, index) => {
+              const outcome = results[index];
+              if (outcome.status !== 'error') {
+                successful.push({ text: item.text, outcome });
+              }
+            });
+            memory.store(successful);
+          })
+          .catch(() => undefined);
+      }
+    }
+
+    return outcomes;
   }
 
   /**

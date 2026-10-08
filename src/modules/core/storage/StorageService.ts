@@ -596,6 +596,13 @@ export class StorageService {
         validatedSettings.lazyLoading = DEFAULT_SETTINGS.lazyLoading;
       }
 
+      // Ensure the translation memory config exists (older installs lack it)
+      if (!validatedSettings.translationCache) {
+        validatedSettings.translationCache = {
+          ...DEFAULT_SETTINGS.translationCache,
+        };
+      }
+
       // One-time migration: 0 ("no timeout") used to be the default, so a
       // stored 0 from before is moved to the 30 s default. An explicit 0 set
       // after the migration is kept.

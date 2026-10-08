@@ -160,6 +160,7 @@ assert.equal(
 await import('./regression-api-cost.mjs');
 await import('./regression-lifecycle.mjs');
 await import('./regression-transport.mjs');
+await import('./regression-translation-memory.mjs');
 await import('./regression-glossary.mjs');
 
 // ------------------------------------------------------------

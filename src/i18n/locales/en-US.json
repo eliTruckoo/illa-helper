@@ -412,6 +412,37 @@
       "cannotReadFile": "Cannot read file content."
     }
   },
+  "translationCache": {
+    "title": "Translation Cache",
+    "description": "Translations are remembered on this device so reloading or revisiting a page does not call the AI service again. Only short word pairs (and paragraph translations in paragraph mode) are stored; private (incognito) windows are never written to disk. Changing the model, prompt, level, rate or target language starts fresh automatically.",
+    "enabled": "Remember translations",
+    "enabledDescription": "When off, the cache is neither read nor written.",
+    "statsTitle": "Usage",
+    "refresh": "Refresh",
+    "statsUnavailable": "Statistics are not available right now.",
+    "memoryOnly": "The on-disk cache is unavailable; translations are only kept until the browser restarts.",
+    "entries": "Entries",
+    "entriesHint": "{ok} with words, {empty} without, {definitions} hover definitions",
+    "size": "Approx. size",
+    "hits": "Cache hits",
+    "sessionHits": "{hits} of {lookups} lookups since start",
+    "requestsSaved": "Requests saved (est.)",
+    "requestsSavedHint": "Batched requests carry up to 8 segments",
+    "maxEntries": "Maximum entries",
+    "maxEntriesDescription": "The least recently used entries are removed above this limit (1,000 to 200,000).",
+    "ttlDays": "Keep translations for (days)",
+    "ttlDaysDescription": "Results without any words are kept for at most 3 days (1 to 365).",
+    "clear": "Clear translation cache",
+    "clearConfirm": "Delete all remembered translations? Pages will be translated again by the AI service.",
+    "cleared": "Translation cache cleared",
+    "clearError": "Failed to clear the data",
+    "wordsTitle": "Word history",
+    "wordsSummary": "{words} different words shown {exposures} times in total (not recorded in private windows).",
+    "wordExposures": "{count}×",
+    "clearWords": "Clear word history",
+    "clearWordsConfirm": "Delete the history of words you have seen?",
+    "wordsCleared": "Word history cleared"
+  },
   "appearanceSettings": {
     "floatingBall": {
       "title": "Floating Ball Settings",

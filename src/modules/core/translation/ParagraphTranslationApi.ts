@@ -10,6 +10,8 @@ import { StorageService } from '../storage';
 import type { UserSettings } from '../../shared/types';
 import { languageService } from './LanguageService';
 import { cleanParagraphTranslationResult } from './ParagraphTranslationResult';
+import { translationMemoryClient } from './TranslationMemoryClient';
+import { buildParagraphFingerprintSource } from './TranslationMemoryShared';
 
 /**
  * Paragraph translation prompt template
@@ -24,6 +26,12 @@ Requirements:
 
 Text to translate:
 {{input}}`;
+
+/**
+ * Stand-in for the original text in persisted paragraph pairs: the storage key
+ * already binds the text, so it is not stored a second time.
+ */
+const PARAGRAPH_MEMORY_ORIGINAL = '\u00B6';
 
 /** Upper bound of cached paragraph translations per page (LRU) */
 const MAX_CACHED_PARAGRAPHS = 500;
@@ -112,9 +120,10 @@ export class ParagraphTranslationApi {
         return await inFlight;
       }
 
-      const request = this.requestTranslation(
+      const request = this.translateWithMemory(
         cleanSourceText,
         finalTargetLanguage,
+        settings,
       )
         .then((translation) => {
           // Failures reject and are never cached; neither are empty results.
@@ -163,6 +172,73 @@ export class ParagraphTranslationApi {
       this.resultCache.delete(oldest);
     }
     this.resultCache.set(cacheKey, translation);
+  }
+
+  /**
+   * Persistent cross-tab translation memory first, then the API; successful
+   * (non-empty) translations are remembered. Memory failures count as misses.
+   */
+  private async translateWithMemory(
+    text: string,
+    targetLanguage: string,
+    settings: UserSettings,
+  ): Promise<string> {
+    const fingerprint = this.buildMemoryFingerprint(targetLanguage, settings);
+    if (fingerprint) {
+      const [hit] = await translationMemoryClient.lookup(fingerprint, [text]);
+      const remembered =
+        hit?.status === 'ok' ? hit.pairs[0]?.translation : undefined;
+      if (remembered) {
+        return remembered;
+      }
+    }
+
+    const translation = await this.requestTranslation(text, targetLanguage);
+    if (fingerprint && translation.trim()) {
+      translationMemoryClient.store(fingerprint, [
+        {
+          text,
+          outcome: {
+            status: 'ok',
+            pairs: [{ original: PARAGRAPH_MEMORY_ORIGINAL, translation }],
+          },
+        },
+      ]);
+    }
+    return translation;
+  }
+
+  /**
+   * Fingerprint of the paragraph mode (separate from the word mode), or null when
+   * the translation memory is disabled.
+   */
+  private buildMemoryFingerprint(
+    targetLanguage: string,
+    settings: UserSettings,
+  ): string | null {
+    if (settings.translationCache?.enabled === false) {
+      return null;
+    }
+    const activeConfig = settings.apiConfigs?.find(
+      (config) => config.id === settings.activeApiConfigId,
+    );
+    const apiConfig = activeConfig?.config;
+    if (!apiConfig) {
+      return null;
+    }
+
+    return buildParagraphFingerprintSource({
+      protocolFamily: activeConfig.protocolFamily,
+      endpoint: apiConfig.apiEndpoint,
+      model: apiConfig.model ?? '',
+      temperature: apiConfig.temperature,
+      customParams: apiConfig.customParams,
+      thinking: apiConfig.includeThinkingParam
+        ? !!apiConfig.enable_thinking
+        : null,
+      promptTemplate: PARAGRAPH_TRANSLATION_PROMPT,
+      targetLanguage,
+    });
   }
 
   private async requestTranslation(

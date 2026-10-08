@@ -10,7 +10,11 @@ import type {
   MultilingualConfig,
 } from '../types/api';
 import type { FloatingBallConfig, TooltipHotkey } from '../types/ui';
-import type { PageGlossaryConfig, UserSettings } from '../types/storage';
+import type {
+  PageGlossaryConfig,
+  TranslationCacheConfig,
+  UserSettings,
+} from '../types/storage';
 import type { LazyLoadingConfig } from '../types/core';
 import { createEmptyApiConfig } from '../ApiConfigHelpers';
 import {
@@ -59,6 +63,13 @@ export const DEFAULT_LAZY_LOADING_CONFIG: LazyLoadingConfig = {
   preloadDistance: 0.5, // Fixed preload of half a screen ahead
 };
 
+// Default persistent translation memory configuration
+export const DEFAULT_TRANSLATION_CACHE_CONFIG: TranslationCacheConfig = {
+  enabled: true,
+  maxEntries: 20000,
+  ttlDays: 30,
+};
+
 // Function to create a default API configuration item
 function createDefaultApiConfigItem(): ApiConfigItem {
   return {
@@ -99,5 +110,6 @@ export const DEFAULT_SETTINGS: UserSettings = {
   apiTimeoutMigrated: true,
   customTranslationCSS: '',
   lazyLoading: DEFAULT_LAZY_LOADING_CONFIG,
+  translationCache: DEFAULT_TRANSLATION_CACHE_CONFIG,
   pageGlossary: DEFAULT_PAGE_GLOSSARY_CONFIG,
 };

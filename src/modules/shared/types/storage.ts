@@ -50,8 +50,20 @@ export interface UserSettings {
   customTranslationCSS: string;
   // Added: lazy loading configuration
   lazyLoading: LazyLoadingConfig;
+  // Persistent cross-tab translation memory (background IndexedDB)
+  translationCache: TranslationCacheConfig;
   // Page glossary (opt-in): reuse word translations already shown on the page
   pageGlossary?: PageGlossaryConfig;
+}
+
+// Persistent translation memory settings
+export interface TranslationCacheConfig {
+  /** Disabled = no lookups and no stores */
+  enabled: boolean;
+  /** Entry cap; the least recently used entries are evicted above it */
+  maxEntries: number;
+  /** Lifetime of successful answers in days (empty answers: at most 3 days) */
+  ttlDays: number;
 }
 
 /**
