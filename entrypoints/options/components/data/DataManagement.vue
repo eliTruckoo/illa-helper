@@ -45,6 +45,10 @@
         </div>
       </CardContent>
     </Card>
+
+    <TranslationCacheCard
+      @save-message="(message, type) => emit('saveMessage', message, type)"
+    />
   </div>
 </template>
 
@@ -57,6 +61,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Download, Upload } from 'lucide-vue-next';
+import TranslationCacheCard from './TranslationCacheCard.vue';
 
 const { t } = useI18n();
 
@@ -70,7 +75,9 @@ const emit = defineEmits<{
 
 const exportSettings = async () => {
   try {
-    const settings = await storageService.getUserSettings();
+    // The translation cache settings are device-local and not exported
+    const { translationCache: _translationCache, ...settings } =
+      await storageService.getUserSettings();
     const websiteRules = await websiteManager.getRules();
 
     const exportData = {
@@ -132,7 +139,12 @@ const importSettings = async () => {
       let importStats = { settings: false, websiteRules: 0 };
 
       if (importedData.version === '3.0' && importedData.userSettings) {
-        await storageService.saveUserSettings(importedData.userSettings);
+        // Keep this device's translation cache settings
+        const currentSettings = await storageService.getUserSettings();
+        await storageService.saveUserSettings({
+          ...importedData.userSettings,
+          translationCache: currentSettings.translationCache,
+        });
         importStats.settings = true;
 
         // Import website management data
