@@ -319,4 +319,125 @@ await Promise.all(
 assert.equal(peak, 2, 'The per-tab limiter caps concurrent requests');
 assert.equal(limiter.activeCount, 0);
 
+// ---------- eq7.4: prompt and output caps ----------
+
+const { promptService, getSystemPromptByConfig } = await import(
+  '../src/modules/core/translation/PromptService.ts'
+);
+const { estimateMaxOutputTokens } = await import(
+  '../src/modules/api/utils/textUtils.ts'
+);
+const { supportsOpenAIOutputCap, getGeminiOutputConfig } = await import(
+  '../src/modules/api/utils/apiUtils.ts'
+);
+const { countTranslationUnits, calculateReplacementLimit, ReplacementBudget } =
+  await import('../src/modules/processing/ReplacementBudget.ts');
+
+const systemPrompt = getSystemPromptByConfig({
+  targetLanguage: 'de',
+  userLevel: 3,
+  replacementRate: 0.3,
+});
+assert.ok(systemPrompt.length < 900, 'The system prompt stays short');
+assert.match(systemPrompt, /original\|\|translation/);
+assert.match(systemPrompt, /30%/);
+assert.match(promptService.getUserPrompt('Hello world', 2), /at most 2 lines/);
+
+assert.equal(estimateMaxOutputTokens(3), 3 * 15 + 40);
+assert.equal(estimateMaxOutputTokens(undefined), undefined);
+assert.equal(supportsOpenAIOutputCap({ model: 'gpt-4o-mini' }), true);
+assert.equal(supportsOpenAIOutputCap({ model: 'o3-mini' }), false);
+assert.equal(supportsOpenAIOutputCap({ model: 'deepseek-reasoner' }), false);
+assert.equal(
+  supportsOpenAIOutputCap({
+    model: 'qwen-plus',
+    includeThinkingParam: true,
+    enable_thinking: true,
+  }),
+  false,
+  'Thinking output must not be capped',
+);
+assert.deepEqual(getGeminiOutputConfig('gemini-2.5-flash', 85), {
+  maxOutputTokens: 85,
+  thinkingConfig: { thinkingBudget: 0 },
+});
+assert.equal(getGeminiOutputConfig('gemini-2.5-pro', 85), null);
+
+assert.equal(
+  countTranslationUnits('Привет мир, как дела'),
+  4,
+  'Cyrillic words count towards the replacement limit',
+);
+assert.equal(countTranslationUnits('The quick brown fox'), 4);
+assert.equal(calculateReplacementLimit('12 345 678', 0.3), 0);
+
+class CompletionProvider extends BaseProvider {
+  constructor(answer) {
+    super({ apiKey: 'key', apiEndpoint: 'https://example.test', model: 'm' });
+    this.answer = answer;
+    this.requests = [];
+  }
+  getProviderName() {
+    return 'Completion';
+  }
+  async requestCompletion(request) {
+    this.requests.push(request);
+    return typeof this.answer === 'function'
+      ? this.answer(request)
+      : this.answer;
+  }
+}
+
+const capped = new CompletionProvider({
+  text: 'quick||schnell\nbrown||braun\nfox||Fu',
+  truncated: true,
+});
+const cappedResult = await capped.analyzeFullText(
+  'The quick brown fox jumps over the lazy dog.',
+  settings,
+);
+assert.equal(capped.requests[0].maxOutputTokens, 3 * 15 + 40);
+assert.match(capped.requests[0].userPrompt, /at most 3 lines/);
+assert.deepEqual(
+  cappedResult.replacements.map((r) => r.translation),
+  ['schnell', 'braun'],
+  'The cut-off last line of a truncated answer is dropped',
+);
+
+const emptyAnswer = new CompletionProvider({ text: '' });
+assert.equal(
+  (await emptyAnswer.analyzeFullText('The quick brown fox.', settings)).status,
+  'empty',
+);
+const numbersOnly = new CompletionProvider({ text: 'x||y' });
+await numbersOnly.analyzeFullText('12 345 678', settings);
+assert.equal(
+  numbersOnly.requests.length,
+  0,
+  'No request when nothing can be replaced',
+);
+
+let budgetEngineCalls = 0;
+const budgetEngine = {
+  ...errorEngine,
+  replaceText: async (text) => {
+    budgetEngineCalls++;
+    return { original: text, processed: '', replacements: [], status: 'empty' };
+  },
+};
+await new ProcessingCoordinator().processSegments(
+  [makeSegment('budget-1', 'An exhausted budget skips this request.')],
+  budgetEngine,
+  0,
+  'after',
+  true,
+  false,
+  ReplacementBudget.fromText('', 0.3),
+);
+assert.equal(
+  budgetEngineCalls,
+  0,
+  'No request once the page budget is exhausted',
+);
+
 console.log('api cost regression passed');

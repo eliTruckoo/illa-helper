@@ -25,6 +25,11 @@ import type {
   TranslationStyleProvider,
 } from './ProcessingContracts';
 
+function isBudgetExhausted(budget: ReplacementBudget): boolean {
+  const remaining = budget.getRemainingCount();
+  return remaining !== undefined && remaining <= 0;
+}
+
 /**
  * Processing result interface
  */
@@ -179,6 +184,16 @@ export class ProcessingCoordinator {
         );
 
       for (let i = 0; i < successfullyMarked.length; i += batchSize) {
+        // Once the page budget is used up every further answer would be discarded: skip the requests
+        if (isBudgetExhausted(activeBudget)) {
+          const remaining = successfullyMarked.slice(i);
+          translationStats.recordBudgetSkipped(remaining.length);
+          remaining.forEach((segment) => {
+            results.push(this.skipSegment(segment));
+          });
+          break;
+        }
+
         const batch = successfullyMarked.slice(i, i + batchSize);
         const batchPromises = batch.map((segment) =>
           this.collectSegmentReplacements(segment, textReplacer),
@@ -317,6 +332,14 @@ export class ProcessingCoordinator {
         error: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  /**
+   * Complete a segment without a request (page budget exhausted); it counts as processed with 0 replacements.
+   */
+  private skipSegment(segment: ContentSegment): SegmentProcessingResult {
+    this.markTextNodesProcessed(segment.textNodes);
+    return { segment, success: true, replacementCount: 0 };
   }
 
   /**

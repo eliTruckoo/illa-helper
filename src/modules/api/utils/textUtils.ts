@@ -94,3 +94,34 @@ export function limitReplacementsByRate(
 
   return replacements.slice(0, maxReplacementCount);
 }
+
+/** Estimated output tokens per "original||translation" line */
+const OUTPUT_TOKENS_PER_LINE = 15;
+/** Extra tokens per line for the "n|" prefix of numbered batch output */
+const OUTPUT_TOKENS_PER_NUMBERED_LINE = 2;
+/** Fixed allowance for formatting noise and the "n|-" markers */
+const OUTPUT_TOKENS_BASE = 40;
+
+/**
+ * Output token cap (max_tokens) for a request that may produce at most `maxLines` lines.
+ * Returns undefined when the line count is unbounded (replacement rate >= 100%).
+ */
+export function estimateMaxOutputTokens(
+  maxLines: number | undefined,
+  itemCount: number = 1,
+): number | undefined {
+  if (maxLines === undefined || Number.isNaN(maxLines)) {
+    return undefined;
+  }
+
+  const lines = Math.max(0, maxLines);
+  if (itemCount <= 1) {
+    return lines * OUTPUT_TOKENS_PER_LINE + OUTPUT_TOKENS_BASE;
+  }
+
+  return (
+    lines * (OUTPUT_TOKENS_PER_LINE + OUTPUT_TOKENS_PER_NUMBERED_LINE) +
+    itemCount * 4 +
+    OUTPUT_TOKENS_BASE
+  );
+}

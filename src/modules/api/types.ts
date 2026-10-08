@@ -16,6 +16,27 @@ export interface ITranslationProvider {
 }
 
 /**
+ * One chat completion sent by a provider
+ */
+export interface CompletionRequest {
+  systemPrompt: string;
+  userPrompt: string;
+  /** Output token cap; undefined = provider default */
+  maxOutputTokens?: number;
+}
+
+/**
+ * Raw provider answer
+ */
+export interface CompletionResult {
+  text: string;
+  /** Raw usage payload (OpenAI `usage` / Gemini `usageMetadata`) */
+  usage?: unknown;
+  /** The answer hit the output token cap */
+  truncated?: boolean;
+}
+
+/**
  * API request configuration
  */
 export interface ApiRequestConfig {

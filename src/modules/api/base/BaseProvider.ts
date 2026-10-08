@@ -4,18 +4,41 @@
 
 import { ApiConfig, FullTextAnalysisResponse } from '../../shared/types/api';
 import { UserSettings } from '../../shared/types/storage';
-import { ITranslationProvider } from '../types';
+import {
+  CompletionRequest,
+  CompletionResult,
+  ITranslationProvider,
+} from '../types';
 import {
   validateInputs,
   createErrorResponse,
   createEmptyResponse,
   getResponseStatus,
 } from '../utils/apiUtils';
+import {
+  addPositionsToReplacements,
+  estimateMaxOutputTokens,
+} from '../utils/textUtils';
+import { StructuredTextParser } from '../utils/structuredTextParser';
 import { translationStats } from '../../core/translation/TranslationStats';
+import {
+  getSystemPromptByConfig,
+  promptService,
+} from '../../core/translation/PromptService';
+import { calculateReplacementLimit } from '../../processing/ReplacementBudget';
+
+/**
+ * Drop the last line of a truncated answer: it may be cut in the middle of a translation.
+ */
+export function dropIncompleteLastLine(text: string): string {
+  const trimmed = text.replace(/\s+$/, '');
+  const lastBreak = trimmed.lastIndexOf('\n');
+  return lastBreak === -1 ? '' : trimmed.slice(0, lastBreak);
+}
 
 /**
  * Base provider abstract class
- * Provides shared functionality and error handling
+ * Provides shared prompt building, parsing and error handling; subclasses only implement the transport.
  */
 export abstract class BaseProvider implements ITranslationProvider {
   protected config: ApiConfig;
@@ -33,8 +56,11 @@ export abstract class BaseProvider implements ITranslationProvider {
   ): Promise<FullTextAnalysisResponse> {
     const originalText = text || '';
 
-    // Nothing to translate is a successful empty result, not a failure
-    if (!originalText.trim()) {
+    // Nothing to translate (or a 0% rate) is a successful empty result; no request is needed
+    if (
+      !originalText.trim() ||
+      calculateReplacementLimit(originalText, settings.replacementRate) === 0
+    ) {
       return createEmptyResponse(originalText);
     }
 
@@ -58,12 +84,65 @@ export abstract class BaseProvider implements ITranslationProvider {
   }
 
   /**
-   * Concrete analysis logic that subclasses must implement
+   * Single-segment analysis: prompt with a line limit, capped output, "original||translation" parsing.
    */
-  protected abstract doAnalyzeFullText(
+  protected async doAnalyzeFullText(
     text: string,
     settings: UserSettings,
-  ): Promise<FullTextAnalysisResponse>;
+  ): Promise<FullTextAnalysisResponse> {
+    const maxItems = calculateReplacementLimit(text, settings.replacementRate);
+
+    const completion = await this.requestCompletion(
+      {
+        systemPrompt: getSystemPromptByConfig({
+          targetLanguage: settings.multilingualConfig.targetLanguage,
+          userLevel: settings.userLevel,
+          replacementRate: settings.replacementRate,
+        }),
+        userPrompt: promptService.getUserPrompt(text, maxItems),
+        maxOutputTokens: estimateMaxOutputTokens(maxItems),
+      },
+      settings,
+    );
+    this.recordUsage(completion.usage);
+
+    const content = completion.truncated
+      ? dropIncompleteLastLine(completion.text)
+      : completion.text;
+    const parseResult = StructuredTextParser.parse(content);
+    if (!parseResult.success) {
+      throw new Error(
+        `Structured text parsing failed: ${parseResult.errors.join(', ')}`,
+      );
+    }
+
+    const replacements = addPositionsToReplacements(
+      text,
+      parseResult.replacements,
+      { replacementRate: settings.replacementRate },
+    );
+
+    // A truncated answer without a single usable line is a failure, not an empty answer
+    if (replacements.length === 0 && completion.truncated) {
+      throw new Error('Response was truncated before the first complete line');
+    }
+
+    return {
+      original: text,
+      processed: '',
+      replacements,
+      status: replacements.length > 0 ? 'ok' : 'empty',
+    };
+  }
+
+  /**
+   * Send one chat completion to the provider (transport only).
+   * Must throw on HTTP/transport errors or a malformed response.
+   */
+  protected abstract requestCompletion(
+    request: CompletionRequest,
+    settings: UserSettings,
+  ): Promise<CompletionResult>;
 
   /**
    * Get the provider name (used for logging)
