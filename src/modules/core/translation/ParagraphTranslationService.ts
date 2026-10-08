@@ -15,7 +15,7 @@ import type { LazyLoadingService } from '../../content/services/LazyLoadingServi
 import type { ContentSegment } from '../../processing/ProcessingStateManager';
 import { globalProcessingState } from '../../processing/ProcessingStateManager';
 import {
-  walkAndCollectParagraphs,
+  walkAndCollectParagraphsAsync,
   collectTextNodes,
 } from '../../processing/DomWalker';
 import { languageService } from './LanguageService';
@@ -168,8 +168,8 @@ export class ParagraphTranslationService {
   /**
    * Find paragraph elements - based on the unified DomWalker traversal
    */
-  private findParagraphElements(): HTMLElement[] {
-    const paragraphs = walkAndCollectParagraphs(document.body);
+  private async findParagraphElements(): Promise<HTMLElement[]> {
+    const paragraphs = await walkAndCollectParagraphsAsync(document.body);
     const paragraphElements = selectParagraphTranslationElements(paragraphs);
 
     // Filter out elements that are already translated, being translated, or too short
@@ -428,7 +428,7 @@ export class ParagraphTranslationService {
    */
   private async startFullTranslation(): Promise<number> {
     // Find all paragraph elements
-    const paragraphElements = this.findParagraphElements();
+    const paragraphElements = await this.findParagraphElements();
     console.log(
       '[ParagraphTranslation] Full translation mode: paragraph elements found:',
       paragraphElements.length,
@@ -452,7 +452,7 @@ export class ParagraphTranslationService {
     }
 
     // Find all paragraph elements and convert them to ContentSegment
-    const paragraphElements = this.findParagraphElements();
+    const paragraphElements = await this.findParagraphElements();
     const segments = this.convertToContentSegments(paragraphElements);
 
     console.log(

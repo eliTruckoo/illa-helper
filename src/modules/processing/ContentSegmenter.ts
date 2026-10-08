@@ -12,7 +12,7 @@ import {
   ContentSegment,
   globalProcessingState,
 } from './ProcessingStateManager';
-import { walkAndCollectParagraphs } from './DomWalker';
+import { walkAndCollectParagraphsAsync } from './DomWalker';
 
 export interface SegmenterConfig {
   maxSegmentLength: number;
@@ -34,13 +34,14 @@ export class ContentSegmenter {
   }
 
   /**
-   * Split the root node into content segments
+   * Split a root node into content segments.
+   * The DOM walk is time-sliced, so this yields to the main thread on large roots.
    */
-  segmentContent(root: Node): ContentSegment[] {
+  async segmentContent(root: Node): Promise<ContentSegment[]> {
     if (!(root instanceof HTMLElement)) return [];
 
-    // Get all paragraphs via DomWalker
-    const paragraphs = walkAndCollectParagraphs(root);
+    // Get all paragraphs from the DomWalker
+    const paragraphs = await walkAndCollectParagraphsAsync(root);
     const segments: ContentSegment[] = [];
 
     for (const para of paragraphs) {

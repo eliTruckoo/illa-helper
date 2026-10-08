@@ -259,7 +259,7 @@ export class TextProcessorService {
       });
 
       // Use the smart segmenter to split the root node into content segments
-      const segments = this.contentSegmenter.segmentContent(root);
+      const segments = await this.contentSegmenter.segmentContent(root);
       if (segments.length === 0) {
         return;
       }

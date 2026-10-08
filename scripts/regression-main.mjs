@@ -31,8 +31,12 @@ const { document, window } = parseHTML(`
 window.setTimeout = setTimeout;
 window.clearTimeout = clearTimeout;
 window.getComputedStyle = (element) => ({
-  display: ['A', 'SPAN', 'EM'].includes(element.tagName) ? 'inline' : 'block',
-  visibility: 'visible',
+  display:
+    element.getAttribute?.('data-display') ??
+    (['A', 'SPAN', 'EM', 'STRONG', 'B', 'I'].includes(element.tagName)
+      ? 'inline'
+      : 'block'),
+  visibility: element.getAttribute?.('data-visibility') ?? 'visible',
 });
 
 globalThis.window = window;
@@ -154,5 +158,137 @@ assert.equal(
 );
 
 await import('./regression-api-cost.mjs');
+
+// ------------------------------------------------------------
+// DomWalker: single-pass walk must match the original algorithm
+// ------------------------------------------------------------
+
+const { walkAndCollectParagraphsAsync, extractTextFromNode, isInlineElement } =
+  await import('../src/modules/processing/DomWalker.ts');
+const { shouldSkipSubtree, isTranslatableTextNode, isHTMLElement } =
+  await import('../src/modules/processing/DomTranslationPolicy.ts');
+const { ATOMIC_INLINE_TAGS } = await import(
+  '../src/modules/shared/constants.ts'
+);
+
+/** Reference implementation of the original attribute-labelling walker. */
+function referenceWalk(root) {
+  const P = 'data-ref-paragraph';
+  const B = 'data-ref-block';
+  const labelled = [];
+  const walk = (element) => {
+    if (ATOMIC_INLINE_TAGS.has(element.tagName)) return true;
+    if (shouldSkipSubtree(element)) return false;
+    let hasInlineChild = false;
+    for (const child of element.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        if (child.textContent?.trim()) hasInlineChild = true;
+      } else if (isHTMLElement(child) && walk(child)) {
+        hasInlineChild = true;
+      }
+    }
+    if (hasInlineChild) element.setAttribute(P, '');
+    const inline = isInlineElement(element);
+    if (!inline) element.setAttribute(B, '');
+    labelled.push(element);
+    return inline;
+  };
+  walk(root);
+
+  const candidates = [
+    ...(root.hasAttribute(P) ? [root] : []),
+    ...root.querySelectorAll(`[${P}]`),
+  ];
+  const result = [];
+  for (const element of candidates) {
+    const children = [...element.querySelectorAll(`[${P}]`)];
+    if (children.some((child) => child.hasAttribute(B))) continue;
+    const textContent = extractTextFromNode(element);
+    if (textContent.trim().length < 2) continue;
+    const textNodes = [];
+    const visit = (node) => {
+      for (const child of node.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          if (isTranslatableTextNode(child, element)) textNodes.push(child);
+        } else {
+          visit(child);
+        }
+      }
+    };
+    visit(element);
+    if (textNodes.length === 0) continue;
+    result.push({ element, textContent, textNodes });
+  }
+  labelled.forEach((element) => {
+    element.removeAttribute(P);
+    element.removeAttribute(B);
+  });
+  return result;
+}
+
+const walkerFixture = document.createElement('section');
+walkerFixture.id = 'walker-fixture';
+walkerFixture.innerHTML = `
+  <div id="w-mixed">Lead text <p id="w-inner-p">Inner block paragraph text.</p></div>
+  <p id="w-nested">Read the <a id="w-long-link" href="#">very long link text inside a paragraph</a> and <strong>bold</strong> words<br>next line <time id="w-time">2024-01-01</time>.</p>
+  <ul id="w-list"><li id="w-li-1"><a href="#">Home</a></li><li id="w-li-2"><a href="#">About us</a></li></ul>
+  <div id="w-hidden" data-display="none"><p>Hidden paragraph text</p></div>
+  <div id="w-vis" data-visibility="hidden"><p>Invisible paragraph text</p></div>
+  <p id="w-aria">Visible <span aria-hidden="true">aria hidden text</span> tail text</p>
+  <div id="w-inline-block"><span data-display="inline-block"><div id="w-deep">Deep block text</div></span> after</div>
+  <p id="w-own"><span class="wxt-translation-term">owned</span> plain text after term</p>
+  <p id="w-processed" data-wxt-text-processed="true">Already processed text</p>
+  <div id="w-script">Script sibling text<script>var ignored = 1;</script></div>
+  <p id="w-abbr"><abbr title="x">HTML</abbr></p>
+  <div id="w-empty-inline"><span> </span><em>emphasis only</em></div>
+  <div id="w-contents" data-display="contents">Contents display text</div>
+`;
+document.body.appendChild(walkerFixture);
+
+const describe = (paragraphs) =>
+  paragraphs.map((p) => ({
+    id: p.element.id || p.element.tagName,
+    text: p.textContent,
+    nodes: p.textNodes.map((node) => node.textContent),
+  }));
+
+const expectedParagraphs = referenceWalk(walkerFixture);
+assert.ok(
+  expectedParagraphs.length >= 10,
+  'walker fixture should exercise many paragraph shapes',
+);
+const syncParagraphs = walkAndCollectParagraphs(walkerFixture);
+assert.deepEqual(
+  describe(syncParagraphs),
+  describe(expectedParagraphs),
+  'single-pass DomWalker must return the same paragraphs as the original walker',
+);
+syncParagraphs.forEach((paragraph, index) => {
+  assert.equal(paragraph.element, expectedParagraphs[index].element);
+  assert.deepEqual(paragraph.textNodes, expectedParagraphs[index].textNodes);
+});
+assert.equal(
+  walkerFixture.querySelectorAll(
+    '[data-illa-walked], [data-illa-paragraph], [data-illa-block], [data-illa-inline]',
+  ).length,
+  0,
+  'the walk must not write label attributes into the page DOM',
+);
+
+const asyncParagraphs = await walkAndCollectParagraphsAsync(walkerFixture, {
+  sliceMs: 0,
+});
+assert.deepEqual(
+  describe(asyncParagraphs),
+  describe(expectedParagraphs),
+  'time-sliced walk must produce the same paragraphs as the synchronous walk',
+);
+
+const bodyReference = describe(referenceWalk(document.body));
+assert.deepEqual(
+  describe(walkAndCollectParagraphs(document.body)),
+  bodyReference,
+  'single-pass DomWalker must match the original walker on the whole page',
+);
 
 console.log('main regression passed');
