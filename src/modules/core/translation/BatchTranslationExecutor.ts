@@ -15,12 +15,22 @@ import {
   type TranslationOutcome,
 } from './SegmentTranslationCache';
 import { translationStats } from './TranslationStats';
+import type { TranslationHint } from '../../processing/ProcessingContracts';
 
 export interface BatchTranslationBackend {
-  /** One request for one segment; must not reject */
-  translateOne(text: string): Promise<TranslationOutcome>;
+  /**
+   * One request for one segment; must not reject.
+   * @param alreadyHandled page glossary words the model should not output (prompt hint)
+   */
+  translateOne(
+    text: string,
+    alreadyHandled?: string[],
+  ): Promise<TranslationOutcome>;
   /** One request for several segments; may reject or return status 'error' */
-  translateMany(texts: string[]): Promise<BatchAnalysisResponse>;
+  translateMany(
+    texts: string[],
+    alreadyHandled?: Array<string[] | undefined>,
+  ): Promise<BatchAnalysisResponse>;
 }
 
 export interface BatchTranslationOptions {
@@ -31,12 +41,60 @@ export interface BatchTranslationOptions {
 interface PendingItem {
   key: string;
   text: string;
+  hint?: TranslationHint;
 }
 
 /**
  * Errors where retrying every item on its own would only repeat the failure (auth, quota, rate limit).
  */
 const NON_RETRYABLE_BATCH_ERROR = /\b(401|402|403|429)\b|api key/i;
+
+/** Words of a hint as sent in the prompt */
+export function hintWords(hint?: TranslationHint): string[] | undefined {
+  return hint && hint.pairs.length > 0
+    ? hint.pairs.map((pair) => pair.original)
+    : undefined;
+}
+
+/**
+ * Add the hinted glossary pairs to an answer that was requested with the "already handled" hint.
+ *
+ * The cache key (in-page and persistent) is the normalized text WITHOUT the hint, so the stored pairs
+ * must describe the whole text: the model skipped the hinted words only because the glossary covers
+ * them. Storing LLM pairs + hinted pairs keeps a later cache hit complete (also on a page without the
+ * glossary). Hinted pairs are added only up to the segment's replacement limit so they never push
+ * model picks out of the rate cap. Errors are returned unchanged.
+ */
+export function withHintPairs(
+  outcome: TranslationOutcome,
+  hint?: TranslationHint,
+): TranslationOutcome {
+  if (!hint || hint.pairs.length === 0 || outcome.status === 'error') {
+    return outcome;
+  }
+
+  const pairs = [...outcome.pairs];
+  const room =
+    hint.maxPairs === undefined
+      ? Number.POSITIVE_INFINITY
+      : Math.max(0, hint.maxPairs - pairs.length);
+  const present = new Set(pairs.map((pair) => pair.original));
+  let added = 0;
+
+  for (const pair of hint.pairs) {
+    if (added >= room) {
+      break;
+    }
+    if (!pair.original || !pair.translation || present.has(pair.original)) {
+      continue;
+    }
+    present.add(pair.original);
+    pairs.push({ original: pair.original, translation: pair.translation });
+    added++;
+  }
+
+  return { status: pairs.length > 0 ? 'ok' : 'empty', pairs };
+}
 
 /**
  * Split items into requests of at most `maxItems` items and about `maxChars` characters, keeping order.
@@ -82,10 +140,12 @@ export class BatchTranslationExecutor {
    * Resolve one outcome per text, in input order.
    * @param texts raw segment texts (sent to the model as-is)
    * @param keys cache keys, one per text
+   * @param hints optional page glossary hints, one per text (see withHintPairs)
    */
   async translate(
     texts: string[],
     keys: string[],
+    hints?: Array<TranslationHint | undefined>,
   ): Promise<TranslationOutcome[]> {
     const byKey = new Map<string, Promise<TranslationOutcome>>();
     const pending: PendingItem[] = [];
@@ -114,7 +174,7 @@ export class BatchTranslationExecutor {
       }
 
       pendingKeys.add(key);
-      pending.push({ key, text });
+      pending.push({ key, text, hint: hints?.[index] });
     });
 
     const chunks = chunkBatchItems(
@@ -129,7 +189,9 @@ export class BatchTranslationExecutor {
           item.key,
           this.cache.track(
             item.key,
-            chunkOutcomes.then((outcomes) => outcomes[position]),
+            chunkOutcomes.then((outcomes) =>
+              withHintPairs(outcomes[position], item.hint),
+            ),
           ),
         );
       });
@@ -145,13 +207,20 @@ export class BatchTranslationExecutor {
     chunk: PendingItem[],
   ): Promise<TranslationOutcome[]> {
     if (chunk.length === 1) {
-      return [await this.backend.translateOne(chunk[0].text)];
+      return [
+        await this.backend.translateOne(
+          chunk[0].text,
+          hintWords(chunk[0].hint),
+        ),
+      ];
     }
 
     let response: BatchAnalysisResponse;
     try {
+      const alreadyHandled = chunk.map((item) => hintWords(item.hint));
       response = await this.backend.translateMany(
         chunk.map((item) => item.text),
+        alreadyHandled.some(Boolean) ? alreadyHandled : undefined,
       );
     } catch (error) {
       response = {
@@ -180,7 +249,7 @@ export class BatchTranslationExecutor {
           return toTranslationOutcome(answer);
         }
         // Missing from the answer, or the whole batch failed: retry this item on its own
-        return this.backend.translateOne(item.text);
+        return this.backend.translateOne(item.text, hintWords(item.hint));
       }),
     );
   }

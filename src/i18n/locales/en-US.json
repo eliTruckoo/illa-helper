@@ -101,6 +101,12 @@
     "performanceHintDisabled": "Lazy loading is disabled. The entire page will be translated at once. It's recommended to enable lazy loading on content-heavy pages.",
     "note": "Higher values capture more paragraphs but increase resource consumption"
   },
+  "pageGlossary": {
+    "enabled": "Page Glossary",
+    "description": "Reuse a word's translation wherever it appears again on the page: consistent translations and fewer output tokens. May occasionally show the wrong sense of a word.",
+    "promptHint": "Tell the AI which words are already handled",
+    "promptHintDescription": "Lists the glossary words of each paragraph in the request so the AI does not translate them again (fewer output tokens)."
+  },
   "footer": {
     "clickForUpdate": "Click to view update details",
     "settings": "Settings"

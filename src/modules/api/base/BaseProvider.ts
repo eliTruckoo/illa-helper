@@ -9,6 +9,8 @@ import {
 } from '../../shared/types/api';
 import { UserSettings } from '../../shared/types/storage';
 import {
+  AnalyzeBatchOptions,
+  AnalyzeOptions,
   CompletionRequest,
   CompletionResult,
   ITranslationProvider,
@@ -58,6 +60,7 @@ export abstract class BaseProvider implements ITranslationProvider {
   async analyzeFullText(
     text: string,
     settings: UserSettings,
+    options?: AnalyzeOptions,
   ): Promise<FullTextAnalysisResponse> {
     const originalText = text || '';
 
@@ -76,7 +79,11 @@ export abstract class BaseProvider implements ITranslationProvider {
 
     try {
       translationStats.recordRequest(1);
-      const result = await this.doAnalyzeFullText(originalText, settings);
+      const result = await this.doAnalyzeFullText(
+        originalText,
+        settings,
+        options,
+      );
       return { ...result, status: getResponseStatus(result) };
     } catch (error: any) {
       translationStats.recordError();
@@ -94,6 +101,7 @@ export abstract class BaseProvider implements ITranslationProvider {
   protected async doAnalyzeFullText(
     text: string,
     settings: UserSettings,
+    options?: AnalyzeOptions,
   ): Promise<FullTextAnalysisResponse> {
     const maxItems = calculateReplacementLimit(text, settings.replacementRate);
 
@@ -104,7 +112,11 @@ export abstract class BaseProvider implements ITranslationProvider {
           userLevel: settings.userLevel,
           replacementRate: settings.replacementRate,
         }),
-        userPrompt: promptService.getUserPrompt(text, maxItems),
+        userPrompt: promptService.getUserPrompt(
+          text,
+          maxItems,
+          options?.alreadyHandled,
+        ),
         maxOutputTokens: estimateMaxOutputTokens(maxItems),
       },
       settings,
@@ -148,6 +160,7 @@ export abstract class BaseProvider implements ITranslationProvider {
   async analyzeBatch(
     texts: string[],
     settings: UserSettings,
+    options?: AnalyzeBatchOptions,
   ): Promise<BatchAnalysisResponse> {
     const items: Array<FullTextAnalysisResponse | undefined> = texts.map(
       () => undefined,
@@ -158,6 +171,7 @@ export abstract class BaseProvider implements ITranslationProvider {
       index: number;
       text: string;
       maxItems?: number;
+      alreadyHandled?: string[];
     }> = [];
     texts.forEach((rawText, index) => {
       const text = rawText || '';
@@ -168,7 +182,12 @@ export abstract class BaseProvider implements ITranslationProvider {
       if (!text.trim() || maxItems === 0) {
         items[index] = createEmptyResponse(text);
       } else {
-        requestItems.push({ index, text, maxItems });
+        requestItems.push({
+          index,
+          text,
+          maxItems,
+          alreadyHandled: options?.alreadyHandled?.[index],
+        });
       }
     });
 

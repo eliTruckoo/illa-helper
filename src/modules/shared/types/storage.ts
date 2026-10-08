@@ -48,6 +48,18 @@ export interface UserSettings {
   customTranslationCSS: string;
   // Added: lazy loading configuration
   lazyLoading: LazyLoadingConfig;
+  // Page glossary (opt-in): reuse word translations already shown on the page
+  pageGlossary?: PageGlossaryConfig;
+}
+
+/**
+ * Page glossary settings (word mode)
+ */
+export interface PageGlossaryConfig {
+  /** Reuse translations already shown on the page for the same word form */
+  enabled: boolean;
+  /** Tell the model which glossary words a segment already has (fewer output tokens) */
+  promptHint: boolean;
 }
 
 // Context menu message interface
