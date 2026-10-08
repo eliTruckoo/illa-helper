@@ -17,43 +17,102 @@ import type {
   ContextMenuActionType,
   UrlPatternType,
 } from '../shared/types/core';
+import { createDebouncedTask } from '@/src/utils/debounce';
+import {
+  MenuState,
+  computeMenuState,
+  diffMenuState,
+  hiddenMenuState,
+} from './menuState';
+
+/** Debounce of menu refreshes triggered by tab/navigation events */
+const MENU_REFRESH_DEBOUNCE_MS = 150;
+/** Storage key of the website rules (see WebsiteManager) */
+const WEBSITE_RULES_STORAGE_KEY = 'website-management-settings';
 
 export class ContextMenuManager {
   private websiteManager: WebsiteManager;
+  private listenersRegistered = false;
+  /** Last state applied via contextMenus.update(), per menu item */
+  private appliedState: MenuState = {};
+  /** Tab whose URL the menu currently reflects */
+  private activeTabId?: number;
+  private refreshTask = createDebouncedTask(() => {
+    void this.refreshActiveTab();
+  }, MENU_REFRESH_DEBOUNCE_MS);
 
   constructor(websiteManager: WebsiteManager) {
     this.websiteManager = websiteManager;
   }
 
   /**
-   * Initialize the menu manager
+   * Register the menu click, tab and navigation listeners.
+   *
+   * Must be called synchronously at background startup (not only from
+   * runtime.onInstalled): an MV3 service worker restarted by one of these
+   * events only dispatches it to listeners registered in its first turn.
+   * Idempotent.
+   */
+  registerListeners(): void {
+    if (this.listenersRegistered) return;
+    this.listenersRegistered = true;
+
+    browser.contextMenus.onClicked.addListener(this.handleMenuClick.bind(this));
+    browser.tabs.onUpdated.addListener(this.handleTabUpdate.bind(this));
+    browser.tabs.onActivated.addListener(this.handleTabActivated.bind(this));
+    browser.windows?.onFocusChanged?.addListener(
+      this.handleWindowFocusChanged.bind(this),
+    );
+    // Main-frame navigations (redirects, reloads) of the active tab
+    browser.webNavigation?.onCommitted?.addListener(
+      this.handleNavigation.bind(this),
+    );
+    // Rules changed elsewhere (options page, popup, other menu action)
+    browser.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName === 'sync' && changes[WEBSITE_RULES_STORAGE_KEY]) {
+        this.websiteManager.clearCache();
+        this.scheduleRefresh();
+      }
+    });
+  }
+
+  /**
+   * Initialize the menu manager after the menu items were (re)created.
    */
   async init(): Promise<void> {
     try {
-      // Listen for menu click events
-      browser.contextMenus.onClicked.addListener(
-        this.handleMenuClick.bind(this),
-      );
+      this.registerListeners();
 
-      // Listen for tab update events and update menu state dynamically
-      browser.tabs.onUpdated.addListener(this.handleTabUpdate.bind(this));
-      browser.tabs.onActivated.addListener(this.handleTabActivated.bind(this));
-
-      // Listen for navigation events so the menu also updates on SPA route changes
-      browser.webNavigation.onCommitted.addListener(
-        this.handleNavigation.bind(this),
-      );
-
-      // Initialize the menu state for the current tab
-      const tabs = await browser.tabs.query({
-        active: true,
-        currentWindow: true,
-      });
-      if (tabs[0]?.id && tabs[0]?.url) {
-        await this.updateMenuState(tabs[0].id, tabs[0].url);
-      }
+      // Menu items were just recreated with their default state
+      this.appliedState = {};
+      this.refreshTask.cancel();
+      await this.refreshActiveTab();
     } catch (error) {
       console.error('Failed to initialize menu manager:', error);
+    }
+  }
+
+  /**
+   * Request a (debounced) refresh of the menu for the active tab
+   */
+  private scheduleRefresh(): void {
+    this.refreshTask.schedule();
+  }
+
+  /**
+   * Update the menu for the active tab of the last focused window
+   */
+  private async refreshActiveTab(): Promise<void> {
+    try {
+      const [tab] = await browser.tabs.query({
+        active: true,
+        lastFocusedWindow: true,
+      });
+      if (tab?.id === undefined) return;
+      this.activeTabId = tab.id;
+      await this.updateMenuState(tab.id, tab.url ?? '');
+    } catch (error) {
+      console.error('[ContextMenu] Failed to refresh menu state:', error);
     }
   }
 
@@ -61,144 +120,60 @@ export class ContextMenuManager {
    * Update menu state
    */
   private async updateMenuState(tabId: number, url: string): Promise<void> {
-    console.log(
-      `[ContextMenu] Updating menu state - TabID: ${tabId}, URL: ${url}`,
-    );
-
     if (!url || !url.startsWith('http')) {
-      console.log(`[ContextMenu] Invalid URL, hiding all menus: ${url}`);
-      await this.hideAllDynamicMenus();
+      await this.applyMenuState(hiddenMenuState());
       return;
     }
 
+    // Validate URL
+    const validation = validateUrlForRule(url);
+    if (!validation.valid) {
+      await this.applyMenuState(hiddenMenuState());
+      return;
+    }
+
+    const domain = extractDomain(url);
+    let websiteStatus: 'blacklisted' | 'whitelisted' | 'normal';
     try {
-      // Validate URL
-      const validation = validateUrlForRule(url);
-      if (!validation.valid) {
-        console.log(
-          `[ContextMenu] URL validation failed, hiding all menus: ${validation.error || 'unknown reason'}`,
-        );
-        await this.hideAllDynamicMenus();
-        return;
-      }
-
-      // Get current website status
-      const websiteStatus = await this.websiteManager.getWebsiteStatus(url);
-      const domain = extractDomain(url);
-
-      console.log(
-        `[ContextMenu] Website status - Domain: ${domain}, Status: ${websiteStatus}`,
-      );
-
-      // Update menu visibility and titles based on website status
-      await this.updateMenuVisibility(url, domain, websiteStatus);
+      websiteStatus = await this.websiteManager.getWebsiteStatus(url);
     } catch (error) {
-      console.error('[ContextMenu] Failed to update menu state:', {
+      console.error('[ContextMenu] Failed to get website status:', {
         error: error instanceof Error ? error.message : 'Unknown error',
         url,
         tabId,
-        stack: error instanceof Error ? error.stack : undefined,
       });
-      // Do not hide the menu immediately; retry once first
       try {
-        console.log('[ContextMenu] Retrying to get website status...');
-        const websiteStatus = await this.websiteManager.getWebsiteStatus(url);
-        const domain = extractDomain(url);
-        await this.updateMenuVisibility(url, domain, websiteStatus);
+        // Retry once before hiding the menu
+        websiteStatus = await this.websiteManager.getWebsiteStatus(url);
       } catch (retryError) {
         console.error(
           '[ContextMenu] Retry failed, hiding all menus:',
           retryError,
         );
-        await this.hideAllDynamicMenus();
+        await this.applyMenuState(hiddenMenuState());
+        return;
       }
     }
+
+    await this.applyMenuState(computeMenuState(websiteStatus, domain));
   }
 
   /**
-   * Update menu visibility based on website status
+   * Apply a menu state, calling contextMenus.update() only for items whose
+   * visibility or title actually changed.
    */
-  private async updateMenuVisibility(
-    url: string,
-    domain: string,
-    websiteStatus: 'blacklisted' | 'whitelisted' | 'normal',
-  ): Promise<void> {
-    // Hide all dynamic menu items first
-    await this.hideAllDynamicMenus();
-
-    try {
-      // Show the relevant action options for the current status
-      if (websiteStatus === 'blacklisted') {
-        // Currently blacklisted: show remove option and add-to-whitelist options
-        await browser.contextMenus.update('illa-remove-blacklist', {
-          visible: true,
-          title: `Remove ${domain} from blacklist`,
-        });
-        await browser.contextMenus.update('illa-add-whitelist-domain', {
-          visible: true,
-          title: `Add ${domain} to whitelist`,
-        });
-        await browser.contextMenus.update('illa-add-whitelist-exact', {
-          visible: true,
-          title: 'Add current page to whitelist',
-        });
-      } else if (websiteStatus === 'whitelisted') {
-        // Currently whitelisted: show remove option and add-to-blacklist options
-        await browser.contextMenus.update('illa-remove-whitelist', {
-          visible: true,
-          title: `Remove ${domain} from whitelist`,
-        });
-        await browser.contextMenus.update('illa-add-blacklist-domain', {
-          visible: true,
-          title: `Add ${domain} to blacklist`,
-        });
-        await browser.contextMenus.update('illa-add-blacklist-exact', {
-          visible: true,
-          title: 'Add current page to blacklist',
-        });
-      } else {
-        // Normal status: show add options
-        await browser.contextMenus.update('illa-add-blacklist-domain', {
-          visible: true,
-          title: `Add ${domain} to blacklist`,
-        });
-        await browser.contextMenus.update('illa-add-blacklist-exact', {
-          visible: true,
-          title: 'Add current page to blacklist',
-        });
-        await browser.contextMenus.update('illa-add-whitelist-domain', {
-          visible: true,
-          title: `Add ${domain} to whitelist`,
-        });
-        await browser.contextMenus.update('illa-add-whitelist-exact', {
-          visible: true,
-          title: 'Add current page to whitelist',
-        });
-      }
-    } catch (error) {
-      console.error('Failed to update menu visibility:', error);
-    }
-  }
-
-  /**
-   * Hide all dynamic menu items
-   */
-  private async hideAllDynamicMenus(): Promise<void> {
-    const dynamicMenuIds = [
-      'illa-add-blacklist-domain',
-      'illa-add-blacklist-exact',
-      'illa-remove-blacklist',
-      'illa-add-whitelist-domain',
-      'illa-add-whitelist-exact',
-      'illa-remove-whitelist',
-    ];
-
-    for (const menuId of dynamicMenuIds) {
+  private async applyMenuState(desired: MenuState): Promise<void> {
+    for (const [menuId, next] of diffMenuState(this.appliedState, desired)) {
       try {
-        await browser.contextMenus.update(menuId, { visible: false });
+        await browser.contextMenus.update(menuId, next);
+        this.appliedState[menuId] = {
+          visible: next.visible,
+          title: next.title ?? this.appliedState[menuId]?.title,
+        };
       } catch (error) {
+        // Unknown state now: force an update next time
+        delete this.appliedState[menuId];
         console.error('Failed to update menu visibility:', error);
-        // Ignore update failure errors
       }
     }
   }
@@ -368,13 +343,8 @@ export class ContextMenuManager {
 
       // Refresh menu state after the action completes
       console.log('[ContextMenu] Action complete, refreshing menu state');
-      const tabs = await browser.tabs.query({
-        active: true,
-        currentWindow: true,
-      });
-      if (tabs[0]?.id && tabs[0]?.url) {
-        await this.updateMenuState(tabs[0].id, tabs[0].url);
-      }
+      this.refreshTask.cancel();
+      await this.refreshActiveTab();
     } catch (error) {
       console.error('[ContextMenu] Failed to execute action:', {
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -404,51 +374,45 @@ export class ContextMenuManager {
   }
 
   /**
-   * Handle tab update events
+   * Handle tab update events.
+   * Only URL changes and load completion of the active tab matter; title
+   * changes (and any change in background tabs) are ignored.
    */
-  private async handleTabUpdate(
+  private handleTabUpdate(
     tabId: number,
-    changeInfo: any,
-    tab: any,
-  ): Promise<void> {
-    // Update when the URL changes, loading completes, or the title changes (SPA apps)
-    if (
-      changeInfo.url ||
-      (changeInfo.status === 'complete' && tab.url) ||
-      changeInfo.title
-    ) {
-      console.log(
-        `[ContextMenu] Tab updated - TabID: ${tabId}, URL: ${tab.url}, Status: ${changeInfo.status}`,
-      );
-      await this.updateMenuState(tabId, tab.url!);
+    changeInfo: { url?: string; status?: string },
+    tab: { active?: boolean },
+  ): void {
+    if (!tab.active) return;
+    if (changeInfo.url || changeInfo.status === 'complete') {
+      this.scheduleRefresh();
     }
   }
 
   /**
    * Handle tab activation events
    */
-  private async handleTabActivated(activeInfo: any): Promise<void> {
-    try {
-      const tab = await browser.tabs.get(activeInfo.tabId);
-      if (tab.url) {
-        await this.updateMenuState(activeInfo.tabId, tab.url);
-      }
-    } catch (error) {
-      // Ignore errors from failing to get tab info
-      console.error('Failed to handle tab activation event:', error);
-    }
+  private handleTabActivated(activeInfo: { tabId: number }): void {
+    this.activeTabId = activeInfo.tabId;
+    this.scheduleRefresh();
   }
 
   /**
-   * Handle navigation events (for SPA apps)
+   * Handle window focus changes (the active tab differs per window)
    */
-  private async handleNavigation(details: any): Promise<void> {
-    // Only handle main-frame navigation events
-    if (details.frameId === 0 && details.url) {
-      console.log(
-        `[ContextMenu] Navigation event - URL: ${details.url}, TabID: ${details.tabId}`,
-      );
-      await this.updateMenuState(details.tabId, details.url);
-    }
+  private handleWindowFocusChanged(windowId: number): void {
+    if (windowId === browser.windows.WINDOW_ID_NONE) return;
+    this.scheduleRefresh();
+  }
+
+  /**
+   * Handle main-frame navigation events of the active tab
+   */
+  private handleNavigation(details: { frameId: number; tabId: number }): void {
+    if (details.frameId !== 0) return;
+    // Unknown active tab (fresh service worker): let the refresh find out
+    if (this.activeTabId !== undefined && details.tabId !== this.activeTabId)
+      return;
+    this.scheduleRefresh();
   }
 }

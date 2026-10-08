@@ -26,6 +26,10 @@ export default defineBackground(() => {
 
   // Legacy managers removed - now managed uniformly in InitializationService
 
+  // Register context menu / tab listeners synchronously on every start, so
+  // they survive MV3 service worker restarts (not only after onInstalled)
+  initializationService.registerEventListeners();
+
   /**
    * Initialize all services
    */

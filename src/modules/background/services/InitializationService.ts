@@ -32,6 +32,16 @@ export class InitializationService {
   }
 
   /**
+   * Register event listeners that must exist on every background start.
+   * Call synchronously at top level of the background script: listeners added
+   * only from runtime.onInstalled are lost once the MV3 service worker
+   * restarts. Idempotent.
+   */
+  public registerEventListeners(): void {
+    this.contextMenuManager.registerListeners();
+  }
+
+  /**
    * Handle the extension install event
    */
   public async handleInstallation(
