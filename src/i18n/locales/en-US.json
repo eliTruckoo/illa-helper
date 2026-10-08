@@ -8,7 +8,6 @@
   },
   "errors": {
     "getExtensionVersion": "Failed to get extension version",
-    "apiTestFailed": "API test failed",
     "manualTranslateFailed": "Manual translation failed",
     "checkUpdateFailed": "Failed to check for updates",
     "getUpdateInfoFailed": "Failed to get update information",
@@ -33,8 +32,7 @@
   "settings": {
     "selectLanguageFirst": "Please select a language first",
     "save": "Settings saved",
-    "saveFailed": "Failed to save",
-    "switchConfigFailed": "Failed to switch configuration"
+    "saveFailed": "Failed to save"
   },
   "actions": {
     "translate": "Translate"
@@ -103,24 +101,7 @@
     "performanceHintDisabled": "Lazy loading is disabled. The entire page will be translated at once. It's recommended to enable lazy loading on content-heavy pages.",
     "note": "Higher values capture more paragraphs but increase resource consumption"
   },
-  "api": {
-    "title": "Model API Settings",
-    "openSettings": "Open Detailed Settings",
-    "currentConfig": "Current Configuration",
-    "configName": "Config Name",
-    "provider": "Provider",
-    "model": "Model",
-    "status": "Status",
-    "configured": "Configured",
-    "notConfigured": "API key not configured",
-    "test": "Test",
-    "testing": "Testing",
-    "note": "Note: API keys are saved locally and never sent anywhere else.",
-    "manageConfig": "To manage configurations, please open the settings center.",
-    "unknownError": "Unknown error"
-  },
   "footer": {
-    "slogan": "💖 Based on the \"i+1\" theory, let learning happen naturally",
     "clickForUpdate": "Click to view update details",
     "settings": "Settings"
   },

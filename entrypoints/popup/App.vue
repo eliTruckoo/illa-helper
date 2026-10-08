@@ -1,13 +1,5 @@
 <script lang="ts" setup>
-import {
-  ref,
-  onMounted,
-  watch,
-  computed,
-  reactive,
-  nextTick,
-  onUnmounted,
-} from 'vue';
+import { ref, onMounted, watch, reactive, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
   DEFAULT_SETTINGS,
@@ -18,15 +10,7 @@ import {
 } from '@/src/modules/shared/types';
 import { StorageService } from '@/src/modules/core/storage';
 import { messagingService } from '@/src/modules/core/messaging';
-import {
-  ExternalLink,
-  Zap as ZapIcon,
-  CheckCircle2 as CheckCircle2Icon,
-  XCircle,
-  Ban as BanIcon,
-} from 'lucide-vue-next';
-import { testApiConnection, ApiTestResult } from '@/src/utils';
-import { getProtocolFamilyLabel } from '@/src/modules/shared/ApiConfigHelpers';
+import { Ban as BanIcon } from 'lucide-vue-next';
 import {
   WebsiteManager,
   WebsiteStatus,
@@ -138,49 +122,6 @@ const openWebsiteManagement = () => {
   browser.tabs.create({ url: 'options.html#website-management' });
 };
 
-// API test state
-const isTestingConnection = ref(false);
-const testResult = ref<ApiTestResult | null>(null);
-let testResultTimer: number | null = null;
-
-const testActiveApiConnection = async () => {
-  if (!activeConfig.value || !activeConfig.value.config.apiKey) return;
-
-  // Clear the previous timer
-  if (testResultTimer) {
-    clearTimeout(testResultTimer);
-    testResultTimer = null;
-  }
-
-  isTestingConnection.value = true;
-  testResult.value = null;
-
-  try {
-    testResult.value = await testApiConnection(
-      activeConfig.value,
-      settings.value.apiRequestTimeout,
-    );
-    // Automatically clear the result after 5 seconds
-    testResultTimer = window.setTimeout(() => {
-      testResult.value = null;
-    }, 5000);
-  } catch (error) {
-    console.error(t('errors.apiTestFailed'), error);
-    testResult.value = {
-      success: false,
-      message: error instanceof Error ? error.message : t('api.unknownError'),
-    };
-  } finally {
-    isTestingConnection.value = false;
-  }
-};
-
-onUnmounted(() => {
-  if (testResultTimer) {
-    clearTimeout(testResultTimer);
-  }
-});
-
 // Settings update state management
 let debounceTimer: number;
 let isInitializing = true;
@@ -260,38 +201,7 @@ async function checkForUpdates() {
   }
 }
 
-const showApiSettings = ref(true);
-const toggleApiSettings = () =>
-  (showApiSettings.value = !showApiSettings.value);
-
-// Multi-config support
-const activeConfig = computed(() => {
-  return settings.value.apiConfigs?.find(
-    (config) => config.id === settings.value.activeApiConfigId,
-  );
-});
-
-const handleActiveConfigChange = async () => {
-  try {
-    await storageService.setActiveApiConfig(settings.value.activeApiConfigId);
-
-    // Reload full settings to ensure sync
-    const updatedSettings = await storageService.getUserSettings();
-    Object.assign(settings.value, updatedSettings);
-
-    // Notify the content script that the config was updated
-    await messagingService.notifySettingsChanged(settings.value);
-  } catch (error) {
-    console.error(t('settings.switchConfigFailed'), error);
-    showSavedMessage(t('settings.switchConfigFailed'));
-  }
-};
-
 const extensionVersion = ref('N/A');
-
-const openOptionsPage = () => {
-  browser.tabs.create({ url: 'options.html#translation' });
-};
 </script>
 
 <template>
@@ -397,142 +307,6 @@ const openOptionsPage = () => {
             </div>
           </div>
         </div>
-
-        <div class="setting-group api-settings">
-          <div class="api-header" @click="toggleApiSettings">
-            <div class="api-header-left">
-              <span>{{ $t('api.title') }}</span>
-              <button
-                @click.stop="openOptionsPage"
-                class="options-link-btn"
-                :title="$t('api.openSettings')"
-              >
-                <ExternalLink class="w-4 h-4" />
-              </button>
-            </div>
-            <svg
-              class="toggle-icon"
-              :class="{ 'is-open': showApiSettings }"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </div>
-
-          <div class="api-content" v-if="showApiSettings">
-            <div>
-              <!-- Config selection dropdown -->
-              <div class="sub-setting-group">
-                <label class="text-sm mt-2 mb-1">
-                  {{ $t('api.currentConfig') }}
-                </label>
-                <select
-                  v-model="settings.activeApiConfigId"
-                  @change="handleActiveConfigChange"
-                >
-                  <option
-                    v-for="config in settings.apiConfigs"
-                    :key="config.id"
-                    :value="config.id"
-                  >
-                    {{ config.name }} ({{
-                      getProtocolFamilyLabel(config.protocolFamily)
-                    }})
-                  </option>
-                </select>
-              </div>
-
-              <!-- Current config info display -->
-              <div v-if="activeConfig" class="current-config-info">
-                <div class="config-info-item">
-                  <span class="info-label">{{ $t('api.configName') }}:</span>
-                  <span class="info-value">{{ activeConfig.name }}</span>
-                </div>
-                <div class="config-info-item">
-                  <span class="info-label">{{ $t('api.provider') }}:</span>
-                  <span class="info-value">
-                    {{ getProtocolFamilyLabel(activeConfig.protocolFamily) }}
-                  </span>
-                </div>
-                <div class="config-info-item">
-                  <span class="info-label">{{ $t('api.model') }}:</span>
-                  <span class="info-value">
-                    {{ activeConfig.config.model }}
-                  </span>
-                </div>
-                <div class="config-info-item">
-                  <span class="info-label">{{ $t('api.status') }}:</span>
-                  <span
-                    class="info-value"
-                    :class="
-                      activeConfig.config.apiKey ? 'status-ok' : 'status-error'
-                    "
-                  >
-                    {{
-                      activeConfig.config.apiKey
-                        ? $t('api.configured')
-                        : $t('api.notConfigured')
-                    }}
-                  </span>
-                </div>
-
-                <!-- API connection test -->
-                <div class="api-test-section">
-                  <Transition name="fade">
-                    <div
-                      v-if="testResult"
-                      class="test-result"
-                      :class="{
-                        success: testResult.success,
-                        error: !testResult.success,
-                      }"
-                    >
-                      <CheckCircle2Icon
-                        v-if="testResult.success"
-                        class="w-4 h-4"
-                      />
-                      <XCircle v-else class="w-4 h-4" />
-                      <span
-                        class="test-result-message"
-                        :title="testResult.message"
-                      >
-                        {{ testResult.message }}
-                      </span>
-                    </div>
-                  </Transition>
-                  <button
-                    @click="testActiveApiConnection"
-                    :disabled="
-                      isTestingConnection || !activeConfig?.config.apiKey
-                    "
-                    class="test-connection-btn"
-                  >
-                    <div v-if="isTestingConnection" class="spinner"></div>
-                    <ZapIcon v-else class="w-3 h-3" />
-                    <span>
-                      {{
-                        isTestingConnection ? $t('api.testing') : $t('api.test')
-                      }}
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-              <p class="setting-note">
-                {{ $t('api.note') }}
-                <br />
-                {{ $t('api.manageConfig') }}
-              </p>
-            </div>
-          </div>
-        </div>
       </div>
       <div class="save-message-container">
         <span class="save-message" v-if="saveMessage">{{ saveMessage }}</span>
@@ -543,9 +317,8 @@ const openOptionsPage = () => {
       <div class="footer-row floating-footer">
         <div class="footer-row-left flex flex-col items-center">
           <p>
-            {{ $t('footer.slogan') }}
             <span
-              class="text-gray-500 ml-2 cursor-pointer hover:text-blue-500 transition-colors"
+              class="text-gray-500 cursor-pointer hover:text-blue-500 transition-colors"
               @click="hasUpdate ? openAdvancedSettings() : undefined"
               :title="hasUpdate ? $t('footer.clickForUpdate') : ''"
               style="white-space: nowrap"
@@ -884,31 +657,10 @@ header {
 }
 
 .setting-group input,
-.setting-group select {
-  padding: 8px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font-size: 14px;
-  background-color: var(--input-bg-color);
-  color: var(--input-text-color);
-  transition:
-    border-color 0.2s,
-    box-shadow 0.2s;
-  width: 100%;
-  box-sizing: border-box;
-  min-width: 0;
-}
-
-.setting-group input:focus,
-.setting-group select:focus {
+.setting-group input:focus {
   outline: none;
   border-color: var(--primary-color);
   box-shadow: 0 0 0 2px rgba(106, 136, 224, 0.2);
-}
-
-.setting-group select option {
-  color: var(--select-option-text-color);
-  background-color: var(--select-option-bg-color);
 }
 
 .setting-group input[type='range'] {
@@ -939,136 +691,6 @@ header {
   color: var(--label-color);
   margin: 4px 0 0 0;
   font-style: italic;
-}
-
-.api-settings {
-  background: var(--card-bg-color);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.api-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  background: var(--card-bg-color);
-}
-
-.api-header:hover {
-  background: rgba(106, 136, 224, 0.05);
-}
-
-.api-header-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.options-link-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--label-color);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  transition:
-    background-color 0.2s,
-    color 0.2s;
-}
-
-.options-link-btn:hover {
-  color: var(--primary-color);
-}
-
-.api-header span {
-  font-weight: 500;
-  color: var(--text-color);
-}
-
-.toggle-icon {
-  transition: transform 0.2s;
-  color: var(--label-color);
-}
-
-.toggle-icon.is-open {
-  transform: rotate(180deg);
-}
-
-.api-content {
-  padding: 0 16px 16px 16px;
-  border-top: 1px solid var(--border-color);
-}
-
-.sub-setting-group {
-  margin-bottom: 12px;
-}
-
-.sub-setting-group label {
-  display: block;
-  font-size: 11px;
-  font-weight: 500;
-  margin-bottom: 4px;
-  color: var(--text-color);
-}
-
-.sub-setting-group select {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  font-size: 11px;
-  background: var(--input-bg-color);
-  color: var(--text-color);
-  cursor: pointer;
-  transition: border-color 0.2s;
-}
-
-.sub-setting-group select:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px rgba(106, 136, 224, 0.2);
-}
-
-.current-config-info {
-  background: var(--input-bg-color);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 10px;
-  margin: 12px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.config-info-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.info-label {
-  font-size: 12px;
-  color: var(--label-color);
-  font-weight: 500;
-}
-
-.info-value {
-  font-size: 12px;
-  color: var(--text-color);
-}
-
-.status-ok {
-  color: var(--success-color) !important;
-}
-
-.status-error {
-  color: #f44336 !important;
 }
 
 .save-message-container {
@@ -1205,101 +827,6 @@ footer p {
       rgba(30, 30, 30, 0) 100%
     );
   }
-}
-
-.api-test-section {
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border-color);
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.test-connection-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 5px 8px;
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  background: var(--input-bg-color);
-  color: var(--label-color);
-  border: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
-
-.test-connection-btn:not(:disabled):hover {
-  border-color: var(--primary-color);
-  color: var(--primary-color);
-  background: rgba(106, 136, 224, 0.05);
-}
-
-.test-connection-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.spinner {
-  width: 12px;
-  height: 12px;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.75s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.test-result {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  font-size: 12px;
-  border: 1px solid;
-  flex-grow: 1;
-  min-width: 0;
-}
-
-.test-result.success {
-  color: var(--success-color);
-  background-color: rgba(76, 175, 80, 0.1);
-  border-color: rgba(76, 175, 80, 0.2);
-}
-
-.test-result.error {
-  color: #f44336;
-  background-color: rgba(244, 67, 54, 0.1);
-  border-color: rgba(244, 67, 54, 0.2);
-}
-
-.test-result-message {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex-shrink: 1;
-  min-width: 0;
-}
-
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
 }
 
 /* Current site control */
