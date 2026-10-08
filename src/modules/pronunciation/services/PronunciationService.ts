@@ -12,7 +12,12 @@ import { TooltipRenderer, TooltipInteractionController } from '../ui';
 import { PhoneticResult, TTSResult } from '../types';
 import { PronunciationConfig, DEFAULT_PRONUNCIATION_CONFIG } from '../config';
 import { ApiConfigItem } from '../../shared/types/api';
-import { StorageService } from '../../core/storage';
+import {
+  StorageEventData,
+  StorageEventType,
+  StorageService,
+} from '../../core/storage';
+import type { UserSettings } from '../../shared/types/storage';
 import { OriginalWordDisplayMode } from '../../shared/types/core';
 
 export class PronunciationService {
@@ -51,8 +56,19 @@ export class PronunciationService {
       speakTextWithAccent: (text, lang) => this.speakTextWithAccent(text, lang),
     });
 
+    this.storageService.addEventListener(
+      StorageEventType.SETTINGS_CHANGED,
+      this.handleSettingsChanged,
+    );
     void this.updateOriginalWordDisplayMode();
   }
+
+  private readonly handleSettingsChanged = (event: StorageEventData): void => {
+    const settings = event.data as UserSettings | null;
+    this.tooltipRenderer.updateOriginalWordDisplayMode(
+      settings?.originalWordDisplayMode || OriginalWordDisplayMode.VISIBLE,
+    );
+  };
 
   /**
    * Get (and create on first use) the primary TTS provider.
@@ -326,6 +342,10 @@ export class PronunciationService {
   }
 
   destroy(): void {
+    this.storageService.removeEventListener(
+      StorageEventType.SETTINGS_CHANGED,
+      this.handleSettingsChanged,
+    );
     this.tooltipController.destroy();
     this.stopSpeaking();
   }

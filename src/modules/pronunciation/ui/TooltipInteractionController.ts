@@ -15,7 +15,12 @@ import {
 } from '../config';
 import { PhoneticInfo, PronunciationElementData } from '../types';
 import { DOMUtils, PositionUtils, TimerManager } from '../utils';
-import { StorageService } from '../../core/storage';
+import {
+  StorageEventData,
+  StorageEventType,
+  StorageService,
+} from '../../core/storage';
+import type { UserSettings } from '../../shared/types/storage';
 import { TooltipRenderer } from './TooltipRenderer';
 
 type ElementWithPronunciationHandlers = HTMLElement & {
@@ -46,11 +51,18 @@ export class TooltipInteractionController {
   private currentMainElement: HTMLElement | null = null;
   private isCtrlPressed = false;
   private currentlyHoveredData: PronunciationElementData | null = null;
+  // Hotkey requirement cached from settings so hovering never awaits storage
+  private hotkeyRequired = false;
 
   constructor(private readonly options: TooltipInteractionControllerOptions) {
     document.addEventListener('keydown', this.handleDocumentKeyDown);
     document.addEventListener('keyup', this.handleDocumentKeyUp);
     window.addEventListener('blur', this.handleWindowBlur);
+    options.storageService.addEventListener(
+      StorageEventType.SETTINGS_CHANGED,
+      this.handleSettingsChanged,
+    );
+    void this.loadHotkeyConfig();
   }
 
   async register(
@@ -130,7 +142,29 @@ export class TooltipInteractionController {
     document.removeEventListener('keydown', this.handleDocumentKeyDown);
     document.removeEventListener('keyup', this.handleDocumentKeyUp);
     window.removeEventListener('blur', this.handleWindowBlur);
+    this.options.storageService.removeEventListener(
+      StorageEventType.SETTINGS_CHANGED,
+      this.handleSettingsChanged,
+    );
   }
+
+  private async loadHotkeyConfig(): Promise<void> {
+    try {
+      this.applyHotkeySettings(
+        await this.options.storageService.getUserSettings(),
+      );
+    } catch (error) {
+      console.error('Failed to get hotkey config:', error);
+    }
+  }
+
+  private applyHotkeySettings(settings: UserSettings | null): void {
+    this.hotkeyRequired = !!settings?.pronunciationHotkey?.enabled;
+  }
+
+  private readonly handleSettingsChanged = (event: StorageEventData): void => {
+    this.applyHotkeySettings(event.data as UserSettings | null);
+  };
 
   private async preloadPhonetic(
     elementData: PronunciationElementData,
@@ -175,10 +209,12 @@ export class TooltipInteractionController {
     elementData: PronunciationElementData,
   ): void {
     const mouseEnterHandler = async () => {
+      if (!this.options.getConfig().uiConfig.tooltipEnabled) return;
+
       elementData.isMouseOver = true;
       this.currentlyHoveredData = elementData;
 
-      if (!(await this.checkHotkey())) {
+      if (!this.checkHotkey()) {
         return;
       }
       await this.handleMouseEnter(elementData);
@@ -211,20 +247,8 @@ export class TooltipInteractionController {
     delete target.__wxtHandlers;
   }
 
-  private async checkHotkey(): Promise<boolean> {
-    try {
-      const userSettings = await this.options.storageService.getUserSettings();
-      const hotkey = userSettings.pronunciationHotkey;
-
-      if (!hotkey || !hotkey.enabled) {
-        return true;
-      }
-
-      return this.isCtrlPressed;
-    } catch (error) {
-      console.error('Failed to get hotkey config:', error);
-      return true;
-    }
+  private checkHotkey(): boolean {
+    return !this.hotkeyRequired || this.isCtrlPressed;
   }
 
   private async handleMouseEnter(
@@ -670,9 +694,7 @@ export class TooltipInteractionController {
 
     this.isCtrlPressed = true;
 
-    const userSettings = await this.options.storageService.getUserSettings();
-    const hotkey = userSettings.pronunciationHotkey;
-    if (!hotkey || !hotkey.enabled) {
+    if (!this.hotkeyRequired) {
       return;
     }
 

@@ -691,4 +691,135 @@ assert.equal(
 );
 pronunciationService.destroy();
 
+// ------------------------------------------------------------
+// StorageService: in-memory settings cache (illa-helper-ei3.9)
+// ------------------------------------------------------------
+
+{
+  const { StorageService } = await import(
+    '../src/modules/core/storage/StorageService.ts'
+  );
+  const { StorageEventType } = await import(
+    '../src/modules/core/storage/types.ts'
+  );
+  const { DEFAULT_SETTINGS } = await import(
+    '../src/modules/shared/constants/defaults.ts'
+  );
+
+  const originalStorage = globalThis.browser.storage;
+  const syncStore = {};
+  const changeListeners = [];
+  let syncGets = 0;
+  let syncSets = 0;
+  globalThis.browser.storage = {
+    sync: {
+      get: async (key) => {
+        syncGets += 1;
+        return key in syncStore ? { [key]: syncStore[key] } : {};
+      },
+      set: async (items) => {
+        syncSets += 1;
+        Object.assign(syncStore, items);
+      },
+      remove: async (key) => {
+        delete syncStore[key];
+      },
+    },
+    onChanged: {
+      addListener: (listener) => changeListeners.push(listener),
+    },
+  };
+  const emitStorageChange = (key, newValue) => {
+    for (const listener of changeListeners) {
+      listener({ [key]: { newValue } }, 'sync');
+    }
+  };
+
+  try {
+    const defaultsSnapshot = JSON.stringify(DEFAULT_SETTINGS);
+    const service = new StorageService();
+
+    // Concurrent first reads share one storage round-trip and never write
+    const [first, second] = await Promise.all([
+      service.getUserSettings(),
+      service.getUserSettings(),
+    ]);
+    assert.equal(syncGets, 1, 'concurrent first reads are coalesced');
+    assert.equal(syncSets, 0, 'reading defaults must not write');
+    assert.notEqual(first, second, 'each caller receives its own copy');
+    assert.equal(changeListeners.length, 1, 'one storage.onChanged listener');
+
+    // Mutating a returned object must not leak into the cache or the defaults
+    first.apiConfigs.push({ id: 'mutated' });
+    first.multilingualConfig.targetLanguage = 'mutated';
+    const third = await service.getUserSettings();
+    assert.equal(syncGets, 1, 'later reads are served from memory');
+    assert.equal(
+      third.multilingualConfig.targetLanguage,
+      DEFAULT_SETTINGS.multilingualConfig.targetLanguage,
+    );
+    assert.equal(
+      JSON.stringify(DEFAULT_SETTINGS),
+      defaultsSnapshot,
+      'DEFAULT_SETTINGS must never be mutated through getUserSettings()',
+    );
+
+    // A save updates the cache (read-your-writes) and notifies subscribers
+    const changedEvents = [];
+    const onSettingsChanged = (event) => changedEvents.push(event.data);
+    service.addEventListener(
+      StorageEventType.SETTINGS_CHANGED,
+      onSettingsChanged,
+    );
+    third.triggerMode = 'automatic';
+    await service.saveUserSettings(third);
+    assert.equal((await service.getUserSettings()).triggerMode, 'automatic');
+    assert.equal(syncGets, 1, 'saving does not force a re-read');
+    assert.equal(changedEvents.at(-1)?.triggerMode, 'automatic');
+
+    // A write from another context invalidates via storage.onChanged
+    const external = JSON.parse(syncStore.user_settings);
+    external.triggerMode = 'manual';
+    external.apiRequestTimeout = 12345;
+    syncStore.user_settings = JSON.stringify(external);
+    emitStorageChange('user_settings', syncStore.user_settings);
+    assert.equal((await service.getUserSettings()).apiRequestTimeout, 12345);
+    assert.equal(changedEvents.at(-1)?.apiRequestTimeout, 12345);
+
+    // Unrelated keys and areas are ignored
+    const eventsBefore = changedEvents.length;
+    emitStorageChange('website_management', '{}');
+    for (const listener of changeListeners) {
+      listener({ user_settings: { newValue: '{}' } }, 'local');
+    }
+    assert.equal(changedEvents.length, eventsBefore);
+
+    // Removing the key drops the cache; the next read goes back to storage
+    delete syncStore.user_settings;
+    emitStorageChange('user_settings', undefined);
+    const afterRemoval = await service.getUserSettings();
+    assert.equal(syncGets, 2, 'invalidated cache re-reads storage once');
+    assert.equal(
+      afterRemoval.apiRequestTimeout,
+      DEFAULT_SETTINGS.apiRequestTimeout,
+    );
+    service.removeEventListener(
+      StorageEventType.SETTINGS_CHANGED,
+      onSettingsChanged,
+    );
+
+    // Stored data that needs normalisation is migrated exactly once
+    const legacy = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+    delete legacy.lazyLoading;
+    const migratingService = new StorageService();
+    syncStore.user_settings = JSON.stringify(legacy);
+    const setsBefore = syncSets;
+    await migratingService.getUserSettings();
+    await migratingService.getUserSettings();
+    assert.equal(syncSets - setsBefore, 1, 'normalisation writes only once');
+  } finally {
+    globalThis.browser.storage = originalStorage;
+  }
+}
+
 console.log('main regression passed');
