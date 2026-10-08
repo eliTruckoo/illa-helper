@@ -69,9 +69,9 @@ jobs:
         run: |
           echo "🔍 Validating build artifacts..."
           required_files=(
-            ".output/illa-helper-${{ env.VERSION }}-chrome.zip"
-            ".output/illa-helper-${{ env.VERSION }}-firefox.zip"
-            ".output/illa-helper-${{ env.VERSION }}-safari.zip"
+            ".output/elilla-assistant-${{ env.VERSION }}-chrome.zip"
+            ".output/elilla-assistant-${{ env.VERSION }}-firefox.zip"
+            ".output/elilla-assistant-${{ env.VERSION }}-safari.zip"
           )
           for file in "${required_files[@]}"; do
             if [ ! -f "$file" ]; then
@@ -170,9 +170,9 @@ jobs:
             --latest \
             --title "${{ env.VERSION }}" \
             --notes-file release_notes.md \
-            .output/illa-helper-${{ env.VERSION }}-chrome.zip \
-            .output/illa-helper-${{ env.VERSION }}-firefox.zip \
-            .output/illa-helper-${{ env.VERSION }}-safari.zip
+            .output/elilla-assistant-${{ env.VERSION }}-chrome.zip \
+            .output/elilla-assistant-${{ env.VERSION }}-firefox.zip \
+            .output/elilla-assistant-${{ env.VERSION }}-safari.zip
 
       # 10. Release success notification
       - name: 🎉 Release completed

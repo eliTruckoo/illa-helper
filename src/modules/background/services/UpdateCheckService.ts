@@ -255,7 +255,7 @@ export class UpdateCheckService {
       const response = await fetch(this.githubApiUrl, {
         headers: {
           Accept: 'application/vnd.github+json',
-          'User-Agent': 'illa-helper',
+          'User-Agent': 'elilla-assistant',
         },
         cache: 'no-cache',
       });
@@ -348,7 +348,7 @@ export class UpdateCheckService {
       await browser.notifications.create(notificationId, {
         type: 'basic',
         iconUrl: '/icon/128.png',
-        title: '🎉 A new version of illa-helper is available!',
+        title: '🎉 A new version of Elilla Assistant is available!',
         message: `New version v${updateInfo.latestVersion} found (current: v${updateInfo.currentVersion}). Click to view update details.`,
         buttons: [{ title: 'View update' }, { title: 'Remind me later' }],
       });
@@ -399,13 +399,12 @@ export class UpdateCheckService {
         await browser.action.setBadgeText({ text: 'NEW' });
         await browser.action.setBadgeBackgroundColor({ color: '#ff4444' });
         await browser.action.setTitle({
-          title:
-            'Immersive Language Learning Assistant - New version available! Click for details',
+          title: 'Elilla Assistant - New version available! Click for details',
         });
       } else {
         await browser.action.setBadgeText({ text: '' });
         await browser.action.setTitle({
-          title: 'Immersive Language Learning Assistant',
+          title: 'Elilla Assistant',
         });
       }
     } catch (error) {

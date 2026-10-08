@@ -126,7 +126,7 @@ export class InitializationService {
     // Main menu item
     await browser.contextMenus.create({
       id: BACKGROUND_CONSTANTS.MENU_PARENT_ID,
-      title: 'Immersive Language Learning Assistant',
+      title: 'Elilla Assistant',
       contexts: ['page'],
     });
 

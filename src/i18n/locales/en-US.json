@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "illa-helper"
+    "title": "Elilla Assistant"
   },
   "common": {
     "tip": "💡",
@@ -335,11 +335,11 @@
     "daysAgo": "{days} days ago"
   },
   "about": {
-    "title": "About Immersive Language Learning Helper (illa-helper)",
-    "logoAlt": "Immersive Language Learning Helper illa-helper Logo",
-    "appName": "Immersive Language Learning Helper (illa-helper)",
+    "title": "About Elilla Assistant",
+    "logoAlt": "Elilla Assistant Logo",
+    "appName": "Elilla Assistant",
     "version": "Version {version}",
-    "description": "Immersive Language Learning Helper (illa-helper) is a browser extension based on the 'i+1' comprehensible input theory, designed to help you learn foreign languages easily and efficiently during your daily browsing through an immersive translation and pronunciation learning ecosystem.",
+    "description": "Elilla Assistant is a browser extension based on the 'i+1' comprehensible input theory, designed to help you learn foreign languages easily and efficiently during your daily browsing through an immersive translation and pronunciation learning ecosystem.",
     "coreFeatures": "Core Features",
     "features": {
       "smartTranslation": {
@@ -420,7 +420,7 @@
     }
   },
   "options": {
-    "title": "Immersive Language Learning Helper (illa-helper)",
+    "title": "Elilla Assistant",
     "toggleTheme": "Toggle Theme",
     "basic": "Basic",
     "translation": "Translation",

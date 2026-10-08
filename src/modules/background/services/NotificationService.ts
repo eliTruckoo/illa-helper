@@ -64,7 +64,7 @@ export class NotificationService {
   ): Promise<void> {
     const notificationConfig: NotificationConfig = {
       type: 'basic',
-      title: '[Immersive Language Learning Assistant] API configuration error',
+      title: '[Elilla Assistant] API configuration error',
       message:
         'API key is not set. Click the extension icon to open the settings page and configure it.',
       iconUrl: browser.runtime.getURL('/warning.png'),

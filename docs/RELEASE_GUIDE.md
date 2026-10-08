@@ -55,9 +55,9 @@ After the tag is pushed, GitHub Actions automatically:
 ## 📁 Build artifacts
 
 The following files are generated after the build completes:
-- `illa-helper-{version}-chrome.zip` - Chrome extension package
-- `illa-helper-{version}-firefox.zip` - Firefox extension package  
-- `illa-helper-{version}-safari.zip` - Safari extension package
+- `elilla-assistant-{version}-chrome.zip` - Chrome extension package
+- `elilla-assistant-{version}-firefox.zip` - Firefox extension package  
+- `elilla-assistant-{version}-safari.zip` - Safari extension package
 
 ## ⚠️ Notes
 

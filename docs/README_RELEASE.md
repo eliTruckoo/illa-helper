@@ -45,9 +45,9 @@ git push origin v1.8.0
 
 ## Build Artifacts
 
-- `illa-helper-{version}-chrome.zip`
-- `illa-helper-{version}-firefox.zip`
-- `illa-helper-{version}-safari.zip`
+- `elilla-assistant-{version}-chrome.zip`
+- `elilla-assistant-{version}-firefox.zip`
+- `elilla-assistant-{version}-safari.zip`
 
 ---
 
