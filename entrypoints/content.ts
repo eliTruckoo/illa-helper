@@ -9,8 +9,16 @@ export default defineContentScript({
   matches: ['<all_urls>'],
 
   // Main function
-  async main() {
+  async main(ctx) {
     const contentManager = new ContentManager();
+
+    // Tear down observers, listeners, timers and UI when the extension is
+    // reloaded/updated/uninstalled, so orphaned scripts stop working on the page.
+    // No beforeunload/unload handler: it would block the back/forward cache,
+    // and a normally unloading page frees everything anyway.
+    ctx.onInvalidated(() => {
+      contentManager.destroy();
+    });
 
     try {
       await contentManager.init();
@@ -19,10 +27,5 @@ export default defineContentScript({
       // Clean up resources
       contentManager.destroy();
     }
-
-    // Clean up resources on page unload
-    window.addEventListener('beforeunload', () => {
-      contentManager.destroy();
-    });
   },
 });

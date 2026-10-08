@@ -14,7 +14,10 @@ import { ProcessingService } from './services/ProcessingService';
 import { ListenerService } from './services/ListenerService';
 import { IContentManager, ServiceContainer } from './types';
 import { LazyLoadingService } from './services/LazyLoadingService';
-import { ContentSegment } from '../processing/ProcessingStateManager';
+import {
+  ContentSegment,
+  globalProcessingState,
+} from '../processing/ProcessingStateManager';
 import { languageService } from '../core/translation/LanguageService';
 
 /**
@@ -207,35 +210,49 @@ export class ContentManager implements IContentManager {
   private settings?: UserSettings;
   private translationStateManager?: TranslationStateManager;
   private detectedPageLanguage?: string;
+  private destroyed = false;
   constructor() {
     this.configurationService = new ConfigurationService();
   }
 
   /**
    * Initialize the Content Script
+   *
+   * Settings and website rules are both local storage reads and are fetched
+   * in parallel. The enabled/blacklist gate runs before anything else, so a
+   * disabled or blacklisted page never wakes the background service worker
+   * and never constructs the heavy services.
    */
   async init(): Promise<void> {
     try {
-      // Check website rules
-      const websiteStatus = await this.checkWebsiteStatus();
+      const [settings, websiteStatus] = await Promise.all([
+        this.configurationService.getUserSettings(),
+        this.checkWebsiteStatus(),
+      ]);
+
+      if (this.destroyed) return;
+
       if (websiteStatus === 'blacklisted') {
         console.log(
           '[ContentManager] Website is blacklisted, skipping initialization',
         );
+        this.destroy();
         return;
       }
 
-      // Validate config
-      await this.validateConfiguration();
-
-      // Get user settings
-      this.settings = await this.configurationService.getUserSettings();
-      if (!this.settings.isEnabled) {
+      if (!settings.isEnabled) {
         console.log(
           '[ContentManager] Extension is disabled, skipping initialization',
         );
+        this.destroy();
         return;
       }
+
+      this.settings = settings;
+
+      // Validate the API config locally; only an invalid config messages the
+      // background (which shows the once-per-session notification).
+      this.validateConfiguration(settings);
 
       // Handle language detection
       await this.handleLanguageDetection();
@@ -249,6 +266,13 @@ export class ContentManager implements IContentManager {
       // Initialize floating ball
       await this.initializeFloatingBall();
 
+      // The context may have been invalidated while awaiting: tear down
+      // whatever was created after destroy() ran.
+      if (this.destroyed) {
+        this.teardown();
+        return;
+      }
+
       // Set up listeners
       this.setupListeners();
 
@@ -261,16 +285,48 @@ export class ContentManager implements IContentManager {
   }
 
   /**
-   * Destroy services and clean up resources
+   * Destroy services and clean up resources.
+   *
+   * Tears down every observer, listener, timer and UI element owned by this
+   * content script instance. Translations already injected into the page and
+   * the translation styles are left in place so the page keeps rendering.
+   * Idempotent: repeated calls are no-ops.
    */
   destroy(): void {
-    try {
-      this.listenerService?.destroy();
-      this.services?.lazyLoadingService?.destroy();
-      console.log('[ContentManager] Services destroyed');
-    } catch (error) {
-      console.error('[ContentManager] Error while destroying services:', error);
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.teardown();
+  }
+
+  private teardown(): void {
+    const services = this.services;
+    const steps: Array<[string, () => void]> = [
+      ['listener service', () => this.listenerService?.destroy()],
+      [
+        'paragraph translation',
+        () => services?.paragraphTranslationService?.stop(),
+      ],
+      // ProcessingService.destroy() also destroys the lazy loading service;
+      // LazyLoadingService.destroy() is idempotent.
+      ['processing service', () => this.processingService?.destroy()],
+      ['lazy loading', () => services?.lazyLoadingService?.destroy()],
+      [
+        'pronunciation',
+        () => services?.textProcessor?.getPronunciationService?.()?.destroy(),
+      ],
+      ['floating ball', () => services?.floatingBallManager?.destroy()],
+      ['processing state', () => globalProcessingState.destroy()],
+    ];
+
+    for (const [name, step] of steps) {
+      try {
+        step();
+      } catch (error) {
+        console.error(`[ContentManager] Failed to destroy ${name}:`, error);
+      }
     }
+
+    console.log('[ContentManager] Services destroyed');
   }
 
   /**
@@ -302,13 +358,23 @@ export class ContentManager implements IContentManager {
   }
 
   /**
-   * Validate config
+   * Validate the API config from already-loaded settings.
+   * The background is only contacted when the config is invalid, so that it
+   * can show the API configuration notification.
    */
-  private async validateConfiguration(): Promise<void> {
-    await browser.runtime.sendMessage({
-      type: 'validate-configuration',
-      source: 'page_load',
-    });
+  private validateConfiguration(settings: UserSettings): boolean {
+    const isValid = this.configurationService.hasValidApiConfig(settings);
+    if (!isValid) {
+      browser.runtime
+        .sendMessage({
+          type: 'validate-configuration',
+          source: 'page_load',
+        })
+        .catch((error) => {
+          console.warn('[ContentManager] Config validation failed:', error);
+        });
+    }
+    return isValid;
   }
 
   /**
@@ -427,11 +493,16 @@ export class ContentManager implements IContentManager {
       return;
 
     await this.services.floatingBallManager.init(async () => {
-      // Floating ball click state toggle callback
-      const isConfigValid = await browser.runtime.sendMessage({
-        type: 'validate-configuration',
-        source: 'user_action',
-      });
+      // Floating ball click state toggle callback.
+      // Read fresh settings (local storage, no service worker wake-up) and
+      // only ask the background when the config is invalid, so it can notify.
+      const latestSettings = await this.configurationService.getUserSettings();
+      const isConfigValid =
+        this.configurationService.hasValidApiConfig(latestSettings) ||
+        (await browser.runtime.sendMessage({
+          type: 'validate-configuration',
+          source: 'user_action',
+        }));
 
       if (isConfigValid && this.translationStateManager) {
         await this.translationStateManager.toggleTranslationState();
