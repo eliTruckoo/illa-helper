@@ -187,6 +187,25 @@ export class TooltipRenderer {
     meaningElement.style.display = 'block';
   }
 
+  /**
+   * Replace the meaning loader with a static message when the definition
+   * could not be loaded, so the skeleton never stays on screen.
+   */
+  updateTooltipWithMeaningError(
+    tooltip: HTMLElement,
+    message = 'Definition unavailable',
+  ): void {
+    const meaningContainer = tooltip.querySelector('.wxt-meaning-container');
+    if (!meaningContainer) return;
+    // Never overwrite a definition that already arrived
+    if (meaningContainer.querySelector('.wxt-meaning-text')) return;
+
+    meaningContainer.textContent = '';
+    meaningContainer.appendChild(
+      this.createElement('div', 'wxt-meaning-error', message),
+    );
+  }
+
   updateTooltipWithPhonetic(tooltip: HTMLElement, phoneticInfo: any): void {
     const phoneticRow = tooltip.querySelector('.wxt-phonetic-row');
     if (!phoneticRow) return;

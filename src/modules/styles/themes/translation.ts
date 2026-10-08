@@ -56,33 +56,41 @@ export const TRANSLATION_STYLES = `
   border-color: var(--wxt-primary-color);
 }
 
-/* Learning mode style */
-.wxt-translation-term--learning {
-  filter: blur(5px);
-  cursor: pointer;
-  color: var(--wxt-primary-color);
-  transition: filter 0.2s ease-in-out;
-}
-
-.wxt-translation-term--learning:hover {
-  filter: blur(0);
-}
-
-/* Learning mode original text style - enhanced hover support */
+/*
+ * Learning mode: the word is concealed and revealed on hover.
+ * A per-word filter: blur() forces a separate compositing/paint pass for every
+ * word, so the text is hidden with a transparent fill on a solid mask instead.
+ * -webkit-text-fill-color (supported by Chrome and Firefox) is inherited by
+ * nested elements and leaves the page's own color values untouched.
+ */
+.wxt-translation-term--learning,
 .wxt-original-word--learning {
-  filter: blur(5px);
+  -webkit-text-fill-color: transparent;
+  text-shadow: none;
+  background-color: rgba(127, 127, 127, 0.28);
+  border-radius: 3px;
   cursor: pointer;
-  transition: filter 0.2s ease-in-out;
+  transition:
+    background-color 0.2s ease-in-out,
+    -webkit-text-fill-color 0.2s ease-in-out;
 }
 
-.wxt-original-word--learning:hover {
-  filter: blur(0) !important;
+.wxt-translation-term--learning {
+  color: var(--wxt-primary-color);
 }
 
-/* Enhanced hover support for learning mode inside a tags */
-a .wxt-original-word--learning:hover,
+.wxt-translation-term--learning:hover,
+.wxt-original-word--learning:hover,
 a:hover .wxt-original-word--learning {
-  filter: blur(0) !important;
+  -webkit-text-fill-color: currentcolor !important;
+  background-color: transparent !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wxt-translation-term--learning,
+  .wxt-original-word--learning {
+    transition: none;
+  }
 }
 /* Paragraph translation state control */
 .wxt-translation-hidden .illa-paragraph-translation {

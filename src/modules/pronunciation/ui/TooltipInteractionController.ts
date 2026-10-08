@@ -3,6 +3,10 @@
  *
  * This module owns the tooltip's DOM lifecycle, mouse events, hotkey state, and async content updates.
  * PronunciationService only needs to register elements and should not know how the tooltip is shown or hidden.
+ *
+ * Hover detection uses one delegated mouseover/mouseout pair on the document instead of listeners per word,
+ * per-word data lives in a WeakMap (so detached words are garbage collected without unregistering), and only
+ * the currently visible tooltips are tracked.
  */
 
 import { IPhoneticProvider } from '../phonetic';
@@ -15,15 +19,21 @@ import {
 } from '../config';
 import { PhoneticInfo, PronunciationElementData } from '../types';
 import { DOMUtils, PositionUtils, TimerManager } from '../utils';
-import { StorageService } from '../../core/storage';
+import {
+  StorageEventData,
+  StorageEventType,
+  StorageService,
+} from '../../core/storage';
+import type { UserSettings } from '../../shared/types/storage';
 import { TooltipRenderer } from './TooltipRenderer';
 
-type ElementWithPronunciationHandlers = HTMLElement & {
-  __wxtHandlers?: {
-    mouseEnterHandler: () => Promise<void>;
-    mouseLeaveHandler: () => void;
-  };
-};
+const PRONUNCIATION_SELECTOR = `.${CSS_CLASSES.PRONUNCIATION_ENABLED}`;
+
+// Timer keys: there is at most one main tooltip and one nested word tooltip at a time
+const MAIN_SHOW_TIMER = 'main-show';
+const MAIN_HIDE_TIMER = 'main-hide';
+const WORD_SHOW_TIMER = 'word-show';
+const WORD_HIDE_TIMER = 'word-hide';
 
 export interface TooltipInteractionControllerOptions {
   getConfig: () => PronunciationConfig;
@@ -36,21 +46,37 @@ export interface TooltipInteractionControllerOptions {
 }
 
 export class TooltipInteractionController {
-  private readonly elementDataMap = new Map<
+  private readonly elementData = new WeakMap<
     HTMLElement,
     PronunciationElementData
   >();
   private readonly timerManager = new TimerManager();
 
+  // The main tooltip currently in the DOM (if any) and the word it belongs to
+  private activeMainData: PronunciationElementData | null = null;
   private currentWordTooltip: HTMLElement | null = null;
-  private currentMainElement: HTMLElement | null = null;
   private isCtrlPressed = false;
   private currentlyHoveredData: PronunciationElementData | null = null;
+  // Hotkey requirement cached from settings so hovering never awaits storage
+  private hotkeyRequired = false;
 
   constructor(private readonly options: TooltipInteractionControllerOptions) {
+    document.addEventListener('mouseover', this.handleDocumentMouseOver, {
+      capture: true,
+      passive: true,
+    });
+    document.addEventListener('mouseout', this.handleDocumentMouseOut, {
+      capture: true,
+      passive: true,
+    });
     document.addEventListener('keydown', this.handleDocumentKeyDown);
     document.addEventListener('keyup', this.handleDocumentKeyUp);
     window.addEventListener('blur', this.handleWindowBlur);
+    options.storageService.addEventListener(
+      StorageEventType.SETTINGS_CHANGED,
+      this.handleSettingsChanged,
+    );
+    void this.loadHotkeyConfig();
   }
 
   async register(
@@ -59,11 +85,9 @@ export class TooltipInteractionController {
     _isPhrase?: boolean,
   ): Promise<boolean> {
     try {
-      if (!element || !word || this.elementDataMap.has(element)) {
+      if (!element || !word || this.elementData.has(element)) {
         return false;
       }
-
-      DOMUtils.addUniqueId(element);
 
       const elementData: PronunciationElementData = {
         word: word.toLowerCase().trim(),
@@ -75,14 +99,13 @@ export class TooltipInteractionController {
         elementData.originalText = originalText;
       }
 
-      this.elementDataMap.set(element, elementData);
+      this.elementData.set(element, elementData);
       element.classList.add(CSS_CLASSES.PRONUNCIATION_ENABLED);
 
       if (this.options.getConfig().uiConfig.inlineDisplay) {
         await this.preloadPhonetic(elementData);
       }
 
-      this.attachElementEventListeners(element, elementData);
       return true;
     } catch (error) {
       console.error('Failed to add pronunciation feature:', error);
@@ -91,20 +114,15 @@ export class TooltipInteractionController {
   }
 
   unregister(element: HTMLElement): void {
-    const elementData = this.elementDataMap.get(element);
+    const elementData = this.elementData.get(element);
     if (!elementData) return;
 
-    this.removeElementEventListeners(element);
-
-    const elementKey = DOMUtils.getElementKey(element);
-    this.timerManager.clear(`hide-${elementKey}`);
-    this.timerManager.clear(`show-${elementKey}`);
-
-    elementData.tooltip?.remove();
-    elementData.tooltip = undefined;
-
-    if (this.currentMainElement === element) {
-      this.currentMainElement = null;
+    if (this.activeMainData === elementData) {
+      this.hideMainTooltip();
+    }
+    if (this.currentlyHoveredData === elementData) {
+      this.currentlyHoveredData = null;
+      this.timerManager.clear(MAIN_SHOW_TIMER);
     }
 
     element.classList.remove(
@@ -112,25 +130,54 @@ export class TooltipInteractionController {
       CSS_CLASSES.PRONUNCIATION_LOADING,
     );
 
-    this.elementDataMap.delete(element);
+    this.elementData.delete(element);
   }
 
   destroy(): void {
     this.timerManager.clearAll();
-    this.currentWordTooltip?.remove();
-    this.currentWordTooltip = null;
-    this.currentMainElement = null;
+    this.hideWordTooltipElement();
+    this.hideMainTooltip();
+    this.currentlyHoveredData = null;
+    // Safety net for tooltips left behind by a previous instance (one-off cost)
     DOMUtils.cleanupElements('.wxt-pronunciation-tooltip, .wxt-word-tooltip');
 
-    for (const element of Array.from(this.elementDataMap.keys())) {
-      this.unregister(element);
-    }
-    this.elementDataMap.clear();
+    // Registered words are only reachable through the DOM (WeakMap keys)
+    document.querySelectorAll(PRONUNCIATION_SELECTOR).forEach((element) => {
+      this.unregister(element as HTMLElement);
+    });
 
+    document.removeEventListener('mouseover', this.handleDocumentMouseOver, {
+      capture: true,
+    });
+    document.removeEventListener('mouseout', this.handleDocumentMouseOut, {
+      capture: true,
+    });
     document.removeEventListener('keydown', this.handleDocumentKeyDown);
     document.removeEventListener('keyup', this.handleDocumentKeyUp);
     window.removeEventListener('blur', this.handleWindowBlur);
+    this.options.storageService.removeEventListener(
+      StorageEventType.SETTINGS_CHANGED,
+      this.handleSettingsChanged,
+    );
   }
+
+  private async loadHotkeyConfig(): Promise<void> {
+    try {
+      this.applyHotkeySettings(
+        await this.options.storageService.getUserSettings(),
+      );
+    } catch (error) {
+      console.error('Failed to get hotkey config:', error);
+    }
+  }
+
+  private applyHotkeySettings(settings: UserSettings | null): void {
+    this.hotkeyRequired = !!settings?.pronunciationHotkey?.enabled;
+  }
+
+  private readonly handleSettingsChanged = (event: StorageEventData): void => {
+    this.applyHotkeySettings(event.data as UserSettings | null);
+  };
 
   private async preloadPhonetic(
     elementData: PronunciationElementData,
@@ -170,84 +217,136 @@ export class TooltipInteractionController {
     );
   }
 
-  private attachElementEventListeners(
-    element: HTMLElement,
-    elementData: PronunciationElementData,
-  ): void {
-    const mouseEnterHandler = async () => {
-      elementData.isMouseOver = true;
-      this.currentlyHoveredData = elementData;
+  // ==================== Delegated hover handling ====================
 
-      if (!(await this.checkHotkey())) {
-        return;
-      }
-      await this.handleMouseEnter(elementData);
-    };
-
-    const mouseLeaveHandler = () => {
-      elementData.isMouseOver = false;
-      if (this.currentlyHoveredData?.element === element) {
-        this.currentlyHoveredData = null;
-      }
-      this.handleMouseLeave(elementData);
-    };
-
-    element.addEventListener('mouseenter', mouseEnterHandler);
-    element.addEventListener('mouseleave', mouseLeaveHandler);
-
-    (element as ElementWithPronunciationHandlers).__wxtHandlers = {
-      mouseEnterHandler,
-      mouseLeaveHandler,
-    };
-  }
-
-  private removeElementEventListeners(element: HTMLElement): void {
-    const target = element as ElementWithPronunciationHandlers;
-    const handlers = target.__wxtHandlers;
-    if (!handlers) return;
-
-    element.removeEventListener('mouseenter', handlers.mouseEnterHandler);
-    element.removeEventListener('mouseleave', handlers.mouseLeaveHandler);
-    delete target.__wxtHandlers;
-  }
-
-  private async checkHotkey(): Promise<boolean> {
-    try {
-      const userSettings = await this.options.storageService.getUserSettings();
-      const hotkey = userSettings.pronunciationHotkey;
-
-      if (!hotkey || !hotkey.enabled) {
-        return true;
-      }
-
-      return this.isCtrlPressed;
-    } catch (error) {
-      console.error('Failed to get hotkey config:', error);
-      return true;
+  /**
+   * Resolve the registered pronunciation word that contains an event target.
+   */
+  private findRegisteredElement(
+    target: EventTarget | null,
+  ): PronunciationElementData | null {
+    if (!target || typeof (target as Element).closest !== 'function') {
+      return null;
     }
+    const element = (target as Element).closest(PRONUNCIATION_SELECTOR);
+    if (!element) return null;
+    return this.elementData.get(element as HTMLElement) ?? null;
   }
 
-  private async handleMouseEnter(
-    elementData: PronunciationElementData,
-  ): Promise<void> {
+  private readonly handleDocumentMouseOver = (event: MouseEvent): void => {
+    // A visible tooltip whose word was removed from the page is stale
+    if (this.activeMainData && !this.activeMainData.element.isConnected) {
+      this.hideWordTooltipElement();
+      this.hideMainTooltip();
+    }
+
     if (!this.options.getConfig().uiConfig.tooltipEnabled) return;
 
-    const elementKey = DOMUtils.getElementKey(elementData.element);
-    this.timerManager.clear(`hide-${elementKey}`);
-    this.timerManager.clear(`show-${elementKey}`);
+    const hovered = this.currentlyHoveredData;
+    // Fast path: still inside the word that is already hovered
+    if (
+      hovered &&
+      event.target instanceof Node &&
+      hovered.element.contains(event.target)
+    ) {
+      return;
+    }
+
+    const elementData = this.findRegisteredElement(event.target);
+    if (!elementData || elementData === hovered) return;
+
+    if (hovered) {
+      this.handleWordLeave(hovered);
+    }
+    this.handleWordEnter(elementData);
+  };
+
+  private readonly handleDocumentMouseOut = (event: MouseEvent): void => {
+    const hovered = this.currentlyHoveredData;
+    if (!hovered) return;
+
+    const related = event.relatedTarget;
+    // Moving between children of the same word is not a leave
+    if (related instanceof Node && hovered.element.contains(related)) {
+      return;
+    }
+    if (
+      !(event.target instanceof Node) ||
+      !hovered.element.contains(event.target)
+    ) {
+      return;
+    }
+
+    this.handleWordLeave(hovered);
+  };
+
+  private handleWordEnter(elementData: PronunciationElementData): void {
+    elementData.isMouseOver = true;
+    this.currentlyHoveredData = elementData;
+
+    if (!this.checkHotkey()) {
+      return;
+    }
+    this.scheduleShowMainTooltip(elementData);
+  }
+
+  private handleWordLeave(elementData: PronunciationElementData): void {
+    elementData.isMouseOver = false;
+    if (this.currentlyHoveredData === elementData) {
+      this.currentlyHoveredData = null;
+    }
+
+    this.timerManager.clear(MAIN_SHOW_TIMER);
+    // Whatever tooltip is visible times out unless the pointer reaches it
+    this.scheduleHideMainTooltip();
+  }
+
+  private checkHotkey(): boolean {
+    return !this.hotkeyRequired || this.isCtrlPressed;
+  }
+
+  private scheduleShowMainTooltip(elementData: PronunciationElementData): void {
+    if (!this.options.getConfig().uiConfig.tooltipEnabled) return;
+
+    // Re-entering the word whose tooltip is still visible just keeps it open
+    if (
+      this.activeMainData === elementData &&
+      elementData.tooltip?.isConnected
+    ) {
+      this.timerManager.clear(MAIN_HIDE_TIMER);
+      return;
+    }
 
     this.timerManager.set(
-      `show-${elementKey}`,
+      MAIN_SHOW_TIMER,
       () => {
-        void this.showMainTooltipWithAsyncContent(elementData);
+        if (!elementData.element.isConnected) return;
+        this.showMainTooltipWithAsyncContent(elementData);
       },
       TIMER_CONSTANTS.SHOW_DELAY,
     );
   }
 
-  private async showMainTooltipWithAsyncContent(
+  private scheduleHideMainTooltip(): void {
+    const elementData = this.activeMainData;
+    if (!elementData) return;
+
+    this.timerManager.set(
+      MAIN_HIDE_TIMER,
+      () => {
+        if (!this.currentWordTooltip && this.activeMainData === elementData) {
+          this.hideMainTooltip();
+        }
+      },
+      TIMER_CONSTANTS.HIDE_DELAY,
+    );
+  }
+
+  // ==================== Main tooltip ====================
+
+  private showMainTooltipWithAsyncContent(
     elementData: PronunciationElementData,
-  ): Promise<void> {
+  ): void {
     const words = DOMUtils.extractWords(elementData.word);
     const isPhrase = words.length > 1;
 
@@ -274,31 +373,14 @@ export class TooltipInteractionController {
     }
   }
 
-  private handleMouseLeave(elementData: PronunciationElementData): void {
-    const elementKey = DOMUtils.getElementKey(elementData.element);
-    this.timerManager.clear(`show-${elementKey}`);
-
-    this.timerManager.set(
-      `hide-${elementKey}`,
-      () => {
-        if (!this.currentWordTooltip) {
-          this.hideTooltip(elementData);
-        }
-      },
-      TIMER_CONSTANTS.HIDE_DELAY,
-    );
-  }
-
   private showTooltip(elementData: PronunciationElementData): void {
-    this.cleanupOtherTooltips(elementData.element);
-    this.hideWordTooltip();
+    this.hideWordTooltipElement();
+    this.hideMainTooltip();
 
     const words = DOMUtils.extractWords(elementData.word);
     if (words.length <= 1 && !elementData.phonetic) {
       elementData.phonetic = this.createEmptyPhoneticInfo(elementData.word);
     }
-
-    elementData.tooltip?.remove();
 
     const tooltip = this.createTooltip(elementData);
     elementData.tooltip = tooltip;
@@ -306,45 +388,17 @@ export class TooltipInteractionController {
 
     PositionUtils.positionTooltip(elementData.element, tooltip);
 
-    this.currentMainElement = elementData.element;
+    this.activeMainData = elementData;
   }
 
-  private hideTooltip(elementData: PronunciationElementData): void {
+  private hideMainTooltip(): void {
+    this.timerManager.clear(MAIN_HIDE_TIMER);
+    const elementData = this.activeMainData;
+    if (!elementData) return;
+
     elementData.tooltip?.remove();
     elementData.tooltip = undefined;
-
-    if (this.currentMainElement === elementData.element) {
-      this.currentMainElement = null;
-    }
-  }
-
-  private cleanupOtherTooltips(currentElement: HTMLElement): void {
-    for (const [element, elementData] of this.elementDataMap.entries()) {
-      if (element !== currentElement && elementData.tooltip) {
-        const elementKey = DOMUtils.getElementKey(element);
-        this.timerManager.clear(`hide-${elementKey}`);
-        this.timerManager.clear(`show-${elementKey}`);
-
-        elementData.tooltip.remove();
-        elementData.tooltip = undefined;
-      }
-    }
-
-    this.timerManager.clear('word-show');
-    this.timerManager.clear('word-hide');
-    this.currentMainElement = null;
-
-    DOMUtils.cleanupElements('.wxt-pronunciation-tooltip, .wxt-word-tooltip');
-  }
-
-  private forceCleanupWordTooltips(): void {
-    this.timerManager.clear('word-show');
-    this.timerManager.clear('word-hide');
-
-    this.currentWordTooltip?.remove();
-    this.currentWordTooltip = null;
-
-    DOMUtils.cleanupElements('.wxt-word-tooltip');
+    this.activeMainData = null;
   }
 
   private createTooltip(elementData: PronunciationElementData): HTMLElement {
@@ -358,7 +412,7 @@ export class TooltipInteractionController {
 
     const words = DOMUtils.extractWords(elementData.word);
     if (words.length > 1) {
-      this.setupWordInteractions(tooltip, words);
+      this.setupWordInteractions(tooltip);
     }
 
     return tooltip;
@@ -368,22 +422,13 @@ export class TooltipInteractionController {
     tooltip: HTMLElement,
     elementData: PronunciationElementData,
   ): void {
-    const elementKey = DOMUtils.getElementKey(elementData.element);
-
+    // These listeners live on the tooltip itself and are released with it
     tooltip.addEventListener('mouseenter', () => {
-      this.timerManager.clear(`hide-${elementKey}`);
+      this.timerManager.clear(MAIN_HIDE_TIMER);
     });
 
     tooltip.addEventListener('mouseleave', () => {
-      this.timerManager.set(
-        `hide-${elementKey}`,
-        () => {
-          if (!this.currentWordTooltip) {
-            this.hideTooltip(elementData);
-          }
-        },
-        TIMER_CONSTANTS.HIDE_DELAY,
-      );
+      this.scheduleHideMainTooltip();
     });
 
     const audioBtn = tooltip.querySelector('.wxt-audio-btn');
@@ -393,7 +438,9 @@ export class TooltipInteractionController {
     });
   }
 
-  private setupWordInteractions(tooltip: HTMLElement, words: string[]): void {
+  // ==================== Nested word tooltip (phrases) ====================
+
+  private setupWordInteractions(tooltip: HTMLElement): void {
     const wordElements = tooltip.querySelectorAll('.wxt-interactive-word');
 
     wordElements.forEach((wordElement) => {
@@ -401,24 +448,24 @@ export class TooltipInteractionController {
       if (!word) return;
 
       wordElement.addEventListener('mouseenter', () => {
-        this.timerManager.clear('word-hide');
-        this.timerManager.clear('word-show');
+        this.timerManager.clear(WORD_HIDE_TIMER);
+        this.timerManager.clear(WORD_SHOW_TIMER);
         this.hideWordTooltip();
 
         this.timerManager.set(
-          'word-show',
+          WORD_SHOW_TIMER,
           () => {
-            void this.showWordTooltip(wordElement as HTMLElement, word);
+            this.showWordTooltip(wordElement as HTMLElement, word);
           },
           TIMER_CONSTANTS.WORD_SHOW_DELAY,
         );
       });
 
       wordElement.addEventListener('mouseleave', () => {
-        this.timerManager.clear('word-show');
+        this.timerManager.clear(WORD_SHOW_TIMER);
 
         this.timerManager.set(
-          'word-hide',
+          WORD_HIDE_TIMER,
           () => {
             this.hideWordTooltip();
           },
@@ -428,13 +475,12 @@ export class TooltipInteractionController {
     });
   }
 
-  private async showWordTooltip(
-    wordElement: HTMLElement,
-    word: string,
-  ): Promise<void> {
+  private showWordTooltip(wordElement: HTMLElement, word: string): void {
     try {
-      this.forceCleanupWordTooltips();
-      this.cancelAllMainTooltipHideTimers();
+      if (!wordElement.isConnected) return;
+
+      this.hideWordTooltipElement();
+      this.timerManager.clear(MAIN_HIDE_TIMER);
 
       const wordTooltip = document.createElement('div');
       wordTooltip.className = 'wxt-word-tooltip';
@@ -489,14 +535,14 @@ export class TooltipInteractionController {
 
     wordTooltip.addEventListener('mouseenter', (event) => {
       event.stopPropagation();
-      this.timerManager.clear('word-hide');
-      this.cancelAllMainTooltipHideTimers();
+      this.timerManager.clear(WORD_HIDE_TIMER);
+      this.timerManager.clear(MAIN_HIDE_TIMER);
     });
 
     wordTooltip.addEventListener('mouseleave', (event) => {
       event.stopPropagation();
       this.timerManager.set(
-        'word-hide',
+        WORD_HIDE_TIMER,
         () => {
           this.hideWordTooltip();
         },
@@ -504,6 +550,29 @@ export class TooltipInteractionController {
       );
     });
   }
+
+  /**
+   * Remove the nested word tooltip without touching the main tooltip timers.
+   */
+  private hideWordTooltipElement(): void {
+    this.timerManager.clear(WORD_SHOW_TIMER);
+    this.timerManager.clear(WORD_HIDE_TIMER);
+    this.currentWordTooltip?.remove();
+    this.currentWordTooltip = null;
+  }
+
+  /**
+   * Hide the nested word tooltip and let the main tooltip time out again.
+   */
+  private hideWordTooltip(): void {
+    if (!this.currentWordTooltip) return;
+
+    this.currentWordTooltip.remove();
+    this.currentWordTooltip = null;
+    this.scheduleHideMainTooltip();
+  }
+
+  // ==================== Async content ====================
 
   private async loadPhoneticForMainTooltip(
     elementData: PronunciationElementData,
@@ -543,6 +612,11 @@ export class TooltipInteractionController {
         elementData.word,
       );
       if (!meaningResult.success || !meaningResult.data) {
+        if (elementData.tooltip) {
+          this.options.renderer.updateTooltipWithMeaningError(
+            elementData.tooltip,
+          );
+        }
         return;
       }
 
@@ -557,6 +631,11 @@ export class TooltipInteractionController {
       }
     } catch (error) {
       console.error('Failed to get AI translation:', error);
+      if (elementData.tooltip) {
+        this.options.renderer.updateTooltipWithMeaningError(
+          elementData.tooltip,
+        );
+      }
     }
   }
 
@@ -584,18 +663,21 @@ export class TooltipInteractionController {
     try {
       const meaningResult =
         await this.options.translationProvider.getMeaning(word);
-      if (
-        meaningResult.success &&
-        meaningResult.data &&
-        this.currentWordTooltip === wordTooltip
-      ) {
+      if (this.currentWordTooltip !== wordTooltip) return;
+
+      if (meaningResult.success && meaningResult.data) {
         this.options.renderer.updateTooltipWithMeaning(
           wordTooltip,
           meaningResult.data.explain,
         );
+      } else {
+        this.options.renderer.updateTooltipWithMeaningError(wordTooltip);
       }
     } catch (error) {
       console.error('Failed to get word tooltip definition:', error);
+      if (this.currentWordTooltip === wordTooltip) {
+        this.options.renderer.updateTooltipWithMeaningError(wordTooltip);
+      }
     }
   }
 
@@ -629,56 +711,23 @@ export class TooltipInteractionController {
     };
   }
 
-  private cancelAllMainTooltipHideTimers(): void {
-    for (const [element] of this.elementDataMap.entries()) {
-      this.timerManager.clear(`hide-${DOMUtils.getElementKey(element)}`);
-    }
-  }
+  // ==================== Hotkey ====================
 
-  private restartMainTooltipHideTimer(): void {
-    if (!this.currentMainElement) return;
-
-    const elementData = this.elementDataMap.get(this.currentMainElement);
-    if (!elementData) return;
-
-    const elementKey = DOMUtils.getElementKey(this.currentMainElement);
-    this.timerManager.set(
-      `hide-${elementKey}`,
-      () => {
-        if (!this.currentWordTooltip) {
-          this.hideTooltip(elementData);
-        }
-      },
-      TIMER_CONSTANTS.HIDE_DELAY,
-    );
-  }
-
-  private hideWordTooltip(): void {
-    if (!this.currentWordTooltip) return;
-
-    this.currentWordTooltip.remove();
-    this.currentWordTooltip = null;
-    this.restartMainTooltipHideTimer();
-  }
-
-  private readonly handleDocumentKeyDown = async (
-    event: KeyboardEvent,
-  ): Promise<void> => {
+  private readonly handleDocumentKeyDown = (event: KeyboardEvent): void => {
     if (event.key !== 'Control' || this.isCtrlPressed) {
       return;
     }
 
     this.isCtrlPressed = true;
 
-    const userSettings = await this.options.storageService.getUserSettings();
-    const hotkey = userSettings.pronunciationHotkey;
-    if (!hotkey || !hotkey.enabled) {
+    if (!this.hotkeyRequired) {
       return;
     }
 
-    if (this.currentlyHoveredData) {
+    const hovered = this.currentlyHoveredData;
+    if (hovered && hovered.element.isConnected) {
       event.preventDefault();
-      await this.handleMouseEnter(this.currentlyHoveredData);
+      this.scheduleShowMainTooltip(hovered);
     }
   };
 

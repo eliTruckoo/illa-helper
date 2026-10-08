@@ -27,34 +27,7 @@ export const BASE_STYLES = `
   vertical-align: baseline;
 }
 
-/* Learning mode styles */
-.wxt-translation-term--learning {
-  filter: blur(5px);
-  cursor: pointer;
-  color: var(--wxt-primary-color);
-  transition: filter 0.2s ease-in-out;
-}
-
-.wxt-translation-term--learning:hover {
-  filter: blur(0);
-}
-
-/* Learning mode original text styles - enhanced hover support */
-.wxt-original-word--learning {
-  filter: blur(5px);
-  cursor: pointer;
-  transition: filter 0.2s ease-in-out;
-}
-
-.wxt-original-word--learning:hover {
-  filter: blur(0) !important;
-}
-
-/* Enhanced hover support for learning mode inside a tags */
-a .wxt-original-word--learning:hover,
-a:hover .wxt-original-word--learning {
-  filter: blur(0) !important;
-}
+/* Learning mode styles live in themes/translation.ts */
 
 /* Phrase translation two-layer interaction styles */
 .wxt-has-word-overlay {
@@ -129,10 +102,42 @@ button.wxt-processing *,
   }
 }
 
-/* Animation definitions */
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+/* Animation definitions (all keyframes are wxt-prefixed to avoid clashing with page styles) */
+@keyframes wxt-glow-animation {
+  from {
+    background-color: rgba(106, 136, 224, 0.3);
+    box-shadow: 0 0 8px rgba(106, 136, 224, 0.5);
+  }
+  to {
+    background-color: transparent;
+    box-shadow: 0 0 0 transparent;
+  }
+}
+
+@keyframes wxt-processing-animation {
+  0% { background-color: rgba(106, 136, 224, 0.1); }
+  50% { background-color: rgba(106, 136, 224, 0.3); }
+  100% { background-color: rgba(106, 136, 224, 0.1); }
+}
+
+/* Brief highlight after a segment has been translated */
+.wxt-glow {
+  animation: wxt-glow-animation 0.8s ease-out;
+  border-radius: 3px;
+}
+
+/* Pulse while a segment is being translated (removed when processing ends) */
+.wxt-processing {
+  animation: wxt-processing-animation 2s infinite ease-in-out;
+  border-radius: 3px;
+  transition: background-color 0.3s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wxt-glow,
+  .wxt-processing {
+    animation: none !important;
+  }
 }
 
 /* ===== Translation state control system ===== */

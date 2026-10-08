@@ -30,7 +30,7 @@ export const STYLE_VARS = {
  */
 export const ANIMATIONS = {
   TOOLTIP_APPEAR: 'wxt-tooltip-appear 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-  SPIN: 'spin 1s linear infinite',
+  SPIN: 'wxt-spin 1s linear infinite',
   TRANSITION_FAST: '0.2s ease',
   TRANSITION_SMOOTH: '0.2s cubic-bezier(0.4, 0, 0.2, 1)',
 } as const;

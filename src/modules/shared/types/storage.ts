@@ -44,6 +44,8 @@ export interface UserSettings {
   showParentheses: boolean;
   // Added: API request timeout configuration
   apiRequestTimeout: number; // in milliseconds
+  // One-time migration marker: stored 0 (old default) was moved to the 30 s default
+  apiTimeoutMigrated?: boolean;
   // Added: custom translation style CSS
   customTranslationCSS: string;
   // Added: lazy loading configuration

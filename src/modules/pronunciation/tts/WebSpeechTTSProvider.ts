@@ -9,10 +9,15 @@ import { TTSResult } from '../types';
 export class WebSpeechTTSProvider implements ITTSProvider {
   readonly name = 'web-speech';
 
+  /** How long to wait for the asynchronous voice list before speaking anyway */
+  private static readonly VOICE_LOAD_TIMEOUT_MS = 1000;
+
   private config: TTSProviderConfig;
-  private synthesis: SpeechSynthesis;
+  // Resolved lazily: touching speechSynthesis can start the platform speech
+  // backend (speech-dispatcher on Linux), so it must not happen on page load.
+  private synthesis: SpeechSynthesis | null = null;
   private voices: SpeechSynthesisVoice[] = [];
-  private isInitialized = false;
+  private voicesLoading: Promise<void> | null = null;
   private currentUtterance: SpeechSynthesisUtterance | null = null;
 
   constructor(config: TTSProviderConfig = {}) {
@@ -23,46 +28,58 @@ export class WebSpeechTTSProvider implements ITTSProvider {
       volume: 1.0,
       ...config,
     };
-    this.synthesis = window.speechSynthesis;
-    this.initialize();
   }
 
   /**
-   * Initialize the TTS service
+   * Get the speech synthesis object, touching it only on first real use
    */
-  private async initialize(): Promise<void> {
-    if (this.isInitialized) return;
+  private getSynthesis(): SpeechSynthesis {
+    if (!this.synthesis) {
+      this.synthesis = window.speechSynthesis;
+    }
+    return this.synthesis;
+  }
 
-    // Wait for the voice list to load
-    await this.loadVoices();
-    this.isInitialized = true;
+  /**
+   * Load the voice list once (some browsers populate it asynchronously)
+   */
+  private ensureVoicesLoaded(): Promise<void> {
+    if (!this.voicesLoading) {
+      this.voicesLoading = this.loadVoices(this.getSynthesis());
+    }
+    return this.voicesLoading;
   }
 
   /**
    * Load available voices
    */
-  private loadVoices(): Promise<void> {
+  private loadVoices(synthesis: SpeechSynthesis): Promise<void> {
     return new Promise((resolve) => {
-      const loadVoicesHandler = () => {
-        this.voices = this.synthesis.getVoices();
+      this.voices = synthesis.getVoices();
+      if (this.voices.length > 0) {
+        resolve();
+        return;
+      }
+
+      const finish = () => {
+        synthesis.removeEventListener('voiceschanged', handleVoicesChanged);
+        clearTimeout(timeoutId);
+        resolve();
+      };
+      const handleVoicesChanged = () => {
+        this.voices = synthesis.getVoices();
         if (this.voices.length > 0) {
-          resolve();
+          finish();
         }
       };
 
-      // Some browsers load voices asynchronously
-      if (this.synthesis.getVoices().length > 0) {
-        loadVoicesHandler();
-      } else {
-        this.synthesis.onvoiceschanged = loadVoicesHandler;
-        // Set a timeout to avoid waiting forever
-        setTimeout(() => {
-          if (this.voices.length === 0) {
-            this.voices = this.synthesis.getVoices();
-          }
-          resolve();
-        }, 1000);
-      }
+      // Use addEventListener so a page-owned onvoiceschanged handler is not overwritten
+      synthesis.addEventListener('voiceschanged', handleVoicesChanged);
+      // Do not wait forever for voices that may never arrive
+      const timeoutId = setTimeout(() => {
+        this.voices = synthesis.getVoices();
+        finish();
+      }, WebSpeechTTSProvider.VOICE_LOAD_TIMEOUT_MS);
     });
   }
 
@@ -78,8 +95,11 @@ export class WebSpeechTTSProvider implements ITTSProvider {
         };
       }
 
-      // Ensure initialized
-      await this.initialize();
+      // Ensure the voice list is loaded (first use initialises speech synthesis)
+      await this.ensureVoicesLoaded();
+      if (this.voices.length === 0) {
+        this.voices = this.getSynthesis().getVoices();
+      }
 
       // Stop current speech
       this.stop();
@@ -111,13 +131,19 @@ export class WebSpeechTTSProvider implements ITTSProvider {
 
         utterance.onerror = (event) => {
           this.currentUtterance = null;
+          // cancel() from stop() reports interrupted/canceled: not a failure
+          // that should trigger a fallback provider
+          if (event.error === 'interrupted' || event.error === 'canceled') {
+            resolve({ success: true, stopped: true });
+            return;
+          }
           resolve({
             success: false,
             error: `Speech failed: ${event.error}`,
           });
         };
 
-        this.synthesis.speak(utterance);
+        this.getSynthesis().speak(utterance);
       });
     } catch (error) {
       this.currentUtterance = null;
@@ -129,14 +155,15 @@ export class WebSpeechTTSProvider implements ITTSProvider {
   }
 
   stop(): void {
-    if (this.synthesis.speaking) {
+    // Never initialise speech synthesis just to stop it
+    if (this.synthesis?.speaking) {
       this.synthesis.cancel();
     }
     this.currentUtterance = null;
   }
 
   isSpeaking(): boolean {
-    return this.synthesis.speaking;
+    return this.synthesis?.speaking ?? false;
   }
 
   isAvailable(): boolean {

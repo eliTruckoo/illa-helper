@@ -12,6 +12,8 @@ export class YoudaoTTSProvider implements ITTSProvider {
 
   private config: TTSProviderConfig;
   private currentAudio: HTMLAudioElement | null = null;
+  // Resolver of the speak() call that is still playing/loading
+  private settlePending: ((result: TTSResult) => void) | null = null;
 
   constructor(config: TTSProviderConfig = {}) {
     this.config = {
@@ -53,88 +55,68 @@ export class YoudaoTTSProvider implements ITTSProvider {
       return new Promise((resolve) => {
         let isResolved = false;
 
+        // Settle exactly once and release the audio element
+        const settle = (result: TTSResult) => {
+          if (isResolved) return;
+          isResolved = true;
+          clearTimeout(timeout);
+          this.detachAudioHandlers(audio);
+          if (this.currentAudio === audio) {
+            this.currentAudio = null;
+          }
+          if (this.settlePending === settle) {
+            this.settlePending = null;
+          }
+          resolve(result);
+        };
+        this.settlePending = settle;
+
         // Set a timeout to prevent waiting forever
         const timeout = setTimeout(() => {
-          if (!isResolved) {
-            isResolved = true;
-            this.currentAudio = null;
-            resolve({
-              success: false,
-              error: 'Youdao speech loading timed out',
-            });
-          }
+          this.releaseAudio(audio);
+          settle({
+            success: false,
+            error: 'Youdao speech loading timed out',
+          });
         }, TIMER_CONSTANTS.YOUDAO_TIMEOUT); // Youdao TTS timeout
 
-        const cleanup = () => {
-          clearTimeout(timeout);
-          this.currentAudio = null;
-        };
-
         audio.onended = () => {
-          if (!isResolved) {
-            isResolved = true;
-            cleanup();
-            resolve({ success: true });
-          }
+          settle({ success: true });
         };
 
-        audio.onerror = (event) => {
-          if (!isResolved) {
-            isResolved = true;
-            cleanup();
-            resolve({
-              success: false,
-              error: 'Youdao speech playback failed',
-            });
-          }
-        };
-
-        audio.onloadstart = () => {
-          // Audio started loading
+        audio.onerror = () => {
+          settle({
+            success: false,
+            error: 'Youdao speech playback failed',
+          });
         };
 
         audio.oncanplay = () => {
           // Audio can play
           audio.play().catch((error) => {
-            if (!isResolved) {
-              isResolved = true;
-              cleanup();
-              resolve({
-                success: false,
-                error: `Audio playback failed: ${error.message}`,
-              });
-            }
+            settle({
+              success: false,
+              error: `Audio playback failed: ${error.message}`,
+            });
           });
         };
 
         // Network error handling
         audio.onabort = () => {
-          if (!isResolved) {
-            isResolved = true;
-            cleanup();
-            resolve({
-              success: false,
-              error: 'Youdao speech loading was interrupted',
-            });
-          }
-        };
-
-        audio.onstalled = () => {
-          // Loading stalled; do not fail immediately, wait for timeout handling
+          settle({
+            success: false,
+            error: 'Youdao speech loading was interrupted',
+          });
         };
 
         // Start loading audio
         try {
           audio.load();
         } catch (error) {
-          if (!isResolved) {
-            isResolved = true;
-            cleanup();
-            resolve({
-              success: false,
-              error: `Youdao speech initialization failed: ${error}`,
-            });
-          }
+          settle({
+            success: false,
+            error: `Youdao speech initialization failed: ${error}`,
+          });
         }
       });
     } catch (error) {
@@ -146,11 +128,37 @@ export class YoudaoTTSProvider implements ITTSProvider {
     }
   }
 
+  /**
+   * Stop playback: release the audio element (clear src + load() aborts the
+   * download and frees the media resources), detach its handlers and settle
+   * the pending speak() promise as stopped so callers do not fall back.
+   */
   stop(): void {
-    if (this.currentAudio) {
-      this.currentAudio.pause();
-      this.currentAudio.currentTime = 0;
-      this.currentAudio = null;
+    const audio = this.currentAudio;
+    this.currentAudio = null;
+    if (audio) {
+      this.detachAudioHandlers(audio);
+      this.releaseAudio(audio);
+    }
+
+    this.settlePending?.({ success: true, stopped: true });
+    this.settlePending = null;
+  }
+
+  private detachAudioHandlers(audio: HTMLAudioElement): void {
+    audio.onended = null;
+    audio.onerror = null;
+    audio.oncanplay = null;
+    audio.onabort = null;
+  }
+
+  private releaseAudio(audio: HTMLAudioElement): void {
+    try {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+    } catch {
+      // The element is being discarded anyway
     }
   }
 

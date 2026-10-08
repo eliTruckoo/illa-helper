@@ -91,19 +91,13 @@ export const PRONUNCIATION_STYLES = `
   letter-spacing: 0.01em;
 }
 
-/* Phonetic loading state - Shimmer */
+/* Phonetic loading skeleton (finite pulse, see tooltip.ts) */
 .wxt-phonetic-loading {
   height: 22px;
   width: 100px;
   border-radius: 6px;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.04) 25%,
-    rgba(255, 255, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.04) 75%
-  );
-  background-size: 200% 100%;
-  animation: wxt-shimmer 1.5s ease-in-out infinite;
+  background: rgba(255, 255, 255, 0.07);
+  animation: wxt-loading-pulse 0.8s ease-in-out 6 alternate;
   display: block;
   font-size: 0;
   color: transparent;
