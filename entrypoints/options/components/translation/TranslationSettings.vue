@@ -730,9 +730,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, onUnmounted, watch } from 'vue';
+import { ref, onMounted, computed, onUnmounted, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { StorageService } from '@/src/modules/core/storage';
+import { useDebouncedSettingsSave } from '../../composables/useDebouncedSettingsSave';
 import {
   testApiConnection as performApiTest,
   testGeminiConnection,
@@ -844,13 +845,11 @@ const canTestConfig = (config: ApiConfigItem): boolean =>
 
 const handleActiveConfigChange = async () => {
   try {
-    await storageService.setActiveApiConfig(settings.value.activeApiConfigId);
-
-    // Reload the full settings to ensure they stay in sync
-    await loadSettings();
-
+    // v-model already changed activeApiConfigId; save it right away instead
+    // of a second, separate setActiveApiConfig() write
+    await nextTick();
+    await settingsSaver.flush();
     emit('saveMessage', 'Active configuration updated');
-    notifyConfigChange();
   } catch (error) {
     console.error(t('errors.updateActiveConfigFailed'), error);
   }
@@ -889,10 +888,10 @@ const inferPresetKey = (config: ApiConfigItem): ApiPresetKey => {
 const deleteConfig = async (configId: string) => {
   if (confirm('Are you sure you want to delete this configuration?')) {
     try {
+      await settingsSaver.flush();
       await storageService.removeApiConfig(configId);
       await loadSettings();
       emit('saveMessage', 'Configuration deleted');
-      notifyConfigChange();
     } catch (error) {
       console.error(t('errors.deleteConfigFailed'), error);
       alert(t('translationSettings.errors.deleteConfigFailed'));
@@ -974,6 +973,7 @@ const saveConfig = async () => {
   }
 
   try {
+    await settingsSaver.flush();
     if (editingConfig.value) {
       await storageService.updateApiConfig(
         editingConfig.value.id,
@@ -993,7 +993,6 @@ const saveConfig = async () => {
 
     await loadSettings();
     cancelEdit();
-    notifyConfigChange();
   } catch (error) {
     console.error(t('errors.saveConfigFailed'), error);
     alert(t('translationSettings.errors.saveConfigFailed'));
@@ -1090,22 +1089,29 @@ const cancelEdit = () => {
   configForm.value = createConfigFormState();
 };
 
+// Settings are saved debounced; storage writes made directly through
+// StorageService (config add/update/delete) flush pending edits first and
+// reload afterwards. Content scripts read settings from storage, so no
+// runtime message is sent (only the background would receive it).
+const settingsSaver = useDebouncedSettingsSave(
+  settings,
+  async (newSettings) => {
+    try {
+      await storageService.saveUserSettings(newSettings);
+      emit('saveMessage', 'Settings saved');
+    } catch (error) {
+      console.error(t('errors.saveSettingsFailed'), error);
+      emit('saveMessage', 'Failed to save settings');
+    }
+  },
+);
+
 const loadSettings = async () => {
   try {
     settings.value = await storageService.getUserSettings();
+    settingsSaver.markPersisted();
   } catch (error) {
     console.error(t('errors.loadSettingsFailed'), error);
-  }
-};
-
-const notifyConfigChange = () => {
-  try {
-    browser.runtime.sendMessage({
-      type: 'settings_updated',
-      settings: settings.value,
-    });
-  } catch (error) {
-    console.error(t('errors.notifyConfigChangeFailed'), error);
   }
 };
 
@@ -1120,22 +1126,6 @@ const clearAllTestTimers = () => {
 onMounted(async () => {
   await loadSettings();
 });
-
-// Watch settings changes to save in real time
-watch(
-  settings,
-  async (newSettings) => {
-    try {
-      await storageService.saveUserSettings(newSettings);
-      emit('saveMessage', 'Settings saved');
-      notifyConfigChange();
-    } catch (error) {
-      console.error(t('errors.saveSettingsFailed'), error);
-      emit('saveMessage', 'Failed to save settings');
-    }
-  },
-  { deep: true },
-);
 
 // Clean up timers when the component unmounts
 onUnmounted(() => {

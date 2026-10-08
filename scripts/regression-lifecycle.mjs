@@ -177,4 +177,68 @@ const { computeMenuState, diffMenuState, hiddenMenuState, DYNAMIC_MENU_IDS } =
   );
 }
 
+// ------------------------------------------------------------
+// Debounced options saving (illa-helper-bfn.7)
+// ------------------------------------------------------------
+
+{
+  const { ref, nextTick } = await import('vue');
+  const { useDebouncedSettingsSave } = await import(
+    '../entrypoints/options/composables/useDebouncedSettingsSave.ts'
+  );
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const settings = ref({ level: 1, nested: { rate: 10 } });
+  const saved = [];
+  const saver = useDebouncedSettingsSave(
+    settings,
+    async (value) => {
+      saved.push(JSON.parse(JSON.stringify(value)));
+    },
+    20,
+  );
+
+  // Changes before the initial load are never written
+  settings.value.level = 99;
+  await nextTick();
+  await sleep(40);
+  assert.equal(saved.length, 0, 'nothing is saved before markPersisted()');
+
+  // Simulated load: replacing the ref must not write the loaded value back
+  settings.value = { level: 2, nested: { rate: 20 } };
+  saver.markPersisted();
+  await nextTick();
+  await sleep(40);
+  assert.equal(saved.length, 0, 'the load trigger does not save');
+
+  // A slider drag: many ticks, one write with the final value
+  for (let rate = 21; rate <= 30; rate++) {
+    settings.value.nested.rate = rate;
+    await nextTick();
+  }
+  await sleep(40);
+  assert.deepEqual(
+    saved,
+    [{ level: 2, nested: { rate: 30 } }],
+    'rapid changes are coalesced into one save',
+  );
+
+  // flush() writes a pending change immediately
+  settings.value.level = 3;
+  await nextTick();
+  await saver.flush();
+  assert.equal(saved.length, 2, 'flush saves the pending change');
+  assert.equal(saved[1].level, 3);
+  await sleep(40);
+  assert.equal(saved.length, 2, 'a flushed change is not saved again');
+
+  // Reverting to the persisted value is not a change
+  settings.value.level = 4;
+  await nextTick();
+  settings.value.level = 3;
+  await nextTick();
+  await sleep(40);
+  assert.equal(saved.length, 2, 'an unchanged value is not written');
+}
+
 console.log('lifecycle regression passed');

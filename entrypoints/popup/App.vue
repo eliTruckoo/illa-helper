@@ -37,6 +37,7 @@ import {
   generateRuleDescription,
   validateUrlForRule,
 } from '@/src/modules/options/website-management/utils';
+import { createDebouncedTask } from '@/src/utils/debounce';
 
 // Use i18n
 const { t } = useI18n();
@@ -182,21 +183,28 @@ onUnmounted(() => {
 });
 
 // Settings update state management
-let debounceTimer: number;
 let isInitializing = true;
+const saveTask = createDebouncedTask(() => saveAndNotifySettings(), 200);
 
-// Unified settings update watcher
+// Unified settings update watcher (also covers the API config selector)
 watch(
   settings,
   () => {
     // Skip triggers during the initialization phase
     if (isInitializing) return;
 
-    clearTimeout(debounceTimer);
-    debounceTimer = window.setTimeout(saveAndNotifySettings, 200);
+    saveTask.schedule();
   },
   { deep: true },
 );
+
+// Closing the popup must not drop a pending save
+const flushPendingSave = () => saveTask.flush();
+window.addEventListener('pagehide', flushPendingSave);
+onUnmounted(() => {
+  window.removeEventListener('pagehide', flushPendingSave);
+  flushPendingSave();
+});
 
 // Unified save and notify function
 const saveAndNotifySettings = async () => {
@@ -270,22 +278,6 @@ const activeConfig = computed(() => {
     (config) => config.id === settings.value.activeApiConfigId,
   );
 });
-
-const handleActiveConfigChange = async () => {
-  try {
-    await storageService.setActiveApiConfig(settings.value.activeApiConfigId);
-
-    // Reload full settings to ensure sync
-    const updatedSettings = await storageService.getUserSettings();
-    Object.assign(settings.value, updatedSettings);
-
-    // Notify the content script that the config was updated
-    await messagingService.notifySettingsChanged(settings.value);
-  } catch (error) {
-    console.error(t('settings.switchConfigFailed'), error);
-    showSavedMessage(t('settings.switchConfigFailed'));
-  }
-};
 
 const extensionVersion = ref('N/A');
 
@@ -433,10 +425,7 @@ const openOptionsPage = () => {
                 <label class="text-sm mt-2 mb-1">
                   {{ $t('api.currentConfig') }}
                 </label>
-                <select
-                  v-model="settings.activeApiConfigId"
-                  @change="handleActiveConfigChange"
-                >
+                <select v-model="settings.activeApiConfigId">
                   <option
                     v-for="config in settings.apiConfigs"
                     :key="config.id"

@@ -117,7 +117,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { StorageService } from '@/src/modules/core/storage';
 import { UserSettings } from '@/src/modules/shared/types/storage';
@@ -126,6 +126,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
+import { useDebouncedSettingsSave } from '../../composables/useDebouncedSettingsSave';
 
 const { t } = useI18n();
 
@@ -136,20 +137,16 @@ const emit = defineEmits<{
   saveMessage: [message: string];
 }>();
 
-onMounted(async () => {
-  settings.value = await storageService.getUserSettings();
-});
-
-watch(
+const settingsSaver = useDebouncedSettingsSave(
   settings,
   async (newSettings) => {
     await storageService.saveUserSettings(newSettings);
     emit('saveMessage', t('settings.save'));
-    browser.runtime.sendMessage({
-      type: 'settings_updated',
-      settings: newSettings,
-    });
   },
-  { deep: true },
 );
+
+onMounted(async () => {
+  settings.value = await storageService.getUserSettings();
+  settingsSaver.markPersisted();
+});
 </script>

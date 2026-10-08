@@ -548,6 +548,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
+import { useDebouncedSettingsSave } from '../../composables/useDebouncedSettingsSave';
 
 const { t } = useI18n();
 
@@ -605,8 +606,19 @@ const userLevelOptions = computed(() => [
   { value: 6, label: t('languageLevel.c2') },
 ]);
 
+// Content scripts read settings from storage, so no runtime message is sent
+// after saving (only the background would receive it).
+const settingsSaver = useDebouncedSettingsSave(
+  settings,
+  async (newSettings) => {
+    await storageService.saveUserSettings(newSettings);
+    emit('saveMessage', t('settings.save'));
+  },
+);
+
 onMounted(async () => {
   settings.value = await storageService.getUserSettings();
+  settingsSaver.markPersisted();
   styleManager.setTranslationStyle(settings.value.translationStyle);
   // If using custom style, load custom CSS
   if (settings.value.translationStyle === TranslationStyle.CUSTOM) {
@@ -630,22 +642,16 @@ const currentStyleClass = computed(() => {
   return styleManager.getCurrentStyleClass();
 });
 
+// Keep the style preview in sync immediately; persisting is debounced
 watch(
-  settings,
-  async (newSettings) => {
-    await storageService.saveUserSettings(newSettings);
-    emit('saveMessage', t('settings.save'));
-    styleManager.setTranslationStyle(newSettings.translationStyle);
+  () => [settings.value.translationStyle, settings.value.customTranslationCSS],
+  () => {
+    styleManager.setTranslationStyle(settings.value.translationStyle);
     // If using custom style, update custom CSS
-    if (newSettings.translationStyle === TranslationStyle.CUSTOM) {
-      styleManager.setCustomCSS(newSettings.customTranslationCSS);
+    if (settings.value.translationStyle === TranslationStyle.CUSTOM) {
+      styleManager.setCustomCSS(settings.value.customTranslationCSS);
     }
-    browser.runtime.sendMessage({
-      type: 'settings_updated',
-      settings: newSettings,
-    });
   },
-  { deep: true },
 );
 </script>
 
