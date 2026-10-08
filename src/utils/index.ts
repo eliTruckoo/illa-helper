@@ -11,6 +11,7 @@ import {
   ApiProtocolFamily,
 } from '../modules/shared/types';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { sendApiRequest } from '../modules/api/utils/requestUtils';
 
 /**
  * Merge custom parameters into the base parameter object
@@ -211,7 +212,7 @@ export async function testOpenAICompatibleConnection(
     // Merge custom parameters
     requestBody = mergeCustomParams(requestBody, apiConfig.customParams);
 
-    const response = await sendOpenAICompatibleTestRequest(
+    const response = await sendApiRequest(
       requestBody,
       apiConfig,
       getApiTimeout(baseTimeout || 0) || 0,
@@ -246,48 +247,6 @@ export async function testOpenAICompatibleConnection(
       message: error.message || 'Network connection error',
     };
   }
-}
-
-function sendOpenAICompatibleTestRequest(
-  requestBody: any,
-  apiConfig: ApiConfig,
-  timeout: number,
-): Promise<Response> {
-  return new Promise<Response>((resolve) => {
-    browser.runtime.sendMessage(
-      {
-        type: 'api-request',
-        data: {
-          url: apiConfig.apiEndpoint,
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiConfig.apiKey}`,
-          },
-          body: JSON.stringify(requestBody),
-          timeout,
-        },
-      },
-      (response) => {
-        if (response.success) {
-          resolve({
-            ok: true,
-            status: 200,
-            statusText: 'OK',
-            json: async () => response.data,
-          } as Response);
-          return;
-        }
-
-        resolve({
-          ok: false,
-          status: response.error?.status || 500,
-          statusText: response.error?.statusText || 'Internal Server Error',
-          json: async () => ({ error: response.error }),
-        } as Response);
-      },
-    );
-  });
 }
 
 /**
