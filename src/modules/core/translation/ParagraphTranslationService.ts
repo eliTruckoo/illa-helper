@@ -43,6 +43,10 @@ export class ParagraphTranslationService {
   private runSettings?: UserSettings;
   /** Text nodes found by the last walk, reused when building lazy segments */
   private paragraphTextNodes = new WeakMap<HTMLElement, Text[]>();
+  /** Replacement-rate decision per paragraph, so rescans never re-roll it */
+  private paragraphSelection = new WeakMap<HTMLElement, boolean>();
+  /** Running share carried between paragraphs to spread picks evenly */
+  private selectionCarry = 0.5;
 
   // Concurrency settings
   private readonly BATCH_SIZE = 5; // Process 5 elements per batch
@@ -149,9 +153,13 @@ export class ParagraphTranslationService {
   }
 
   private async dispatchElements(
-    elements: HTMLElement[],
+    candidates: HTMLElement[],
     settings: UserSettings,
   ): Promise<number> {
+    const elements = this.selectByReplacementRate(
+      candidates,
+      settings.replacementRate,
+    );
     const isLazyLoadingEnabled =
       settings?.lazyLoading?.enabled && this.lazyLoadingService?.isEnabled();
 
@@ -163,6 +171,27 @@ export class ParagraphTranslationService {
 
     console.log('[ParagraphTranslation] Using full translation mode');
     return this.startFullTranslation(elements);
+  }
+
+  /**
+   * Keep only the replacement-rate share of paragraphs, spread evenly in
+   * document order (a rate of 0.3 picks roughly every third paragraph).
+   */
+  private selectByReplacementRate(
+    elements: HTMLElement[],
+    replacementRate: number,
+  ): HTMLElement[] {
+    const rate = Math.min(Math.max(replacementRate, 0), 1);
+    return elements.filter((element) => {
+      let selected = this.paragraphSelection.get(element);
+      if (selected === undefined) {
+        this.selectionCarry += rate;
+        selected = this.selectionCarry >= 1;
+        if (selected) this.selectionCarry -= 1;
+        this.paragraphSelection.set(element, selected);
+      }
+      return selected;
+    });
   }
 
   /**
@@ -195,6 +224,8 @@ export class ParagraphTranslationService {
     this.isStarting = false;
     this.translatedElements = new WeakSet();
     this.translatingElements = new WeakSet(); // Reset
+    this.paragraphSelection = new WeakMap();
+    this.selectionCarry = 0.5;
     this.targetLanguage = undefined;
     this.runSettings = undefined;
     this.clearAllLoadingIndicators(); // Clear
@@ -221,6 +252,8 @@ export class ParagraphTranslationService {
       );
     this.translatedElements = new WeakSet();
     this.translatingElements = new WeakSet(); // Reset
+    this.paragraphSelection = new WeakMap();
+    this.selectionCarry = 0.5;
     this.targetLanguage = undefined;
     this.runSettings = undefined;
     this.clearAllLoadingIndicators(); // Clear

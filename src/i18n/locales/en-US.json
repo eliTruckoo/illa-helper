@@ -215,7 +215,7 @@
       "word": "Word Translation Mode",
       "wordDescription": "Intelligently select partial words for translation, maintaining original text structure, suitable for language learning",
       "paragraph": "Paragraph Translation Mode",
-      "paragraphDescription": "Translate entire paragraphs, displaying complete translations, suitable for content comprehension"
+      "paragraphDescription": "Translate whole paragraphs. The replacement rate sets what share of the page's paragraphs gets translated"
     },
     "lazyLoading": {}
   },
