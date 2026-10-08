@@ -28,6 +28,7 @@ export default defineConfig({
       'contextMenus',
       'activeTab',
       'webNavigation',
+      'alarms',
     ],
     host_permissions: ['<all_urls>', 'https://api.github.com/*'],
     commands: {
