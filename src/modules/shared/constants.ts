@@ -102,4 +102,6 @@ export const DOM_LABELS = {
 export const PARAGRAPH_TRANSLATION = {
   // CSS class names
   WRAPPER_CLASS: 'illa-paragraph-translation',
+  // Marks an original paragraph replaced by its translation (hidden display mode)
+  ORIGINAL_HIDDEN_CLASS: 'illa-paragraph-original--hidden',
 };

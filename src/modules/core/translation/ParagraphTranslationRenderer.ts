@@ -8,7 +8,13 @@ export function renderParagraphTranslation(
   element: HTMLElement,
   translatedText: string,
   styleClass: string,
+  hideOriginal = false,
 ): void {
+  if (hideOriginal) {
+    renderReplacementTranslation(element, translatedText, styleClass);
+    return;
+  }
+
   const display = window.getComputedStyle(element).display;
 
   if (INTERNAL_BLOCK_TAGS.has(element.tagName)) {
@@ -99,6 +105,31 @@ export function renderParagraphTranslation(
     ],
   );
 
+  element.parentNode?.insertBefore(translationElement, element.nextSibling);
+}
+
+/**
+ * Replace the paragraph with a translated copy of itself. A shallow clone keeps
+ * the page's styling for that element, and the original stays in the DOM
+ * (hidden by CSS) so it can be shown on hover and restored.
+ */
+function renderReplacementTranslation(
+  element: HTMLElement,
+  translatedText: string,
+  styleClass: string,
+): void {
+  const translationElement = element.cloneNode(false) as HTMLElement;
+  translationElement.removeAttribute('id');
+  translationElement.classList.add(
+    PARAGRAPH_TRANSLATION.WRAPPER_CLASS,
+    styleClass,
+  );
+  translationElement.textContent = translatedText;
+  translationElement.title = (element.textContent ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  element.classList.add(PARAGRAPH_TRANSLATION.ORIGINAL_HIDDEN_CLASS);
   element.parentNode?.insertBefore(translationElement, element.nextSibling);
 }
 

@@ -88,4 +88,10 @@ a:hover .wxt-original-word--learning {
 .wxt-translation-hidden .illa-paragraph-translation {
   display: none !important;
 }
+
+/* Hidden display mode: the translated copy replaces the original paragraph
+   while translations are shown */
+body:not(.wxt-translation-hidden) .illa-paragraph-original--hidden {
+  display: none !important;
+}
 `;

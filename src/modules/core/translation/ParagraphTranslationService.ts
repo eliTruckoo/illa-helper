@@ -19,7 +19,7 @@ import {
   collectTextNodes,
   type ParagraphInfo,
 } from '../../processing/DomWalker';
-import type { UserSettings } from '../../shared/types';
+import { OriginalWordDisplayMode, type UserSettings } from '../../shared/types';
 import { languageService } from './LanguageService';
 import { selectParagraphTranslationElements } from './ParagraphTranslationSelection';
 import { renderParagraphTranslation } from './ParagraphTranslationRenderer';
@@ -214,6 +214,11 @@ export class ParagraphTranslationService {
     document
       .querySelectorAll(`.${PARAGRAPH_TRANSLATION.WRAPPER_CLASS}`)
       .forEach((el) => el.remove());
+    document
+      .querySelectorAll(`.${PARAGRAPH_TRANSLATION.ORIGINAL_HIDDEN_CLASS}`)
+      .forEach((el) =>
+        el.classList.remove(PARAGRAPH_TRANSLATION.ORIGINAL_HIDDEN_CLASS),
+      );
     this.translatedElements = new WeakSet();
     this.translatingElements = new WeakSet(); // Reset
     this.targetLanguage = undefined;
@@ -421,9 +426,16 @@ export class ParagraphTranslationService {
     element
       .querySelectorAll(`.${PARAGRAPH_TRANSLATION.WRAPPER_CLASS}`)
       .forEach((el) => el.remove());
+    element.classList.remove(PARAGRAPH_TRANSLATION.ORIGINAL_HIDDEN_CLASS);
 
     const styleClass = this.styleManager.getCurrentStyleClass();
-    renderParagraphTranslation(element, translatedText, styleClass);
+    renderParagraphTranslation(
+      element,
+      translatedText,
+      styleClass,
+      this.runSettings?.originalWordDisplayMode ===
+        OriginalWordDisplayMode.HIDDEN,
+    );
   }
 
   private removeAdjacentTranslation(element: HTMLElement): void {
