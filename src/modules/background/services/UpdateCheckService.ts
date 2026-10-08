@@ -5,6 +5,12 @@
 
 import { browser } from 'wxt/browser';
 import { StorageService } from '@/src/modules/core/storage';
+import {
+  UPDATE_CHECK_ALARM,
+  UPDATE_CHECK_INITIAL_DELAY_MINUTES,
+  UPDATE_CHECK_PERIOD_MINUTES,
+  isUpdateCheckDue,
+} from './updateCheckSchedule';
 
 export interface UpdateInfo {
   hasUpdate: boolean;
@@ -44,11 +50,15 @@ export interface GitHubAsset {
 export class UpdateCheckService {
   private static instance: UpdateCheckService;
   private readonly currentVersion: string;
-  private readonly checkInterval: number = 24 * 60 * 60 * 1000; // check once every 24 hours
   private readonly githubApiUrl =
     'https://api.github.com/repos/xiao-zaiyi/illa-helper/releases/latest';
   private storageService: StorageService;
-  private intervalId?: number;
+  private listenersRegistered = false;
+  private readonly handleAlarm = (alarm: { name: string }): void => {
+    if (alarm.name === UPDATE_CHECK_ALARM) {
+      void this.checkForUpdatesIfDue();
+    }
+  };
 
   private constructor() {
     this.currentVersion = browser.runtime.getManifest().version;
@@ -63,21 +73,23 @@ export class UpdateCheckService {
   }
 
   /**
-   * Initialize update check service
+   * Initialize update check service.
+   *
+   * Runs on every service worker start, so it must stay cheap: listeners are
+   * registered synchronously (an MV3 worker woken by an alarm or a
+   * notification click only dispatches to listeners registered in its first
+   * turn), and the periodic check is driven by browser.alarms instead of
+   * timers, which do not survive the worker being suspended. No network
+   * request is made here.
    */
   async init(): Promise<void> {
     console.log('[UpdateCheckService] Initialize update check service');
 
-    // Check for updates when the extension starts
-    setTimeout(() => {
-      this.checkForUpdates();
-    }, 10000); // delay startup to avoid slowing extension initialization
+    // Register listeners synchronously, before any await
+    this.registerListeners();
 
-    // Set up periodic checks
-    this.schedulePeriodicCheck();
-
-    // Set up notification listeners
-    this.setupNotificationListeners();
+    // Make sure the periodic alarm exists (without resetting its schedule)
+    await this.ensureUpdateAlarm();
 
     // Check for pending update notifications
     await this.checkPendingUpdate();
@@ -87,19 +99,72 @@ export class UpdateCheckService {
    * Destroy the service
    */
   destroy(): void {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = undefined;
+    browser.alarms?.onAlarm?.removeListener(this.handleAlarm);
+    this.listenersRegistered = false;
+  }
+
+  /**
+   * Register alarm and notification listeners (idempotent)
+   */
+  private registerListeners(): void {
+    if (this.listenersRegistered) return;
+    this.listenersRegistered = true;
+
+    browser.alarms?.onAlarm?.addListener(this.handleAlarm);
+    this.setupNotificationListeners();
+  }
+
+  /**
+   * Create the periodic update-check alarm if it does not exist yet.
+   * Re-creating an existing alarm would reset its schedule on every service
+   * worker start, so an existing alarm is left untouched.
+   */
+  private async ensureUpdateAlarm(): Promise<void> {
+    if (!browser.alarms) {
+      // No alarms API: fall back to a gated check on startup
+      await this.checkForUpdatesIfDue();
+      return;
+    }
+
+    try {
+      const existing = await browser.alarms.get(UPDATE_CHECK_ALARM);
+      if (existing) return;
+
+      browser.alarms.create(UPDATE_CHECK_ALARM, {
+        delayInMinutes: UPDATE_CHECK_INITIAL_DELAY_MINUTES,
+        periodInMinutes: UPDATE_CHECK_PERIOD_MINUTES,
+      });
+    } catch (error) {
+      console.error('[UpdateCheckService] Failed to schedule alarm:', error);
     }
   }
 
   /**
-   * Set up periodic checks
+   * Run an automatic update check unless one was attempted in the last 24 h.
+   * The attempt time is recorded before fetching, so a failing request
+   * (offline, rate limited) is not retried on every wake-up either.
    */
-  private schedulePeriodicCheck(): void {
-    this.intervalId = setInterval(() => {
-      this.checkForUpdates();
-    }, this.checkInterval) as any;
+  async checkForUpdatesIfDue(): Promise<UpdateInfo | null> {
+    try {
+      const { lastUpdateCheck, lastUpdateCheckAttempt } =
+        await browser.storage.local.get([
+          'lastUpdateCheck',
+          'lastUpdateCheckAttempt',
+        ]);
+      const now = Date.now();
+      if (!isUpdateCheckDue([lastUpdateCheck, lastUpdateCheckAttempt], now)) {
+        return null;
+      }
+
+      await browser.storage.local.set({ lastUpdateCheckAttempt: now });
+      return await this.checkForUpdates();
+    } catch (error) {
+      console.error(
+        '[UpdateCheckService] Scheduled update check failed:',
+        error,
+      );
+      return null;
+    }
   }
 
   /**

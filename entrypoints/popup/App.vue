@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, onMounted, watch, reactive, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, watch, reactive, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
   DEFAULT_SETTINGS,
@@ -21,6 +21,7 @@ import {
   generateRuleDescription,
   validateUrlForRule,
 } from '@/src/modules/options/website-management/utils';
+import { createDebouncedTask } from '@/src/utils/debounce';
 
 // Use i18n
 const { t } = useI18n();
@@ -123,8 +124,8 @@ const openWebsiteManagement = () => {
 };
 
 // Settings update state management
-let debounceTimer: number;
 let isInitializing = true;
+const saveTask = createDebouncedTask(() => saveAndNotifySettings(), 200);
 
 // Unified settings update watcher
 watch(
@@ -133,11 +134,18 @@ watch(
     // Skip triggers during the initialization phase
     if (isInitializing) return;
 
-    clearTimeout(debounceTimer);
-    debounceTimer = window.setTimeout(saveAndNotifySettings, 200);
+    saveTask.schedule();
   },
   { deep: true },
 );
+
+// Closing the popup must not drop a pending save
+const flushPendingSave = () => saveTask.flush();
+window.addEventListener('pagehide', flushPendingSave);
+onUnmounted(() => {
+  window.removeEventListener('pagehide', flushPendingSave);
+  flushPendingSave();
+});
 
 // Unified save and notify function
 const saveAndNotifySettings = async () => {

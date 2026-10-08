@@ -158,6 +158,7 @@ assert.equal(
 );
 
 await import('./regression-api-cost.mjs');
+await import('./regression-lifecycle.mjs');
 
 // ------------------------------------------------------------
 // DomWalker: single-pass walk must match the original algorithm

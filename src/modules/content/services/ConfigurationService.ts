@@ -92,6 +92,15 @@ export class ConfigurationService implements IConfigurationService {
     );
   }
 
+  /**
+   * Whether the active API configuration is usable (has an API key).
+   * Mirrors the background 'validate-configuration' check, without the
+   * round trip to the service worker.
+   */
+  hasValidApiConfig(settings: UserSettings): boolean {
+    return !!this.getActiveApiConfig(settings)?.config?.apiKey;
+  }
+
   private resolveSettingsForPage(
     settings: UserSettings,
     pageLanguage?: string,
