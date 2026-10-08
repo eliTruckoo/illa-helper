@@ -14,10 +14,12 @@ import {
 } from '../../core/translation/TranslationMemoryShared';
 
 export const TM_DB_NAME = 'illa-translation-memory';
-export const TM_DB_VERSION = 2;
+export const TM_DB_VERSION = 3;
 
 export const TM_STORE_SEGMENTS = 'tm_segments';
 export const TM_STORE_WORDS = 'tm_words';
+/** Hover definitions (same record shape as tm_segments) */
+export const TM_STORE_DEFINITIONS = 'tm_definitions';
 
 /** Store definitions; upgrades create whatever is missing */
 const STORE_DEFINITIONS: Array<{
@@ -27,6 +29,14 @@ const STORE_DEFINITIONS: Array<{
 }> = [
   {
     name: TM_STORE_SEGMENTS,
+    keyPath: 'key',
+    indexes: [
+      { name: 'lastAccess', keyPath: 'lastAccess' },
+      { name: 'fp', keyPath: 'fp' },
+    ],
+  },
+  {
+    name: TM_STORE_DEFINITIONS,
     keyPath: 'key',
     indexes: [
       { name: 'lastAccess', keyPath: 'lastAccess' },
@@ -198,10 +208,14 @@ export interface TmSegmentBackend {
 }
 
 export class IndexedDbSegmentBackend implements TmSegmentBackend {
-  constructor(private readonly db: TranslationMemoryDatabase) {}
+  constructor(
+    private readonly db: TranslationMemoryDatabase,
+    /** tm_segments, or tm_definitions (same record shape) */
+    private readonly storeName: string = TM_STORE_SEGMENTS,
+  ) {}
 
   getMany(keys: string[]): Promise<Array<TmEntry | undefined>> {
-    return this.db.withStore(TM_STORE_SEGMENTS, 'readonly', (store) => {
+    return this.db.withStore(this.storeName, 'readonly', (store) => {
       const results: Array<TmEntry | undefined> = new Array(keys.length);
       keys.forEach((key, index) => {
         const request = store.get(key);
@@ -215,7 +229,7 @@ export class IndexedDbSegmentBackend implements TmSegmentBackend {
 
   putMany(entries: TmEntry[]): Promise<void> {
     if (entries.length === 0) return Promise.resolve();
-    return this.db.withStore(TM_STORE_SEGMENTS, 'readwrite', (store) => {
+    return this.db.withStore(this.storeName, 'readwrite', (store) => {
       for (const entry of entries) store.put(entry);
       return () => undefined;
     });
@@ -223,22 +237,22 @@ export class IndexedDbSegmentBackend implements TmSegmentBackend {
 
   deleteMany(keys: string[]): Promise<void> {
     if (keys.length === 0) return Promise.resolve();
-    return this.db.withStore(TM_STORE_SEGMENTS, 'readwrite', (store) => {
+    return this.db.withStore(this.storeName, 'readwrite', (store) => {
       for (const key of keys) store.delete(key);
       return () => undefined;
     });
   }
 
   count(): Promise<number> {
-    return this.db.count(TM_STORE_SEGMENTS);
+    return this.db.count(this.storeName);
   }
 
   scan(visit: (entry: TmEntry) => void): Promise<void> {
-    return this.db.scan<TmEntry>(TM_STORE_SEGMENTS, visit);
+    return this.db.scan<TmEntry>(this.storeName, visit);
   }
 
   clear(): Promise<void> {
-    return this.db.clear(TM_STORE_SEGMENTS);
+    return this.db.clear(this.storeName);
   }
 }
 

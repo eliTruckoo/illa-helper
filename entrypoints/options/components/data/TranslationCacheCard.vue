@@ -241,6 +241,7 @@ const statItems = computed(() => {
       hint: t('translationCache.entriesHint', {
         ok: n(current.okEntries),
         empty: n(current.emptyEntries),
+        definitions: n(current.definitions ?? 0),
       }),
     },
     {

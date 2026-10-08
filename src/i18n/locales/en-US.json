@@ -422,7 +422,7 @@
     "statsUnavailable": "Statistics are not available right now.",
     "memoryOnly": "The on-disk cache is unavailable; translations are only kept until the browser restarts.",
     "entries": "Entries",
-    "entriesHint": "{ok} with words, {empty} without",
+    "entriesHint": "{ok} with words, {empty} without, {definitions} hover definitions",
     "size": "Approx. size",
     "hits": "Cache hits",
     "sessionHits": "{hits} of {lookups} lookups since start",

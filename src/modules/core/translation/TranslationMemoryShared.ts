@@ -63,8 +63,12 @@ export interface TmStoreItem extends TmHit {
   text: string;
 }
 
+/** Which memory a lookup/store addresses (default: translated segments) */
+export type TmNamespace = 'segments' | 'definitions';
+
 export interface TmLookupMessage {
   type: typeof TM_MESSAGE_TYPES.LOOKUP;
+  ns?: TmNamespace;
   /** Canonical fingerprint source (see buildWordFingerprintSource) */
   fp: string;
   texts: string[];
@@ -77,6 +81,7 @@ export interface TmLookupResponse {
 
 export interface TmStoreMessage {
   type: typeof TM_MESSAGE_TYPES.STORE;
+  ns?: TmNamespace;
   fp: string;
   items: TmStoreItem[];
 }
@@ -107,6 +112,8 @@ export interface TmStats {
   /** Lookups / hits since the background (service worker) started */
   sessionLookups: number;
   sessionHits: number;
+  /** Persistent hover definitions */
+  definitions: number;
   /** Word exposure tracking: distinct words and total exposures */
   words: number;
   wordExposures: number;
@@ -426,6 +433,34 @@ export function buildParagraphFingerprintSource(
     thinking: parts.thinking ?? null,
     promptTemplate: parts.promptTemplate,
     targetLanguage: parts.targetLanguage.toLowerCase(),
+  });
+}
+
+/** Inputs that change a hover definition for the same word */
+export interface DefinitionFingerprintParts {
+  protocolFamily?: string;
+  endpoint?: string;
+  model: string;
+  temperature?: number;
+  customParams?: string;
+  maxTokens?: number;
+  /** The definition system prompt actually sent */
+  systemPrompt: string;
+}
+
+export function buildDefinitionFingerprintSource(
+  parts: DefinitionFingerprintParts,
+): string {
+  return canonicalJson({
+    schema: TM_SCHEMA_VERSION,
+    kind: 'definition',
+    protocolFamily: parts.protocolFamily ?? '',
+    endpoint: endpointIdentity(parts.endpoint),
+    model: parts.model,
+    temperature: parts.temperature ?? null,
+    customParams: parts.customParams?.trim() ?? '',
+    maxTokens: parts.maxTokens ?? null,
+    systemPrompt: parts.systemPrompt,
   });
 }
 

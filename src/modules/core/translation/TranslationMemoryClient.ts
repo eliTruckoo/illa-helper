@@ -12,8 +12,23 @@ import {
   TM_MAX_TEXTS_PER_MESSAGE,
   TM_MESSAGE_TYPES,
   type TmHit,
+  type TmNamespace,
   type TmStoreItem,
 } from './TranslationMemoryShared';
+
+/** Queues are kept per namespace and fingerprint */
+const QUEUE_SEPARATOR = '\u0000';
+const queueKey = (ns: TmNamespace, fp: string) =>
+  `${ns}${QUEUE_SEPARATOR}${fp}`;
+function splitQueueKey(key: string): { ns: TmNamespace; fp: string } {
+  const index = key.indexOf(QUEUE_SEPARATOR);
+  return {
+    ns: key.slice(0, index) as TmNamespace,
+    fp: key.slice(index + 1),
+  };
+}
+/** The default namespace is not sent, so segment messages stay unchanged */
+const nsField = (ns: TmNamespace) => (ns === 'segments' ? {} : { ns });
 
 export type TmSend = (message: unknown) => Promise<unknown>;
 
@@ -106,13 +121,15 @@ export class TranslationMemoryClient {
   lookup(
     fp: string,
     texts: string[],
+    ns: TmNamespace = 'segments',
   ): Promise<Array<CachedTranslation | null>> {
     if (texts.length === 0) return Promise.resolve([]);
 
     return new Promise((resolve) => {
-      const queue = this.pendingLookups.get(fp) ?? [];
+      const key = queueKey(ns, fp);
+      const queue = this.pendingLookups.get(key) ?? [];
       queue.push({ texts, resolve });
-      this.pendingLookups.set(fp, queue);
+      this.pendingLookups.set(key, queue);
       if (this.lookupTimer === null) {
         this.lookupTimer = setTimeout(() => this.flushLookups(), 0);
       }
@@ -125,9 +142,11 @@ export class TranslationMemoryClient {
   store(
     fp: string,
     items: Array<{ text: string; outcome: CachedTranslation }>,
+    ns: TmNamespace = 'segments',
   ): void {
     if (items.length === 0) return;
-    const queue = this.pendingStores.get(fp) ?? [];
+    const key = queueKey(ns, fp);
+    const queue = this.pendingStores.get(key) ?? [];
     for (const { text, outcome } of items) {
       if (outcome.status !== 'ok' && outcome.status !== 'empty') continue;
       queue.push({
@@ -136,7 +155,7 @@ export class TranslationMemoryClient {
         pairs: outcome.pairs.map((pair) => [pair.original, pair.translation]),
       });
     }
-    this.pendingStores.set(fp, queue);
+    this.pendingStores.set(key, queue);
     this.listenForPageHide();
     if (this.storeTimer === null) {
       this.storeTimer = setTimeout(() => {
@@ -155,11 +174,13 @@ export class TranslationMemoryClient {
     this.pendingStores = new Map();
 
     const sends: Promise<unknown>[] = [];
-    for (const [fp, items] of batches) {
+    for (const [key, items] of batches) {
+      const { ns, fp } = splitQueueKey(key);
       for (let i = 0; i < items.length; i += TM_MAX_TEXTS_PER_MESSAGE) {
         sends.push(
           this.send({
             type: TM_MESSAGE_TYPES.STORE,
+            ...nsField(ns),
             fp,
             items: items.slice(i, i + TM_MAX_TEXTS_PER_MESSAGE),
           }).catch(() => undefined),
@@ -201,12 +222,13 @@ export class TranslationMemoryClient {
     this.lookupTimer = null;
     const batches = this.pendingLookups;
     this.pendingLookups = new Map();
-    for (const [fp, queue] of batches) {
-      void this.sendLookup(fp, queue);
+    for (const [key, queue] of batches) {
+      void this.sendLookup(key, queue);
     }
   }
 
-  private async sendLookup(fp: string, queue: PendingLookup[]): Promise<void> {
+  private async sendLookup(key: string, queue: PendingLookup[]): Promise<void> {
+    const { ns, fp } = splitQueueKey(key);
     const texts = queue.flatMap((lookup) => lookup.texts);
     const hits: Array<CachedTranslation | null> = texts.map(() => null);
 
@@ -220,6 +242,7 @@ export class TranslationMemoryClient {
       requests.push(
         this.requestWithTimeout({
           type: TM_MESSAGE_TYPES.LOOKUP,
+          ...nsField(ns),
           fp,
           texts: slice,
         }).then((reply) => {

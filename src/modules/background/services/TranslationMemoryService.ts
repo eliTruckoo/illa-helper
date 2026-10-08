@@ -12,6 +12,9 @@
  * - Incognito tabs use a separate in-memory map and never touch IndexedDB.
  * - Every failure is a miss (fail open): translation must never depend on the cache.
  *
+ * Hover definitions use a second instance on `tm_definitions` (messages with
+ * `ns: 'definitions'`), with the same TTL, cap, incognito and fail-open rules.
+ *
  * Also keeps the word exposure history (`tm_words`, learning layer): how often each
  * word was shown with which translation. Never recorded for incognito tabs.
  */
@@ -50,6 +53,7 @@ import {
 import {
   IndexedDbSegmentBackend,
   IndexedDbWordBackend,
+  TM_STORE_DEFINITIONS,
   TranslationMemoryDatabase,
   type TmSegmentBackend,
   type TmWordBackend,
@@ -86,6 +90,8 @@ export interface TranslationMemoryDeps {
   backend?: TmSegmentBackend | null;
   /** null disables word exposure tracking */
   wordBackend?: TmWordBackend | null;
+  /** Memory for `ns: 'definitions'` messages (hover definitions) */
+  definitions?: TranslationMemoryService | null;
   loadPolicy?: () => Promise<TmPolicy>;
   now?: () => number;
 }
@@ -95,6 +101,7 @@ export class TranslationMemoryService {
 
   private readonly backend: TmSegmentBackend | null;
   private readonly wordBackend: TmWordBackend | null;
+  private readonly definitions: TranslationMemoryService | null;
   private readonly loadPolicyFn: () => Promise<TmPolicy>;
   private readonly now: () => number;
 
@@ -133,6 +140,7 @@ export class TranslationMemoryService {
       deps.wordBackend !== undefined
         ? deps.wordBackend
         : database && new IndexedDbWordBackend(database);
+    this.definitions = deps.definitions ?? null;
     this.loadPolicyFn = deps.loadPolicy ?? loadPolicyFromSettings;
     this.now = deps.now ?? Date.now;
     this.touchFlush = createDebouncedTask(
@@ -148,7 +156,21 @@ export class TranslationMemoryService {
 
   static getInstance(): TranslationMemoryService {
     if (!TranslationMemoryService.instance) {
-      TranslationMemoryService.instance = new TranslationMemoryService();
+      // One connection for segments, words and definitions
+      const database = TranslationMemoryDatabase.isAvailable()
+        ? new TranslationMemoryDatabase()
+        : null;
+      const definitions = new TranslationMemoryService({
+        backend:
+          database &&
+          new IndexedDbSegmentBackend(database, TM_STORE_DEFINITIONS),
+        wordBackend: null,
+      });
+      TranslationMemoryService.instance = new TranslationMemoryService({
+        backend: database && new IndexedDbSegmentBackend(database),
+        wordBackend: database && new IndexedDbWordBackend(database),
+        definitions,
+      });
     }
     return TranslationMemoryService.instance;
   }
@@ -173,6 +195,20 @@ export class TranslationMemoryService {
     const context: TmRequestContext = {
       incognito: !!sender?.tab?.incognito,
     };
+    // Hover definitions live in their own store
+    if (
+      message?.ns === 'definitions' &&
+      (message.type === TM_MESSAGE_TYPES.LOOKUP ||
+        message.type === TM_MESSAGE_TYPES.STORE)
+    ) {
+      if (!this.definitions) {
+        return message.type === TM_MESSAGE_TYPES.LOOKUP
+          ? { entries: (message.texts || []).map(() => null) }
+          : { stored: 0 };
+      }
+      const { ns: _ns, ...rest } = message;
+      return this.definitions.handleMessage(rest, sender);
+    }
     try {
       switch (message?.type) {
         case TM_MESSAGE_TYPES.LOOKUP:
@@ -421,6 +457,7 @@ export class TranslationMemoryService {
       memoryEntries: this.l1.size,
       sessionLookups: this.sessionLookups,
       sessionHits: this.sessionHits,
+      definitions: 0,
       words: 0,
       wordExposures: 0,
       topWords: [],
@@ -442,6 +479,14 @@ export class TranslationMemoryService {
       } catch (error) {
         this.reportPersistentFailure(error);
         stats.persistent = false;
+      }
+    }
+
+    if (this.definitions?.backend) {
+      try {
+        stats.definitions = await this.definitions.backend.count();
+      } catch (error) {
+        this.reportPersistentFailure(error);
       }
     }
 
@@ -479,6 +524,7 @@ export class TranslationMemoryService {
       this.sessionLookups = 0;
       this.sessionHits = 0;
       await this.backend?.clear();
+      await this.definitions?.clear('segments');
     }
     if (scope === 'words' || scope === 'all') {
       await this.wordBackend?.clear();
@@ -542,6 +588,7 @@ export class TranslationMemoryService {
   invalidatePolicy(): void {
     this.policy = null;
     this.policyPromise = null;
+    this.definitions?.invalidatePolicy();
   }
 
   async getPolicy(): Promise<TmPolicy> {

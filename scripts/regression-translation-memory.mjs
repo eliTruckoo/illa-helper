@@ -787,4 +787,153 @@ assert.deepEqual(
   'the stored outcome includes the hint pairs (withHintPairs before store)',
 );
 
+// ------------------------------------------------------------
+// Hover definitions (namespace 'definitions', tm_definitions)
+// ------------------------------------------------------------
+
+const { buildDefinitionFingerprintSource } = await import(
+  '../src/modules/core/translation/TranslationMemoryShared.ts'
+);
+const definitionFp = buildDefinitionFingerprintSource({
+  model: 'gpt-4o-mini',
+  maxTokens: 100,
+  systemPrompt: 'dictionary prompt',
+});
+assert.notEqual(
+  definitionFp,
+  buildDefinitionFingerprintSource({
+    model: 'gpt-4o-mini',
+    maxTokens: 100,
+    systemPrompt: 'edited prompt',
+  }),
+  'definition prompt edits invalidate stored definitions',
+);
+
+const segmentRows = createMemoryBackend();
+const definitionRows = createMemoryBackend();
+const definitionsService = new TranslationMemoryService({
+  backend: definitionRows,
+  wordBackend: null,
+  now: () => clock,
+  loadPolicy: async () => resolveTmPolicy({}),
+});
+const mainService = new TranslationMemoryService({
+  backend: segmentRows,
+  wordBackend: null,
+  definitions: definitionsService,
+  now: () => clock,
+  loadPolicy: async () => resolveTmPolicy({}),
+});
+await mainService.handleMessage({
+  type: TM_MESSAGE_TYPES.STORE,
+  ns: 'definitions',
+  fp: definitionFp,
+  items: [{ text: 'hello', status: 'ok', pairs: [['hello', 'interj. hi']] }],
+});
+assert.equal(definitionRows.rows.size, 1, 'definitions go to tm_definitions');
+assert.equal(segmentRows.rows.size, 0, 'and never into tm_segments');
+assert.deepEqual(
+  await new TranslationMemoryService({
+    backend: segmentRows,
+    wordBackend: null,
+    definitions: new TranslationMemoryService({
+      backend: definitionRows,
+      wordBackend: null,
+      now: () => clock,
+      loadPolicy: async () => resolveTmPolicy({}),
+    }),
+    now: () => clock,
+    loadPolicy: async () => resolveTmPolicy({}),
+  }).handleMessage({
+    type: TM_MESSAGE_TYPES.LOOKUP,
+    ns: 'definitions',
+    fp: definitionFp,
+    texts: ['hello', 'world'],
+  }),
+  { entries: [{ status: 'ok', pairs: [['hello', 'interj. hi']] }, null] },
+  'definitions survive a background restart',
+);
+assert.equal((await mainService.getStats()).definitions, 1);
+await mainService.clear('segments');
+assert.equal(
+  definitionRows.rows.size,
+  0,
+  'clearing the cache clears definitions',
+);
+
+const nsSent = [];
+const nsClient = new TranslationMemoryClient(
+  async (message) => {
+    nsSent.push(message);
+    return { entries: message.texts?.map(() => null) };
+  },
+  { storeDelayMs: 1 },
+);
+await Promise.all([
+  nsClient.lookup('fp', ['a']),
+  nsClient.lookup('fp', ['b'], 'definitions'),
+]);
+assert.deepEqual(
+  nsSent.map((message) => [message.ns, message.texts]),
+  [
+    [undefined, ['a']],
+    ['definitions', ['b']],
+  ],
+  'namespaces are never mixed in one message',
+);
+
+// End to end: a definition fetched in one tab is reused by another tab without an AI call
+const { AITranslationProvider } = await import(
+  '../src/modules/pronunciation/translation/AITranslationProvider.ts'
+);
+const { translationMemoryClient } = await import(
+  '../src/modules/core/translation/TranslationMemoryClient.ts'
+);
+const e2eDefinitions = new TranslationMemoryService({
+  backend: createMemoryBackend(),
+  wordBackend: null,
+  now: () => clock,
+  loadPolicy: async () => resolveTmPolicy({}),
+});
+const e2eService = new TranslationMemoryService({
+  backend: createMemoryBackend(),
+  wordBackend: null,
+  definitions: e2eDefinitions,
+  now: () => clock,
+  loadPolicy: async () => resolveTmPolicy({}),
+});
+const previousSendMessage = globalThis.browser.runtime.sendMessage;
+globalThis.browser.runtime.sendMessage = (message) =>
+  e2eService.handleMessage(message);
+
+const hoverConfig = {
+  id: 'cfg',
+  name: 'cfg',
+  protocolFamily: 'openai-compatible',
+  config: {
+    apiKey: 'key',
+    apiEndpoint: 'https://api.example.com/v1/chat/completions',
+    model: 'gpt-4o-mini',
+    temperature: 0,
+  },
+};
+let aiCalls = 0;
+const makeHoverProvider = () => {
+  const provider = new AITranslationProvider(hoverConfig, 1000);
+  provider.universalApi = {
+    call: async () => {
+      aiCalls++;
+      return { success: true, content: 'interj. hi' };
+    },
+  };
+  return provider;
+};
+const firstHover = await makeHoverProvider().getMeaning('Hello');
+assert.equal(firstHover.data.explain, 'interj. hi');
+await translationMemoryClient.flushStores();
+const otherTab = await makeHoverProvider().getMeaning('hello');
+assert.equal(otherTab.data.explain, 'interj. hi');
+assert.equal(aiCalls, 1, 'the second tab reuses the persisted definition');
+globalThis.browser.runtime.sendMessage = previousSendMessage;
+
 console.log('translation memory regression passed');

@@ -8,6 +8,7 @@
  * Key features:
  * - Uses a purpose-built AI prompt to get accurate Chinese definitions
  * - Implements a 24-hour TTL cache (failures: 10 minutes) and in-flight deduplication to reduce API calls
+ * - Successful definitions are also kept across tabs and restarts (background IndexedDB, 30 days)
  * - Thorough error handling and timeout control
  * - Supports dynamic API configuration updates
  * - Uses the unified UniversalApiService for API calls
@@ -19,6 +20,11 @@ import { API_CONSTANTS } from '../config';
 import { cleanMarkdownFromResponse } from '../../../utils';
 import { UniversalApiService } from '../../api/services/UniversalApiService';
 import { LookupCache, LookupOutcome } from '../utils/LookupCache';
+import {
+  buildDefinitionFingerprint,
+  lookupRememberedDefinition,
+  rememberDefinition,
+} from './DefinitionMemory';
 
 export class AITranslationProvider {
   /** Provider name identifier */
@@ -151,6 +157,23 @@ Output: interj. \u4f60\u597d\uff1bn. \u6253\u62db\u547c
 Input: beautiful
 Output: adj. \u7f8e\u4e3d\u7684\uff0c\u6f02\u4eae\u7684`;
 
+      // Persistent cross-tab definitions first; a miss or any failure falls through
+      const fingerprint = buildDefinitionFingerprint(
+        apiConfigItem,
+        systemPrompt,
+        {
+          temperature: apiConfig.temperature || 0,
+          maxTokens: 100,
+        },
+      );
+      const remembered = await lookupRememberedDefinition(
+        fingerprint,
+        cleanWord,
+      );
+      if (remembered) {
+        return { ok: true, data: remembered, ttlMs: this.cacheTTL };
+      }
+
       // Call the AI via UniversalApiService
       const result = await this.universalApi.call(cleanWord, {
         systemPrompt,
@@ -169,11 +192,12 @@ Output: adj. \u7f8e\u4e3d\u7684\uff0c\u6f02\u4eae\u7684`;
         };
       }
 
-      return {
-        ok: true,
-        data: this.parseAIResponse(result.content, cleanWord),
-        ttlMs: this.cacheTTL,
-      };
+      const data = this.parseAIResponse(result.content, cleanWord);
+      // The "unavailable" placeholder of an empty answer is not persisted
+      if (result.content?.trim()) {
+        rememberDefinition(fingerprint, cleanWord, data);
+      }
+      return { ok: true, data, ttlMs: this.cacheTTL };
     } catch (error) {
       console.error('Failed to get word meaning via AI translation:', error);
       return {
