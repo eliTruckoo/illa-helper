@@ -23,10 +23,15 @@ import {
   ConcurrencyLimiter,
   MAX_CONCURRENT_TRANSLATION_REQUESTS,
 } from './ConcurrencyLimiter';
-import { BatchTranslationExecutor } from './BatchTranslationExecutor';
+import {
+  BatchTranslationExecutor,
+  hintWords,
+  withHintPairs,
+} from './BatchTranslationExecutor';
 import {
   TRANSLATION_BATCH_MAX_CHARS,
   TRANSLATION_BATCH_MAX_ITEMS,
+  type TranslationHint,
 } from '../../processing/ProcessingContracts';
 
 // Replacement result interface
@@ -136,9 +141,13 @@ export class TextReplacerService {
   /**
    * Replace words in text
    * @param text Original text
+   * @param hint optional page glossary hint ("already handled" words)
    * @returns replacement result
    */
-  public async replaceText(text: string): Promise<FullTextAnalysisResponse> {
+  public async replaceText(
+    text: string,
+    hint?: TranslationHint,
+  ): Promise<FullTextAnalysisResponse> {
     try {
       // If the API is not used, return the original text directly
       if (!this.config.useGptApi) {
@@ -148,7 +157,7 @@ export class TextReplacerService {
       const settingsForApi = this.buildUserSettings();
 
       // Handle translation
-      return await this.processTranslation(text, settingsForApi);
+      return await this.processTranslation(text, settingsForApi, hint);
     } catch (error) {
       console.error('Text replacement failed:', error);
       return this.createErrorResult(text, error);
@@ -159,10 +168,12 @@ export class TextReplacerService {
    * Replace words in several texts at once.
    * Identical texts, cached and in-flight segments are resolved without new requests; the rest is
    * sent as numbered batch requests (see TRANSLATION_BATCH_MAX_ITEMS / TRANSLATION_BATCH_MAX_CHARS).
+   * @param hints optional page glossary hints, one per text
    * @returns one result per input text, in input order
    */
   public async replaceTexts(
     texts: string[],
+    hints?: Array<TranslationHint | undefined>,
   ): Promise<FullTextAnalysisResponse[]> {
     if (!this.config.useGptApi) {
       return texts.map((text) => this.createEmptyResult(text));
@@ -173,16 +184,19 @@ export class TextReplacerService {
 
       if (TRANSLATION_BATCH_MAX_ITEMS <= 1) {
         return await Promise.all(
-          texts.map((text) => this.processTranslation(text, settings)),
+          texts.map((text, index) =>
+            this.processTranslation(text, settings, hints?.[index]),
+          ),
         );
       }
 
       const executor = new BatchTranslationExecutor(
         this.segmentCache,
         {
-          translateOne: (text) => this.requestTranslation(text, settings),
-          translateMany: (batch) =>
-            this.callBatchTranslationAPI(batch, settings),
+          translateOne: (text, alreadyHandled) =>
+            this.requestTranslation(text, settings, alreadyHandled),
+          translateMany: (batch, alreadyHandled) =>
+            this.callBatchTranslationAPI(batch, settings, alreadyHandled),
         },
         {
           maxItems: TRANSLATION_BATCH_MAX_ITEMS,
@@ -192,6 +206,7 @@ export class TextReplacerService {
       const outcomes = await executor.translate(
         texts,
         texts.map((text) => this.generateCacheKey(text, settings)),
+        hints,
       );
 
       return texts.map((text, index) =>
@@ -248,16 +263,20 @@ export class TextReplacerService {
    * Unified translation handling method: in-page cache, then in-flight request, then API call.
    * @param text Original text
    * @param settings user settings
+   * @param hint optional page glossary hint; its pairs are stored with the answer (see withHintPairs)
    * @returns translation result with positions computed for this exact text
    */
   private async processTranslation(
     text: string,
     settings: UserSettings,
+    hint?: TranslationHint,
   ): Promise<FullTextAnalysisResponse> {
     const cacheKey = this.generateCacheKey(text, settings);
 
     const { outcome, source } = await this.segmentCache.resolve(cacheKey, () =>
-      this.requestTranslation(text, settings),
+      this.requestTranslation(text, settings, hintWords(hint)).then(
+        (requested) => withHintPairs(requested, hint),
+      ),
     );
 
     if (source === 'cache') {
@@ -275,9 +294,14 @@ export class TextReplacerService {
   private async requestTranslation(
     text: string,
     settings: UserSettings,
+    alreadyHandled?: string[],
   ): Promise<TranslationOutcome> {
     try {
-      const apiResult = await this.callTranslationAPI(text, settings);
+      const apiResult = await this.callTranslationAPI(
+        text,
+        settings,
+        alreadyHandled,
+      );
       return toTranslationOutcome({
         ...apiResult,
         status: getResponseStatus(apiResult),
@@ -297,6 +321,7 @@ export class TextReplacerService {
   private async callTranslationAPI(
     text: string,
     settings: UserSettings,
+    alreadyHandled?: string[],
   ): Promise<FullTextAnalysisResponse> {
     const activeConfig = this.config.activeApiConfig;
 
@@ -309,7 +334,11 @@ export class TextReplacerService {
 
     // Call the API to translate, capped per tab
     return await this.requestLimiter.run(() =>
-      translationProvider.analyzeFullText(text, settings),
+      translationProvider.analyzeFullText(
+        text,
+        settings,
+        alreadyHandled ? { alreadyHandled } : undefined,
+      ),
     );
   }
 
@@ -319,6 +348,7 @@ export class TextReplacerService {
   private async callBatchTranslationAPI(
     texts: string[],
     settings: UserSettings,
+    alreadyHandled?: Array<string[] | undefined>,
   ): Promise<BatchAnalysisResponse> {
     const activeConfig = this.config.activeApiConfig;
 
@@ -333,7 +363,11 @@ export class TextReplacerService {
     }
 
     return await this.requestLimiter.run(() =>
-      translationProvider.analyzeBatch!(texts, settings),
+      translationProvider.analyzeBatch!(
+        texts,
+        settings,
+        alreadyHandled ? { alreadyHandled } : undefined,
+      ),
     );
   }
 

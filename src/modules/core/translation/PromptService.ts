@@ -15,6 +15,25 @@ export interface BatchPromptItem {
   text: string;
   /** Maximum number of output lines for this item */
   maxItems?: number;
+  /** Page glossary words already handled in this item (not part of the cache key) */
+  alreadyHandled?: string[];
+}
+
+/** Words listed in one "already handled" hint */
+export const ALREADY_HANDLED_HINT_MAX_WORDS = 10;
+
+/**
+ * "Already handled, do not output: w1, w2" for page glossary words present in an item; '' when none.
+ * Saves output tokens: the glossary applies these words locally.
+ */
+export function formatAlreadyHandledHint(words?: string[]): string {
+  const listed = (words ?? [])
+    .map((word) => word.trim())
+    .filter(Boolean)
+    .slice(0, ALREADY_HANDLED_HINT_MAX_WORDS);
+  return listed.length > 0
+    ? `Already handled, do not output: ${listed.join(', ')}`
+    : '';
 }
 
 /**
@@ -57,12 +76,17 @@ export class PromptService {
   /**
    * User message for one segment.
    */
-  public getUserPrompt(text: string, maxItems?: number): string {
+  public getUserPrompt(
+    text: string,
+    maxItems?: number,
+    alreadyHandled?: string[],
+  ): string {
     const limit =
       maxItems !== undefined && maxItems > 0
         ? ` (at most ${maxItems} lines)`
         : '';
-    return `Text${limit}:\n${text}`;
+    const hint = formatAlreadyHandledHint(alreadyHandled);
+    return `Text${limit}:\n${text}${hint ? `\n${hint}` : ''}`;
   }
 
   /**
@@ -76,7 +100,9 @@ export class PromptService {
           item.maxItems !== undefined && item.maxItems > 0
             ? ` max=${item.maxItems}`
             : '';
-        return `<${id}${limit}>${item.text}</${id}>`;
+        const hint = formatAlreadyHandledHint(item.alreadyHandled);
+        const line = `<${id}${limit}>${item.text}</${id}>`;
+        return hint ? `${line}\n${id}: ${hint}` : line;
       })
       .join('\n');
   }
