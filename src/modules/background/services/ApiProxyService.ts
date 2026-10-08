@@ -1,24 +1,60 @@
 /**
  * API proxy service - handles API requests via the background script, bypassing CORS restrictions
+ *
+ * - Every attempt is bounded by a timeout (AbortController).
+ * - Requests are tracked per tab and per requesting document; they are aborted
+ *   when the tab closes or the document's lifetime port disconnects
+ *   (navigation, reload, frame removal).
+ * - Transient upstream failures (408/429/5xx) are retried with exponential
+ *   backoff + jitter, honouring Retry-After. Other 4xx are never retried.
  */
 
+import { browser } from 'wxt/browser';
 import {
   ApiRequestMessage,
   ApiResponse,
+  ApiErrorResponse,
   ApiProxyServiceConfig,
   BACKGROUND_CONSTANTS,
 } from '../types';
+import {
+  getRetryDecision,
+  parseRetryAfter,
+  resolveRequestTimeout,
+} from '../../infrastructure/ratelimit/retryPolicy';
+
+/**
+ * The parts of runtime.MessageSender the proxy relies on
+ */
+export interface ApiRequestSender {
+  tab?: { id?: number; active?: boolean; windowId?: number };
+  frameId?: number;
+}
+
+interface ActiveRequest {
+  controller: AbortController;
+  tabId?: number;
+  clientId?: string;
+}
+
+const MAX_ERROR_DETAIL_LENGTH = 500;
 
 export class ApiProxyService {
   private static instance: ApiProxyService | null = null;
   private config: ApiProxyServiceConfig;
-  private activeRequests: Map<string, AbortController> = new Map();
+  private activeRequests: Map<string, ActiveRequest> = new Map();
+  private requestCounter = 0;
+  private listenersRegistered = false;
 
   private constructor() {
     this.config = {
       defaultTimeout: BACKGROUND_CONSTANTS.API_REQUEST_TIMEOUT,
-      maxRetries: 3,
+      unlimitedTimeoutCeiling:
+        BACKGROUND_CONSTANTS.API_UNLIMITED_TIMEOUT_CEILING,
+      maxRetries: 2,
       retryDelay: 1000,
+      maxRetryDelay: 8000,
+      maxRetryAfter: 20000,
     };
   }
 
@@ -33,23 +69,122 @@ export class ApiProxyService {
   }
 
   /**
+   * Register the listeners that cancel requests whose requester went away.
+   * Idempotent.
+   */
+  public registerLifecycleListeners(): void {
+    if (this.listenersRegistered) return;
+    this.listenersRegistered = true;
+
+    // Each requesting document holds a port; it disconnects on unload/navigation
+    browser.runtime.onConnect.addListener((port) => {
+      const prefix = BACKGROUND_CONSTANTS.API_CLIENT_PORT_PREFIX;
+      if (!port.name?.startsWith(prefix)) return;
+      const clientId = port.name.slice(prefix.length);
+      port.onDisconnect.addListener(() => {
+        this.cancelClientRequests(clientId);
+      });
+    });
+
+    browser.tabs.onRemoved.addListener((tabId) => {
+      this.cancelTabRequests(tabId);
+    });
+  }
+
+  /**
    * Handle an API request
    */
   public async handleApiRequest(
     message: ApiRequestMessage,
+    sender?: ApiRequestSender,
   ): Promise<ApiResponse> {
-    const { url, method, headers, body, timeout } = message.data;
-    let timeoutId: NodeJS.Timeout | undefined;
+    const requestId = `req-${++this.requestCounter}`;
+    const controller = new AbortController();
+    this.activeRequests.set(requestId, {
+      controller,
+      tabId: sender?.tab?.id,
+      clientId: message.data.clientId,
+    });
 
     try {
-      // Create an AbortController for timeout control
-      const controller = new AbortController();
+      return await this.executeWithRetry(message.data, controller.signal);
+    } catch (error: any) {
+      console.error('Background API request failed:', error);
+      return {
+        success: false,
+        error: { message: error?.message || 'Request failed' },
+      };
+    } finally {
+      this.activeRequests.delete(requestId);
+    }
+  }
 
-      // Only set the timeout when timeout is greater than 0
-      if (timeout && timeout > 0) {
-        timeoutId = setTimeout(() => controller.abort(), timeout);
+  /**
+   * Run the request, retrying transient upstream failures
+   */
+  private async executeWithRetry(
+    data: ApiRequestMessage['data'],
+    signal: AbortSignal,
+  ): Promise<ApiResponse> {
+    const timeout = resolveRequestTimeout(
+      data.timeout,
+      this.config.defaultTimeout,
+      this.config.unlimitedTimeoutCeiling,
+    );
+
+    for (let retriesDone = 0; ; retriesDone++) {
+      const result = await this.fetchOnce(data, signal, timeout);
+      if (result.success || result.error.code !== 'http') {
+        return result;
       }
 
+      const decision = getRetryDecision(
+        result.error.status,
+        retriesDone,
+        result.error.retryAfter,
+        {
+          maxRetries: this.config.maxRetries,
+          baseDelay: this.config.retryDelay,
+          maxDelay: this.config.maxRetryDelay,
+          maxRetryAfter: this.config.maxRetryAfter,
+        },
+      );
+      if (!decision.retry) {
+        return result;
+      }
+
+      console.warn(
+        `[ApiProxy] HTTP ${result.error.status}, retry ${retriesDone + 1}/${this.config.maxRetries} in ${decision.delayMs} ms`,
+      );
+      if (!(await waitFor(decision.delayMs, signal))) {
+        return createAbortedResponse();
+      }
+    }
+  }
+
+  /**
+   * A single upstream attempt bounded by `timeout`
+   */
+  private async fetchOnce(
+    data: ApiRequestMessage['data'],
+    signal: AbortSignal,
+    timeout: number,
+  ): Promise<ApiResponse> {
+    if (signal.aborted) {
+      return createAbortedResponse();
+    }
+
+    const { url, method, headers, body } = data;
+    const controller = new AbortController();
+    const onAbort = () => controller.abort();
+    signal.addEventListener('abort', onAbort, { once: true });
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeout);
+
+    try {
       const response = await fetch(url, {
         method,
         headers,
@@ -57,11 +192,7 @@ export class ApiProxyService {
         signal: controller.signal,
       });
 
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-
-      // Read the response data
+      // Read the response data (still covered by the timeout)
       const responseData = await response.text();
       let parsedData;
 
@@ -76,43 +207,83 @@ export class ApiProxyService {
           success: true,
           data: parsedData,
         };
-      } else {
-        return {
-          success: false,
-          error: {
-            message: `HTTP ${response.status}: ${response.statusText}`,
-            status: response.status,
-            statusText: response.statusText,
-          },
-        };
-      }
-    } catch (error: any) {
-      console.error('Background API request failed:', error);
-
-      let errorMessage = 'Request failed';
-      if (error.name === 'AbortError') {
-        errorMessage = 'Request timed out';
-      } else if (error.message) {
-        errorMessage = error.message;
       }
 
+      const detail = extractErrorDetail(parsedData);
       return {
         success: false,
         error: {
-          message: errorMessage,
+          message: `HTTP ${response.status}: ${detail || response.statusText}`,
+          status: response.status,
+          statusText: response.statusText,
+          code: 'http',
+          retryAfter: parseRetryAfter(response.headers.get('retry-after')),
         },
       };
+    } catch (error: any) {
+      if (timedOut) {
+        return {
+          success: false,
+          error: {
+            message: `Request timed out after ${timeout} ms`,
+            status: 408,
+            statusText: 'Request Timeout',
+            code: 'timeout',
+          },
+        };
+      }
+      if (signal.aborted) {
+        return createAbortedResponse();
+      }
+      console.error('Background API request failed:', error);
+      return {
+        success: false,
+        error: {
+          message: error?.message || 'Request failed',
+          code: 'network',
+        },
+      };
+    } finally {
+      clearTimeout(timeoutId);
+      signal.removeEventListener('abort', onAbort);
     }
+  }
+
+  /**
+   * Number of requests currently in flight or waiting for a retry
+   */
+  public getActiveRequestCount(): number {
+    return this.activeRequests.size;
+  }
+
+  /**
+   * Cancel the requests of one tab (tab closed)
+   */
+  public cancelTabRequests(tabId: number): void {
+    this.cancelWhere((request) => request.tabId === tabId);
+  }
+
+  /**
+   * Cancel the requests of one document (its lifetime port disconnected)
+   */
+  public cancelClientRequests(clientId: string): void {
+    this.cancelWhere((request) => request.clientId === clientId);
   }
 
   /**
    * Cancel all active requests
    */
   public cancelAllRequests(): void {
-    this.activeRequests.forEach((controller) => {
-      controller.abort();
+    this.cancelWhere(() => true);
+  }
+
+  private cancelWhere(predicate: (request: ActiveRequest) => boolean): void {
+    this.activeRequests.forEach((request, requestId) => {
+      if (predicate(request)) {
+        request.controller.abort();
+        this.activeRequests.delete(requestId);
+      }
     });
-    this.activeRequests.clear();
   }
 
   /**
@@ -132,4 +303,58 @@ export class ApiProxyService {
     this.cancelAllRequests();
     ApiProxyService.instance = null;
   }
+}
+
+function createAbortedResponse(): ApiErrorResponse {
+  return {
+    success: false,
+    error: {
+      message: 'Request cancelled',
+      status: 499,
+      statusText: 'Client Closed Request',
+      code: 'aborted',
+    },
+  };
+}
+
+/**
+ * Pull a short, human-readable error message out of an upstream error body
+ */
+function extractErrorDetail(data: unknown): string {
+  let detail = '';
+  if (typeof data === 'string') {
+    detail = data;
+  } else if (data && typeof data === 'object') {
+    const anyData = data as any;
+    detail =
+      anyData.error?.message ||
+      (typeof anyData.error === 'string' ? anyData.error : '') ||
+      anyData.message ||
+      '';
+  }
+  detail = String(detail).trim();
+  return detail.length > MAX_ERROR_DETAIL_LENGTH
+    ? `${detail.slice(0, MAX_ERROR_DETAIL_LENGTH)}...`
+    : detail;
+}
+
+/**
+ * Wait for `ms`; resolves false early if the signal aborts
+ */
+function waitFor(ms: number, signal: AbortSignal): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve(false);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve(true);
+    }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 }

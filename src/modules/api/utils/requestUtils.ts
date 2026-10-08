@@ -15,6 +15,64 @@ export interface ProxyRequestData {
   body?: string;
   /** Per-attempt timeout in ms; omitted = proxy default, 0 = unlimited */
   timeout?: number;
+  /** Lifetime port id of this document (filled in by sendViaBackground) */
+  clientId?: string;
+}
+
+/** Must match BACKGROUND_CONSTANTS.API_CLIENT_PORT_PREFIX */
+const API_CLIENT_PORT_PREFIX = 'illa-api-client:';
+
+let clientId: string | undefined;
+let clientPort: { disconnect(): void } | null = null;
+
+/**
+ * Lazily open a port to the background that lives as long as this document.
+ * When it disconnects (navigation, reload, tab close, frame removal) the
+ * background aborts every request sent with this client id.
+ */
+function ensureClientPort(): string | undefined {
+  if (clientPort && clientId) return clientId;
+  try {
+    if (typeof browser?.runtime?.connect !== 'function') return undefined;
+    const id = createClientId();
+    const port = browser.runtime.connect({ name: API_CLIENT_PORT_PREFIX + id });
+    port.onDisconnect.addListener(() => {
+      // Background restarted or we disconnected: reconnect on next request
+      if (clientPort === port) {
+        clientPort = null;
+        clientId = undefined;
+      }
+    });
+    clientPort = port;
+    clientId = id;
+    return id;
+  } catch {
+    return undefined;
+  }
+}
+
+function createClientId(): string {
+  try {
+    if (typeof crypto?.randomUUID === 'function') return crypto.randomUUID();
+  } catch {
+    // Fall through to the non-crypto id
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * Abort every API request this document still has in flight
+ * (e.g. when translation is disabled or the content script is torn down).
+ */
+export function cancelPendingApiRequests(): void {
+  const port = clientPort;
+  clientPort = null;
+  clientId = undefined;
+  try {
+    port?.disconnect();
+  } catch {
+    // Port already gone
+  }
 }
 
 /**
@@ -61,7 +119,10 @@ export async function sendViaBackground(
   let reply: unknown;
   try {
     // Promise-based API: works on Chrome MV3 and on Firefox's promise-only API
-    reply = await browser.runtime.sendMessage({ type: 'api-request', data });
+    reply = await browser.runtime.sendMessage({
+      type: 'api-request',
+      data: { ...data, clientId: ensureClientPort() },
+    });
   } catch (error: any) {
     return createProxyErrorResponse(
       500,

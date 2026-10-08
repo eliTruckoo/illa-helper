@@ -5,7 +5,10 @@
 import { browser } from 'wxt/browser';
 import { StorageService } from '@/src/modules/core/storage';
 import { NotificationService } from '@/src/modules/background/services/NotificationService';
-import { ApiProxyService } from '@/src/modules/background/services/ApiProxyService';
+import {
+  ApiProxyService,
+  ApiRequestSender,
+} from '@/src/modules/background/services/ApiProxyService';
 import { CommandService } from '@/src/modules/background/services/CommandService';
 import { InitializationService } from '@/src/modules/background/services/InitializationService';
 import { UpdateCheckService } from '@/src/modules/background/services/UpdateCheckService';
@@ -25,6 +28,9 @@ export default defineBackground(() => {
   const updateCheckService = UpdateCheckService.getInstance();
 
   // Legacy managers removed - now managed uniformly in InitializationService
+
+  // Abort in-flight API requests whose tab or document went away
+  apiProxyService.registerLifecycleListeners();
 
   /**
    * Initialize all services
@@ -87,7 +93,7 @@ export default defineBackground(() => {
         return true; // Keep the message channel open
 
       case MESSAGE_TYPES.API_REQUEST:
-        handleApiRequest(message, sendResponse);
+        handleApiRequest(message, sender, sendResponse);
         return true; // Keep the message channel open
 
       case MessageType.CONTEXT_MENU_ACTION:
@@ -187,11 +193,15 @@ export default defineBackground(() => {
    */
   function handleApiRequest(
     message: any,
+    sender: ApiRequestSender,
     sendResponse: (response: any) => void,
   ): void {
     (async () => {
       try {
-        const response = await apiProxyService.handleApiRequest(message);
+        const response = await apiProxyService.handleApiRequest(
+          message,
+          sender,
+        );
         sendResponse(response);
       } catch (error) {
         console.error('[Background] API request handling failed:', error);

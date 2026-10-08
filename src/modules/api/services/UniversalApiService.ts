@@ -32,7 +32,7 @@ export interface UniversalApiOptions {
   configId?: string;
   /** Force a specific protocol family */
   forceProvider?: ApiProtocolFamily;
-  /** Request timeout in milliseconds (default 0, unlimited) */
+  /** Request timeout in milliseconds (default 30 s; 0 = unlimited) */
   timeout?: number;
   /** Custom request parameters as a JSON string */
   customParams?: string;
@@ -167,7 +167,7 @@ export class UniversalApiService {
 
       // Request options, such as timeout and proxy endpoint
       const requestOptions: { timeout?: number; baseUrl?: string } = {};
-      const timeout = options.timeout ?? getApiTimeout(0);
+      const timeout = getApiTimeout(options.timeout);
       if (timeout && timeout > 0) {
         requestOptions.timeout = timeout;
       }
@@ -492,8 +492,7 @@ export class UniversalApiService {
     config: ApiConfig,
     timeout?: number,
   ): Promise<Response> {
-    const timeoutMs = timeout ?? 0;
-    return await sendApiRequest(requestBody, config, timeoutMs);
+    return await sendApiRequest(requestBody, config, getApiTimeout(timeout));
   }
 
   /**

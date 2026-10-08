@@ -74,13 +74,26 @@ export interface ApiTestResult {
   model?: string;
 }
 
+/** Default per-attempt API timeout (ms), used when no valid value is configured */
+export const DEFAULT_API_TIMEOUT_MS = 30000;
+
 /**
  * Get the API timeout
- * @param baseTimeout Base timeout in milliseconds
- * @returns Timeout in milliseconds; undefined (no timeout limit) if 0
+ * @param baseTimeout Configured timeout in milliseconds
+ * @returns Timeout in milliseconds: 0 when "unlimited" (0) was chosen (the
+ * background proxy still applies a safety ceiling), the default when the value
+ * is missing or invalid
  */
-export function getApiTimeout(baseTimeout: number): number | undefined {
-  return baseTimeout === 0 ? undefined : baseTimeout;
+export function getApiTimeout(baseTimeout?: number): number {
+  if (baseTimeout === 0) return 0;
+  if (
+    typeof baseTimeout !== 'number' ||
+    !Number.isFinite(baseTimeout) ||
+    baseTimeout < 0
+  ) {
+    return DEFAULT_API_TIMEOUT_MS;
+  }
+  return baseTimeout;
 }
 
 export async function testGeminiConnection(
