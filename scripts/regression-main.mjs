@@ -373,4 +373,41 @@ assert.equal(
   'split sub-segments of one element must have distinct fingerprints',
 );
 
+// ------------------------------------------------------------
+// LanguageService: cheap, cached page language detection
+// ------------------------------------------------------------
+
+let detectLanguageCalls = 0;
+globalThis.browser.i18n = {
+  detectLanguage: async () => {
+    detectLanguageCalls++;
+    return { languages: [{ language: 'fr' }] };
+  },
+};
+const { languageService } = await import(
+  '../src/modules/core/translation/LanguageService.ts'
+);
+document.documentElement.setAttribute('lang', 'de-AT');
+languageService.invalidatePageLanguage();
+assert.equal(
+  await languageService.detectPageLanguage(),
+  'de',
+  '<html lang> must be used first',
+);
+document.documentElement.setAttribute('lang', 'es');
+assert.equal(
+  await languageService.detectPageLanguage(),
+  'de',
+  'the page language must be cached for the same page',
+);
+document.documentElement.removeAttribute('lang');
+languageService.invalidatePageLanguage();
+assert.equal(await languageService.detectPageLanguage(), 'fr');
+await languageService.detectPageLanguage();
+assert.equal(
+  detectLanguageCalls,
+  1,
+  'text-sample detection must run once per page',
+);
+
 console.log('main regression passed');

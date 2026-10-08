@@ -66,12 +66,12 @@ export class ParagraphTranslationApi {
       // Get user settings
       const settings = await this.storageService.getUserSettings();
 
-      const detectedPageLanguage = await languageService.detectPageLanguage();
+      // Only detect the page language when the caller did not resolve it.
       const finalTargetLanguage =
         targetLanguage ||
         languageService.resolveTargetLanguage(
           settings.multilingualConfig,
-          detectedPageLanguage,
+          await languageService.detectPageLanguage(),
         );
 
       // Build the paragraph translation prompt
