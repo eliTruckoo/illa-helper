@@ -60,13 +60,16 @@ export class PronunciationService {
       StorageEventType.SETTINGS_CHANGED,
       this.handleSettingsChanged,
     );
-    void this.updateOriginalWordDisplayMode();
+    void this.applyStoredSettings();
   }
 
   private readonly handleSettingsChanged = (event: StorageEventData): void => {
     const settings = event.data as UserSettings | null;
     this.tooltipRenderer.updateOriginalWordDisplayMode(
       settings?.originalWordDisplayMode || OriginalWordDisplayMode.VISIBLE,
+    );
+    this.aiTranslationProvider.setNativeLanguage(
+      settings?.multilingualConfig?.nativeLanguage,
     );
   };
 
@@ -292,7 +295,7 @@ export class PronunciationService {
 
     if (config.uiConfig) {
       this.tooltipRenderer.updateConfig(config.uiConfig);
-      void this.updateOriginalWordDisplayMode();
+      void this.applyStoredSettings();
     }
   }
 
@@ -350,12 +353,15 @@ export class PronunciationService {
     this.stopSpeaking();
   }
 
-  private async updateOriginalWordDisplayMode(): Promise<void> {
+  private async applyStoredSettings(): Promise<void> {
     try {
       const userSettings = await this.storageService.getUserSettings();
       const mode =
         userSettings.originalWordDisplayMode || OriginalWordDisplayMode.VISIBLE;
       this.tooltipRenderer.updateOriginalWordDisplayMode(mode);
+      this.aiTranslationProvider.setNativeLanguage(
+        userSettings.multilingualConfig?.nativeLanguage,
+      );
     } catch (error) {
       console.error('Failed to update original text display mode:', error);
       this.tooltipRenderer.updateOriginalWordDisplayMode(

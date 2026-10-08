@@ -1,12 +1,12 @@
 /**
  * AI translation provider implementation
  *
- * This class uses an AI LLM API to provide Chinese translations of English words, fully replacing the original Youdao dictionary API,
+ * This class uses an AI LLM API to define words in the learner's native language, fully replacing the original Youdao dictionary API,
  * which resolves cross-origin access issues in browser extensions. The provider implements full caching, error handling and
  * timeout control to keep the translation service stable and performant.
  *
  * Key features:
- * - Uses a purpose-built AI prompt to get accurate Chinese definitions
+ * - Uses a purpose-built AI prompt to get accurate definitions in the learner's native language
  * - Implements a 24-hour TTL cache (failures: 10 minutes) and in-flight deduplication to reduce API calls
  * - Successful definitions are also kept across tabs and restarts (background IndexedDB, 30 days)
  * - Thorough error handling and timeout control
@@ -19,6 +19,8 @@ import { ApiConfigItem } from '../../shared/types/api';
 import { API_CONSTANTS } from '../config';
 import { cleanMarkdownFromResponse } from '../../../utils';
 import { UniversalApiService } from '../../api/services/UniversalApiService';
+import { languageService } from '../../core/translation/LanguageService';
+import { DEFAULT_MULTILINGUAL_CONFIG } from '../../shared/constants/defaults';
 import { LookupCache, LookupOutcome } from '../utils/LookupCache';
 import {
   buildDefinitionFingerprint,
@@ -35,6 +37,9 @@ export class AITranslationProvider {
 
   /** API request timeout in milliseconds */
   private timeout: number = 0;
+
+  /** Learner's native language code; definitions are written in it */
+  private nativeLanguage: string = DEFAULT_MULTILINGUAL_CONFIG.nativeLanguage;
 
   /**
    * In-memory cache of definitions and recent failures; concurrent hovers of
@@ -63,10 +68,10 @@ export class AITranslationProvider {
   }
 
   /**
-   * Get the Chinese definition of a word
+   * Get the definition of a word in the learner's native language
    *
-   * This is the core function of the AI translation provider. It calls UniversalApiService to get the
-   * Chinese definition of an English word, with full caching, error handling and timeout control.
+   * This is the core function of the AI translation provider. It calls UniversalApiService to define
+   * a word in any language, with full caching, error handling and timeout control.
    *
    * Processing flow:
    * 1. Validate input parameters and clean the text
@@ -74,7 +79,7 @@ export class AITranslationProvider {
    * 3. Call the AI via UniversalApiService to get the translation
    * 4. Parse the response and store it in the cache
    *
-   * @param word - The English word to translate
+   * @param word - The word to define
    * @returns Promise<AITranslationResult> - Translation result, including success status, data and cache flag
    */
   async getMeaning(word: string): Promise<AITranslationResult> {
@@ -142,20 +147,18 @@ export class AITranslationProvider {
     const apiConfig = apiConfigItem.config;
     try {
       // Build the AI prompt dedicated to word translation
-      const systemPrompt = `You are a professional English dictionary assistant. Provide accurate, concise Chinese definitions for the user.
+      const language =
+        languageService.getLanguage(this.nativeLanguage)?.name ??
+        this.nativeLanguage;
+      const systemPrompt = `You are a professional dictionary assistant for a language learner whose native language is ${language}. The user sends one word, which can be in any language. Explain it accurately and concisely in ${language}.
 Requirements:
-1. Return only the Chinese definition of the word, in the format: part of speech + definition
+1. Return only the definition of the word, written in ${language}, in the format: part of speech + definition
 2. If there are multiple parts of speech, separate them with semicolons
 3. Keep definitions concise and accurate, suitable for quick understanding
 4. Do not include example sentences or any other extra information
 5. Return plain text, not JSON
 
-Examples:
-Input: hello
-Output: interj. \u4f60\u597d\uff1bn. \u6253\u62db\u547c
-
-Input: beautiful
-Output: adj. \u7f8e\u4e3d\u7684\uff0c\u6f02\u4eae\u7684`;
+Output format: adj. <definition>; n. <definition>`;
 
       // Persistent cross-tab definitions first; a miss or any failure falls through
       const fingerprint = buildDefinitionFingerprint(
@@ -252,6 +255,17 @@ Output: adj. \u7f8e\u4e3d\u7684\uff0c\u6f02\u4eae\u7684`;
       // Same model, but key/parameters may have been fixed: retry failures
       this.lookups.clearFailures();
     }
+  }
+
+  /**
+   * Set the learner's native language, which definitions are written in
+   */
+  setNativeLanguage(code: string | undefined): void {
+    const next = code?.trim() || DEFAULT_MULTILINGUAL_CONFIG.nativeLanguage;
+    if (next === this.nativeLanguage) return;
+    this.nativeLanguage = next;
+    // Cached definitions are in the previous language
+    this.lookups.clear();
   }
 
   private getCacheScopeKey(): string {
