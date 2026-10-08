@@ -45,6 +45,17 @@ export interface FullTextAnalysisResponse {
   error?: string;
 }
 
+/**
+ * Answer to a batch request carrying several segments.
+ */
+export interface BatchAnalysisResponse {
+  /** 'error' when the whole request failed */
+  status: 'ok' | 'error';
+  error?: string;
+  /** One entry per input text, in input order; undefined = the model did not answer this item */
+  items: Array<FullTextAnalysisResponse | undefined>;
+}
+
 // API configuration interface
 export interface ApiConfig {
   apiKey: string;

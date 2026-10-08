@@ -440,4 +440,284 @@ assert.equal(
   'No request once the page budget is exhausted',
 );
 
+// ---------- eq7.3: batching ----------
+
+const numbered = StructuredTextParser.parseNumbered(
+  [
+    '```',
+    '1|quick||schnell',
+    '1|fox||Fuchs',
+    '2|-',
+    '<4>|dog||Hund',
+    '9|out||of range',
+    'stray line without number',
+    '3 garbage',
+    '```',
+  ].join('\n'),
+  4,
+);
+assert.deepEqual(numbered.items.get(1), [
+  { original: 'quick', translation: 'schnell' },
+  { original: 'fox', translation: 'Fuchs' },
+]);
+assert.deepEqual(
+  numbered.items.get(2),
+  [],
+  '"n|-" marks an answered empty item',
+);
+assert.equal(numbered.items.has(3), false, 'Unanswered items are missing');
+assert.deepEqual(numbered.items.get(4), [
+  { original: 'dog', translation: 'Hund' },
+]);
+assert.equal(
+  numbered.ignoredLines,
+  3,
+  'Out-of-range and unnumbered lines are ignored',
+);
+assert.equal(StructuredTextParser.parseNumbered('', 3).items.size, 0);
+
+const { chunkBatchItems, BatchTranslationExecutor } = await import(
+  '../src/modules/core/translation/BatchTranslationExecutor.ts'
+);
+const sized = (n) => ({ text: 'x'.repeat(n) });
+assert.deepEqual(
+  chunkBatchItems([sized(10), sized(10), sized(10)], 2, 1000).map(
+    (c) => c.length,
+  ),
+  [2, 1],
+  'Chunks respect the item limit',
+);
+assert.deepEqual(
+  chunkBatchItems(
+    [sized(600), sized(600), sized(3000), sized(10)],
+    8,
+    1000,
+  ).map((c) => c.length),
+  [1, 1, 1, 1],
+  'Chunks respect the character limit; an oversized item gets its own request',
+);
+
+const batchProvider = new CompletionProvider((request) => ({
+  text: '1|quick||schnell\n3|-',
+  request,
+}));
+const batchAnswer = await batchProvider.analyzeBatch(
+  [
+    'The quick brown fox jumps over the lazy dog.',
+    '42 17 99',
+    'A second sentence that the model forgot.',
+    'A third sentence without any pick.',
+  ],
+  settings,
+);
+assert.equal(batchProvider.requests.length, 1, 'One request carries the batch');
+assert.match(
+  batchProvider.requests[0].userPrompt,
+  /^<1 max=3>The quick brown fox/,
+);
+assert.match(
+  batchProvider.requests[0].userPrompt,
+  /<2 max=\d+>A second sentence/,
+);
+assert.ok(
+  !batchProvider.requests[0].userPrompt.includes('42 17 99'),
+  'Items that cannot get replacements are not sent',
+);
+assert.ok(batchProvider.requests[0].maxOutputTokens > 0);
+assert.equal(batchAnswer.status, 'ok');
+assert.deepEqual(
+  batchAnswer.items[0].replacements.map((r) => [r.original, r.position.start]),
+  [['quick', 4]],
+);
+assert.equal(batchAnswer.items[1].status, 'empty');
+assert.equal(
+  batchAnswer.items[2],
+  undefined,
+  'A forgotten item is reported as missing',
+);
+assert.equal(batchAnswer.items[3].status, 'empty');
+
+const okPair = (original, translation) => ({
+  status: 'ok',
+  pairs: [{ original, translation }],
+});
+const answerFor = (text, translation) => ({
+  original: text,
+  processed: '',
+  replacements: [
+    {
+      original: text.split(' ')[0],
+      translation,
+      position: { start: 0, end: text.split(' ')[0].length },
+      isNew: true,
+    },
+  ],
+});
+
+const makeBackend = (manyImpl) => {
+  const backend = {
+    oneCalls: [],
+    manyCalls: [],
+    translateOne: async (text) => {
+      backend.oneCalls.push(text);
+      return okPair(text.split(' ')[0], 'single');
+    },
+    translateMany: async (texts) => {
+      backend.manyCalls.push(texts);
+      return manyImpl(texts);
+    },
+  };
+  return backend;
+};
+const keyFor = (text) => normalizeSegmentText(text);
+
+const executorCache = new SegmentTranslationCache(50);
+executorCache.track('Cached text', Promise.resolve(okPair('Cached', 'cached')));
+await Promise.resolve();
+await Promise.resolve();
+const missingBackend = makeBackend((texts) => ({
+  status: 'ok',
+  items: texts.map((text, index) =>
+    index === 1 ? undefined : answerFor(text, `batch-${index}`),
+  ),
+}));
+const batchTexts = [
+  'Alpha one',
+  'Beta two',
+  'Alpha  one',
+  'Cached text',
+  'Gamma three',
+];
+const outcomes = await new BatchTranslationExecutor(
+  executorCache,
+  missingBackend,
+  {
+    maxItems: 8,
+    maxChars: 2500,
+  },
+).translate(batchTexts, batchTexts.map(keyFor));
+assert.deepEqual(
+  missingBackend.manyCalls,
+  [['Alpha one', 'Beta two', 'Gamma three']],
+  'Duplicates and cached segments are not sent; unique ones share one request',
+);
+assert.deepEqual(
+  missingBackend.oneCalls,
+  ['Beta two'],
+  'Missing items fall back to a single request',
+);
+assert.deepEqual(
+  outcomes.map((outcome) => outcome.pairs[0].translation),
+  ['batch-0', 'single', 'batch-0', 'cached', 'batch-2'],
+);
+assert.equal(
+  executorCache.get(keyFor('Gamma three'))?.pairs[0].translation,
+  'batch-2',
+  'Batch answers fill the cache per item',
+);
+
+const failingBackend = makeBackend(() => ({
+  status: 'error',
+  error: 'API request failed: 500 Internal Server Error',
+  items: [],
+}));
+await new BatchTranslationExecutor(
+  new SegmentTranslationCache(10),
+  failingBackend,
+  {
+    maxItems: 8,
+    maxChars: 2500,
+  },
+).translate(['One a', 'Two b'], ['k1', 'k2']);
+assert.deepEqual(
+  failingBackend.oneCalls,
+  ['One a', 'Two b'],
+  'A failed batch falls back to single requests',
+);
+
+const rateLimitedBackend = makeBackend(() => ({
+  status: 'error',
+  error: 'API request failed: 429 Too Many Requests',
+  items: [],
+}));
+const rateLimitedCache = new SegmentTranslationCache(10);
+const rateLimited = await new BatchTranslationExecutor(
+  rateLimitedCache,
+  rateLimitedBackend,
+  {
+    maxItems: 8,
+    maxChars: 2500,
+  },
+).translate(['One a', 'Two b'], ['k1', 'k2']);
+assert.equal(
+  rateLimitedBackend.oneCalls.length,
+  0,
+  'A rate-limited batch is not multiplied into single requests',
+);
+assert.deepEqual(
+  rateLimited.map((o) => o.status),
+  ['error', 'error'],
+);
+assert.equal(rateLimitedCache.size, 0, 'Failed batch items are not cached');
+
+// The coordinator hands a whole wave to replaceTexts and still applies results in segment order.
+const waveCalls = [];
+const waveEngine = {
+  ...errorEngine,
+  replaceText: async () => {
+    throw new Error('single path must not be used');
+  },
+  replaceTexts: async (texts) => {
+    waveCalls.push(texts);
+    return texts.map((text) => ({
+      original: text,
+      processed: '',
+      replacements: [
+        {
+          original: 'Budget',
+          translation: 'Budget-DE',
+          position: { start: 0, end: 6 },
+          isNew: true,
+        },
+      ],
+      status: 'ok',
+    }));
+  },
+};
+const waveSegments = [
+  makeSegment('wave-1', 'Budget first segment text.'),
+  makeSegment('wave-2', 'Budget second segment text.'),
+  makeSegment('wave-3', 'Budget third segment text.'),
+];
+const waveBudget = ReplacementBudget.fromText('one two three', 0.5);
+assert.equal(waveBudget.getRemainingCount(), 2);
+// linkedom has no Range support, so record DOM writes instead of performing them.
+const waveCoordinator = new ProcessingCoordinator();
+const appliedTo = [];
+waveCoordinator.applyReplacements = (segment, replacements) => {
+  appliedTo.push([segment.id, replacements.length]);
+  return replacements.length;
+};
+const waveRun = await waveCoordinator.processSegments(
+  waveSegments,
+  waveEngine,
+  0,
+  'after',
+  true,
+  false,
+  waveBudget,
+);
+assert.equal(waveCalls.length, 1, 'One wave, one replaceTexts call');
+assert.equal(waveCalls[0].length, 3);
+assert.equal(waveRun.success, true);
+assert.equal(waveRun.replacementCount, 2, 'The page budget caps the wave');
+assert.deepEqual(
+  appliedTo,
+  [
+    ['wave-1', 1],
+    ['wave-2', 1],
+  ],
+  'Budget is consumed and DOM writes happen in segment order',
+);
+
 console.log('api cost regression passed');

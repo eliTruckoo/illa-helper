@@ -11,7 +11,10 @@ import {
   OriginalWordDisplayMode,
   TranslationPosition,
 } from '../shared/types/core';
-import type { Replacement } from '../shared/types/api';
+import type {
+  FullTextAnalysisResponse,
+  Replacement,
+} from '../shared/types/api';
 import { ReplacementBudget } from './ReplacementBudget';
 import {
   buildTextFromNodes,
@@ -19,15 +22,32 @@ import {
 } from './ReplacementPlanner';
 import { applyReplacementToRange as writeReplacementToRange } from './RangeReplacementWriter';
 import { translationStats } from '../core/translation/TranslationStats';
-import type {
-  PronunciationRegistrar,
-  TextReplacementEngine,
-  TranslationStyleProvider,
+import {
+  TRANSLATION_BATCH_MAX_ITEMS,
+  TRANSLATION_WAVE_SIZE,
+  type PronunciationRegistrar,
+  type TextReplacementEngine,
+  type TranslationStyleProvider,
 } from './ProcessingContracts';
+
+/** Concurrent single-segment requests per wave when batching is unavailable */
+const SINGLE_REQUEST_CONCURRENCY = 8;
 
 function isBudgetExhausted(budget: ReplacementBudget): boolean {
   const remaining = budget.getRemainingCount();
   return remaining !== undefined && remaining <= 0;
+}
+
+/**
+ * Shrink the wave when little page budget is left: segments beyond it would most likely be requested
+ * only to have their answers discarded. Never below one full batch, so requests stay well filled.
+ */
+function getWaveSize(waveSize: number, budget: ReplacementBudget): number {
+  const remaining = budget.getRemainingCount();
+  if (remaining === undefined) {
+    return waveSize;
+  }
+  return Math.min(waveSize, Math.max(remaining, TRANSLATION_BATCH_MAX_ITEMS));
 }
 
 /**
@@ -173,8 +193,14 @@ export class ProcessingCoordinator {
     }
 
     try {
-      // Process segments in parallel (with limited concurrency)
-      const batchSize = 8; // Limit concurrency to avoid overload
+      // Batching engines receive whole waves (deduplicated and split into numbered requests there);
+      // otherwise segments are requested one by one, 8 at a time.
+      const useBatching =
+        typeof textReplacer.replaceTexts === 'function' &&
+        TRANSLATION_BATCH_MAX_ITEMS > 1;
+      const waveSize = useBatching
+        ? TRANSLATION_WAVE_SIZE
+        : SINGLE_REQUEST_CONCURRENCY;
       const results: SegmentProcessingResult[] = [];
       const activeBudget =
         replacementBudget ??
@@ -183,7 +209,8 @@ export class ProcessingCoordinator {
           textReplacer.getConfig().replacementRate,
         );
 
-      for (let i = 0; i < successfullyMarked.length; i += batchSize) {
+      let i = 0;
+      while (i < successfullyMarked.length) {
         // Once the page budget is used up every further answer would be discarded: skip the requests
         if (isBudgetExhausted(activeBudget)) {
           const remaining = successfullyMarked.slice(i);
@@ -194,44 +221,32 @@ export class ProcessingCoordinator {
           break;
         }
 
-        const batch = successfullyMarked.slice(i, i + batchSize);
-        const batchPromises = batch.map((segment) =>
-          this.collectSegmentReplacements(segment, textReplacer),
+        const wave = successfullyMarked.slice(
+          i,
+          i + getWaveSize(waveSize, activeBudget),
         );
-        const batchResults = await Promise.allSettled(batchPromises);
+        i += wave.length;
+
+        const translations = useBatching
+          ? await this.collectWaveReplacements(wave, textReplacer)
+          : await Promise.all(
+              wave.map((segment) =>
+                this.collectSegmentReplacements(segment, textReplacer),
+              ),
+            );
 
         // API requests may run concurrently, but budget consumption and DOM writes must run in segment order.
-        batchResults.forEach((result, index) => {
-          const segment = batch[index];
-          if (result.status === 'fulfilled') {
-            results.push(
-              this.applySegmentTranslation(
-                result.value,
-                textReplacer,
-                originalWordDisplayMode,
-                translationPosition,
-                showParentheses,
-                activeBudget,
-              ),
-            );
-          } else {
-            const error = result.reason;
-            results.push(
-              this.applySegmentTranslation(
-                {
-                  segment,
-                  success: false,
-                  replacements: [],
-                  error: error instanceof Error ? error.message : String(error),
-                },
-                textReplacer,
-                originalWordDisplayMode,
-                translationPosition,
-                showParentheses,
-                activeBudget,
-              ),
-            );
-          }
+        translations.forEach((translation) => {
+          results.push(
+            this.applySegmentTranslation(
+              translation,
+              textReplacer,
+              originalWordDisplayMode,
+              translationPosition,
+              showParentheses,
+              activeBudget,
+            ),
+          );
         });
       }
 
@@ -297,6 +312,59 @@ export class ProcessingCoordinator {
   }
 
   /**
+   * Fetch candidate replacements for a whole wave through the batching engine; the page budget is not consumed here.
+   */
+  private async collectWaveReplacements(
+    segments: ContentSegment[],
+    textReplacer: TextReplacementEngine,
+  ): Promise<SegmentTranslationResult[]> {
+    segments.forEach((segment) => {
+      segment.elements.forEach((element) => {
+        this.addProcessingFeedback(element);
+      });
+    });
+
+    let responses: Array<FullTextAnalysisResponse | undefined>;
+    let waveError: string | undefined;
+    try {
+      responses = await textReplacer.replaceTexts!(
+        segments.map((segment) => segment.textContent),
+      );
+    } catch (error) {
+      responses = [];
+      waveError = error instanceof Error ? error.message : String(error);
+    }
+
+    return segments.map((segment, index) =>
+      this.toSegmentTranslation(segment, responses[index], waveError),
+    );
+  }
+
+  /**
+   * Map an engine response to a segment result; errors keep the segment retryable.
+   */
+  private toSegmentTranslation(
+    segment: ContentSegment,
+    result: FullTextAnalysisResponse | undefined,
+    fallbackError?: string,
+  ): SegmentTranslationResult {
+    if (!result || result.status === 'error') {
+      return {
+        segment,
+        success: false,
+        replacements: [],
+        error: result?.error || fallbackError || 'Translation request failed',
+      };
+    }
+
+    return {
+      segment,
+      success: true,
+      replacements: result.replacements ?? [],
+    };
+  }
+
+  /**
    * Fetch candidate replacements concurrently; the page budget is not consumed here.
    */
   private async collectSegmentReplacements(
@@ -309,21 +377,7 @@ export class ProcessingCoordinator {
       });
 
       const result = await textReplacer.replaceText(segment.textContent);
-
-      if (!result || result.status === 'error') {
-        return {
-          segment,
-          success: false,
-          replacements: [],
-          error: result?.error || 'Translation request failed',
-        };
-      }
-
-      return {
-        segment,
-        success: true,
-        replacements: result.replacements ?? [],
-      };
+      return this.toSegmentTranslation(segment, result);
     } catch (error) {
       return {
         segment,

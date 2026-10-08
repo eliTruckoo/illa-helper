@@ -2,7 +2,10 @@
  * API module type definitions
  */
 
-import { FullTextAnalysisResponse } from '../shared/types/api';
+import {
+  BatchAnalysisResponse,
+  FullTextAnalysisResponse,
+} from '../shared/types/api';
 import { UserSettings } from '../shared/types/storage';
 
 /**
@@ -13,6 +16,14 @@ export interface ITranslationProvider {
     text: string,
     settings: UserSettings,
   ): Promise<FullTextAnalysisResponse>;
+  /**
+   * Analyze several segments in one request (numbered input/output).
+   * Optional: callers fall back to analyzeFullText per segment.
+   */
+  analyzeBatch?(
+    texts: string[],
+    settings: UserSettings,
+  ): Promise<BatchAnalysisResponse>;
 }
 
 /**

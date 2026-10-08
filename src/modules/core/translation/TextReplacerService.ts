@@ -23,6 +23,11 @@ import {
   ConcurrencyLimiter,
   MAX_CONCURRENT_TRANSLATION_REQUESTS,
 } from './ConcurrencyLimiter';
+import { BatchTranslationExecutor } from './BatchTranslationExecutor';
+import {
+  TRANSLATION_BATCH_MAX_CHARS,
+  TRANSLATION_BATCH_MAX_ITEMS,
+} from '../../processing/ProcessingContracts';
 
 // Replacement result interface
 export interface ReplacementResult {
@@ -46,6 +51,7 @@ export interface CacheStats {
 import {
   ReplacementConfig,
   FullTextAnalysisResponse,
+  BatchAnalysisResponse,
 } from '../../shared/types/api';
 import { UserSettings } from '../../shared/types/storage';
 import { TranslationStyle } from '../../shared/types/core';
@@ -146,6 +152,54 @@ export class TextReplacerService {
     } catch (error) {
       console.error('Text replacement failed:', error);
       return this.createErrorResult(text, error);
+    }
+  }
+
+  /**
+   * Replace words in several texts at once.
+   * Identical texts, cached and in-flight segments are resolved without new requests; the rest is
+   * sent as numbered batch requests (see TRANSLATION_BATCH_MAX_ITEMS / TRANSLATION_BATCH_MAX_CHARS).
+   * @returns one result per input text, in input order
+   */
+  public async replaceTexts(
+    texts: string[],
+  ): Promise<FullTextAnalysisResponse[]> {
+    if (!this.config.useGptApi) {
+      return texts.map((text) => this.createEmptyResult(text));
+    }
+
+    try {
+      const settings = this.buildUserSettings();
+
+      if (TRANSLATION_BATCH_MAX_ITEMS <= 1) {
+        return await Promise.all(
+          texts.map((text) => this.processTranslation(text, settings)),
+        );
+      }
+
+      const executor = new BatchTranslationExecutor(
+        this.segmentCache,
+        {
+          translateOne: (text) => this.requestTranslation(text, settings),
+          translateMany: (batch) =>
+            this.callBatchTranslationAPI(batch, settings),
+        },
+        {
+          maxItems: TRANSLATION_BATCH_MAX_ITEMS,
+          maxChars: TRANSLATION_BATCH_MAX_CHARS,
+        },
+      );
+      const outcomes = await executor.translate(
+        texts,
+        texts.map((text) => this.generateCacheKey(text, settings)),
+      );
+
+      return texts.map((text, index) =>
+        responseFromOutcome(text, outcomes[index], settings.replacementRate),
+      );
+    } catch (error) {
+      console.error('Batch text replacement failed:', error);
+      return texts.map((text) => this.createErrorResult(text, error));
     }
   }
 
@@ -256,6 +310,30 @@ export class TextReplacerService {
     // Call the API to translate, capped per tab
     return await this.requestLimiter.run(() =>
       translationProvider.analyzeFullText(text, settings),
+    );
+  }
+
+  /**
+   * Call the batch translation API (numbered segments in one request)
+   */
+  private async callBatchTranslationAPI(
+    texts: string[],
+    settings: UserSettings,
+  ): Promise<BatchAnalysisResponse> {
+    const activeConfig = this.config.activeApiConfig;
+
+    if (!activeConfig) {
+      throw new Error('No active API config found');
+    }
+
+    const translationProvider = ApiServiceFactory.createProvider(activeConfig);
+    if (!translationProvider.analyzeBatch) {
+      // The executor retries every item with a single request
+      return { status: 'error', error: 'Batching not supported', items: [] };
+    }
+
+    return await this.requestLimiter.run(() =>
+      translationProvider.analyzeBatch!(texts, settings),
     );
   }
 
