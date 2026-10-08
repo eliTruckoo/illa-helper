@@ -622,4 +622,73 @@ assert.deepEqual(
   'small segments must not be merged by default',
 );
 
+// ------------------------------------------------------------
+// Pronunciation: Web Speech is initialised lazily (illa-helper-ei3.5)
+// ------------------------------------------------------------
+
+let speechSynthesisAccesses = 0;
+const voicesChangedListeners = new Set();
+const fakeSpeechSynthesis = {
+  speaking: false,
+  getVoices: () => [],
+  addEventListener: (type, listener) => {
+    if (type === 'voiceschanged') voicesChangedListeners.add(listener);
+  },
+  removeEventListener: (type, listener) => {
+    if (type === 'voiceschanged') voicesChangedListeners.delete(listener);
+  },
+  cancel: () => undefined,
+  speak: (utterance) => {
+    setTimeout(() => utterance.onend?.(), 0);
+  },
+};
+Object.defineProperty(window, 'speechSynthesis', {
+  configurable: true,
+  get() {
+    speechSynthesisAccesses += 1;
+    return fakeSpeechSynthesis;
+  },
+});
+globalThis.SpeechSynthesisUtterance = class {
+  constructor(text) {
+    this.text = text;
+  }
+};
+
+const { PronunciationService } = await import(
+  '../src/modules/pronunciation/services/PronunciationService.ts'
+);
+const pronunciationService = new PronunciationService();
+pronunciationService.stopSpeaking();
+pronunciationService.updateConfig({
+  ttsConfig: { provider: 'web-speech', lang: 'en-GB' },
+});
+assert.equal(
+  speechSynthesisAccesses,
+  0,
+  'creating, stopping and reconfiguring the pronunciation service must not touch speechSynthesis',
+);
+
+const { WebSpeechTTSProvider } = await import(
+  '../src/modules/pronunciation/tts/WebSpeechTTSProvider.ts'
+);
+const webSpeech = new WebSpeechTTSProvider();
+webSpeech.stop();
+assert.equal(webSpeech.isSpeaking(), false);
+assert.equal(speechSynthesisAccesses, 0, 'idle Web Speech provider stays cold');
+const speakResult = await webSpeech.speak('hello');
+assert.equal(speakResult.success, true);
+assert.ok(speechSynthesisAccesses > 0, 'speak() initialises speech synthesis');
+assert.equal(
+  voicesChangedListeners.size,
+  0,
+  'the voiceschanged listener is removed once voice loading settles',
+);
+assert.equal(
+  fakeSpeechSynthesis.onvoiceschanged,
+  undefined,
+  'the page-owned onvoiceschanged handler is never overwritten',
+);
+pronunciationService.destroy();
+
 console.log('main regression passed');

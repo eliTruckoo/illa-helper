@@ -16,7 +16,7 @@
 import { AITranslationResult, AITranslationEntry, CacheEntry } from '../types';
 import { ApiConfigItem } from '../../shared/types/api';
 import { API_CONSTANTS } from '../config';
-import { cleanMarkdownFromResponse } from '@/src/utils';
+import { cleanMarkdownFromResponse } from '../../../utils';
 import { UniversalApiService } from '../../api/services/UniversalApiService';
 
 export class AITranslationProvider {

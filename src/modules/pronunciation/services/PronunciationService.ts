@@ -18,8 +18,10 @@ import { OriginalWordDisplayMode } from '../../shared/types/core';
 export class PronunciationService {
   private config: PronunciationConfig;
   private phoneticProvider: IPhoneticProvider;
-  private ttsProvider: ITTSProvider;
-  private fallbackTTSProvider: ITTSProvider;
+  // TTS providers are created on first playback so that page load never
+  // initialises speech synthesis (see getPrimaryTTSProvider/getFallbackTTSProvider).
+  private ttsProvider: ITTSProvider | null = null;
+  private fallbackTTSProvider: ITTSProvider | null = null;
   private aiTranslationProvider: AITranslationProvider;
   private tooltipRenderer: TooltipRenderer;
   private tooltipController: TooltipInteractionController;
@@ -31,16 +33,6 @@ export class PronunciationService {
   ) {
     this.config = { ...DEFAULT_PRONUNCIATION_CONFIG, ...config };
     this.phoneticProvider = PhoneticProviderFactory.getDefaultProvider();
-    this.ttsProvider = TTSProviderFactory.createProvider(
-      this.config.ttsConfig.provider,
-      this.config.ttsConfig,
-    );
-    this.fallbackTTSProvider = TTSProviderFactory.createProvider('web-speech', {
-      lang: this.config.ttsConfig.lang,
-      rate: this.config.ttsConfig.rate,
-      pitch: this.config.ttsConfig.pitch,
-      volume: this.config.ttsConfig.volume,
-    });
     this.aiTranslationProvider = new AITranslationProvider(
       apiConfigItem ?? null,
     );
@@ -60,6 +52,41 @@ export class PronunciationService {
     });
 
     void this.updateOriginalWordDisplayMode();
+  }
+
+  /**
+   * Get (and create on first use) the primary TTS provider.
+   */
+  private getPrimaryTTSProvider(): ITTSProvider {
+    if (!this.ttsProvider) {
+      this.ttsProvider = TTSProviderFactory.createProvider(
+        this.config.ttsConfig.provider,
+        this.config.ttsConfig,
+      );
+    }
+    return this.ttsProvider;
+  }
+
+  /**
+   * Get (and create on first use) the Web Speech fallback provider.
+   */
+  private getFallbackTTSProvider(): ITTSProvider {
+    if (!this.fallbackTTSProvider) {
+      this.fallbackTTSProvider = TTSProviderFactory.createProvider(
+        'web-speech',
+        this.getFallbackTTSConfig(),
+      );
+    }
+    return this.fallbackTTSProvider;
+  }
+
+  private getFallbackTTSConfig() {
+    return {
+      lang: this.config.ttsConfig.lang,
+      rate: this.config.ttsConfig.rate,
+      pitch: this.config.ttsConfig.pitch,
+      volume: this.config.ttsConfig.volume,
+    };
   }
 
   /**
@@ -94,27 +121,29 @@ export class PronunciationService {
     try {
       this.stopSpeaking();
 
-      const primaryResult = await this.ttsProvider.speak(text);
+      const primaryProvider = this.getPrimaryTTSProvider();
+      const primaryResult = await primaryProvider.speak(text);
       if (primaryResult.success) {
         return primaryResult;
       }
 
       console.warn(
-        `Primary TTS provider (${this.ttsProvider.name}) failed, falling back to the backup provider`,
+        `Primary TTS provider (${primaryProvider.name}) failed, falling back to the backup provider`,
         primaryResult.error,
       );
 
-      if (!this.fallbackTTSProvider.isAvailable()) {
+      const fallbackProvider = this.getFallbackTTSProvider();
+      if (!fallbackProvider.isAvailable()) {
         return {
           success: false,
           error: `Primary TTS provider failed and backup provider unavailable: ${primaryResult.error}`,
         };
       }
 
-      const fallbackResult = await this.fallbackTTSProvider.speak(text);
+      const fallbackResult = await fallbackProvider.speak(text);
       if (fallbackResult.success) {
         console.info(
-          `TTS fallback succeeded using backup provider (${this.fallbackTTSProvider.name})`,
+          `TTS fallback succeeded using backup provider (${fallbackProvider.name})`,
         );
         return { success: true };
       }
@@ -127,8 +156,9 @@ export class PronunciationService {
       console.error('Unexpected error during TTS playback:', error);
 
       try {
-        if (this.fallbackTTSProvider.isAvailable()) {
-          const fallbackResult = await this.fallbackTTSProvider.speak(text);
+        const fallbackProvider = this.getFallbackTTSProvider();
+        if (fallbackProvider.isAvailable()) {
+          const fallbackResult = await fallbackProvider.speak(text);
           if (fallbackResult.success) {
             console.info('TTS exception fallback succeeded');
             return { success: true };
@@ -153,13 +183,13 @@ export class PronunciationService {
    */
   stopSpeaking(): void {
     try {
-      this.ttsProvider.stop();
+      this.ttsProvider?.stop();
     } catch (error) {
       console.error('Error stopping primary TTS provider:', error);
     }
 
     try {
-      this.fallbackTTSProvider.stop();
+      this.fallbackTTSProvider?.stop();
     } catch (error) {
       console.error('Error stopping backup TTS provider:', error);
     }
@@ -178,8 +208,8 @@ export class PronunciationService {
       };
       const accent = accentMap[lang];
 
-      if (accent && this.ttsProvider.name === 'youdao') {
-        const primaryResult = await this.ttsProvider.speak(text, {
+      if (accent && this.config.ttsConfig.provider === 'youdao') {
+        const primaryResult = await this.getPrimaryTTSProvider().speak(text, {
           accent,
           rate: this.config.ttsConfig.rate,
           pitch: this.config.ttsConfig.pitch,
@@ -195,7 +225,7 @@ export class PronunciationService {
         );
       }
 
-      const fallbackResult = await this.fallbackTTSProvider.speak(text, {
+      const fallbackResult = await this.getFallbackTTSProvider().speak(text, {
         lang,
         rate: this.config.ttsConfig.rate,
         pitch: this.config.ttsConfig.pitch,
@@ -222,19 +252,20 @@ export class PronunciationService {
   updateConfig(config: Partial<PronunciationConfig>): void {
     this.config = { ...this.config, ...config };
 
-    if (config.ttsConfig) {
+    // Providers that were never used are simply created later from this.config.
+    if (config.ttsConfig && this.ttsProvider) {
       if (
         config.ttsConfig.provider &&
         config.ttsConfig.provider !== this.ttsProvider.name
       ) {
-        this.ttsProvider = TTSProviderFactory.createProvider(
-          config.ttsConfig.provider,
-          config.ttsConfig,
-        );
+        this.ttsProvider.stop();
+        this.ttsProvider = null;
       } else {
         this.ttsProvider.updateConfig(config.ttsConfig);
       }
+    }
 
+    if (config.ttsConfig && this.fallbackTTSProvider) {
       this.fallbackTTSProvider.updateConfig({
         lang: config.ttsConfig.lang,
         rate: config.ttsConfig.rate,
@@ -276,16 +307,20 @@ export class PronunciationService {
     primary: { name: string; available: boolean; speaking: boolean };
     fallback: { name: string; available: boolean; speaking: boolean };
   } {
+    // Provider construction has no side effects; speech synthesis is still
+    // only touched on the first speak().
+    const primary = this.getPrimaryTTSProvider();
+    const fallback = this.getFallbackTTSProvider();
     return {
       primary: {
-        name: this.ttsProvider.name,
-        available: this.ttsProvider.isAvailable(),
-        speaking: this.ttsProvider.isSpeaking(),
+        name: primary.name,
+        available: primary.isAvailable(),
+        speaking: primary.isSpeaking(),
       },
       fallback: {
-        name: this.fallbackTTSProvider.name,
-        available: this.fallbackTTSProvider.isAvailable(),
-        speaking: this.fallbackTTSProvider.isSpeaking(),
+        name: fallback.name,
+        available: fallback.isAvailable(),
+        speaking: fallback.isSpeaking(),
       },
     };
   }
