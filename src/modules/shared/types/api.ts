@@ -26,11 +26,34 @@ export interface Replacement {
   targetLanguage?: string;
 }
 
+/**
+ * Outcome of a translation request.
+ * - ok: valid response with at least one replacement
+ * - empty: valid response without replacements (cacheable success)
+ * - error: the request or response failed (must never be cached)
+ */
+export type TranslationResultStatus = 'ok' | 'empty' | 'error';
+
 // Full-text analysis response interface
 export interface FullTextAnalysisResponse {
   original: string;
   processed: string;
   replacements: Replacement[];
+  /** Missing status is treated as 'ok'/'empty' depending on replacements */
+  status?: TranslationResultStatus;
+  /** Error message when status is 'error' */
+  error?: string;
+}
+
+/**
+ * Answer to a batch request carrying several segments.
+ */
+export interface BatchAnalysisResponse {
+  /** 'error' when the whole request failed */
+  status: 'ok' | 'error';
+  error?: string;
+  /** One entry per input text, in input order; undefined = the model did not answer this item */
+  items: Array<FullTextAnalysisResponse | undefined>;
 }
 
 // API configuration interface

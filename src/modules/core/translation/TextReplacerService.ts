@@ -4,7 +4,30 @@
  */
 
 import { ApiServiceFactory } from '../../api';
+import { getResponseStatus } from '../../api/utils/apiUtils';
+import {
+  translationStats,
+  type TranslationStatsSnapshot,
+} from './TranslationStats';
 import { StyleManager } from '../../styles';
+import {
+  SegmentTranslationCache,
+  SEGMENT_CACHE_MAX_ENTRIES,
+  buildTranslationCacheKey,
+  responseFromOutcome,
+  toTranslationOutcome,
+  type TranslationOutcome,
+} from './SegmentTranslationCache';
+import { TRANSLATION_PROMPT_VERSION } from './PromptService';
+import {
+  ConcurrencyLimiter,
+  MAX_CONCURRENT_TRANSLATION_REQUESTS,
+} from './ConcurrencyLimiter';
+import { BatchTranslationExecutor } from './BatchTranslationExecutor';
+import {
+  TRANSLATION_BATCH_MAX_CHARS,
+  TRANSLATION_BATCH_MAX_ITEMS,
+} from '../../processing/ProcessingContracts';
 
 // Replacement result interface
 export interface ReplacementResult {
@@ -21,15 +44,6 @@ export interface ReplacementResult {
   }>;
 }
 
-// Cache key interface
-interface CacheKey {
-  text: string;
-  sourceLanguage?: string;
-  targetLanguage: string;
-  userLevel: number;
-  replacementRate: number;
-}
-
 // Cache statistics
 export interface CacheStats {
   cacheSize: number;
@@ -37,6 +51,7 @@ export interface CacheStats {
 import {
   ReplacementConfig,
   FullTextAnalysisResponse,
+  BatchAnalysisResponse,
 } from '../../shared/types/api';
 import { UserSettings } from '../../shared/types/storage';
 import { TranslationStyle } from '../../shared/types/core';
@@ -49,14 +64,14 @@ export class TextReplacerService {
   // Singleton instance
   private static instance: TextReplacerService | null = null;
 
-  // Cache config constants
-  private static readonly CACHE_MAX_SIZE = 100;
-  private static readonly CACHE_CLEANUP_BATCH = 20;
-
   // Service components
   public readonly styleManager: StyleManager;
   private config: ReplacementConfig;
-  private cache: Map<string, FullTextAnalysisResponse>;
+  private segmentCache: SegmentTranslationCache;
+  // One per-tab limiter shared by every run (manual, lazy loading, dynamic content)
+  private requestLimiter = new ConcurrencyLimiter(
+    MAX_CONCURRENT_TRANSLATION_REQUESTS,
+  );
 
   /**
    * Private constructor, enforces the singleton pattern
@@ -64,7 +79,7 @@ export class TextReplacerService {
   private constructor(config: ReplacementConfig) {
     this.config = config;
     this.styleManager = new StyleManager();
-    this.cache = new Map<string, FullTextAnalysisResponse>();
+    this.segmentCache = new SegmentTranslationCache(SEGMENT_CACHE_MAX_ENTRIES);
     this.initializeStyleManager();
   }
 
@@ -136,7 +151,55 @@ export class TextReplacerService {
       return await this.processTranslation(text, settingsForApi);
     } catch (error) {
       console.error('Text replacement failed:', error);
-      return this.createEmptyResult(text);
+      return this.createErrorResult(text, error);
+    }
+  }
+
+  /**
+   * Replace words in several texts at once.
+   * Identical texts, cached and in-flight segments are resolved without new requests; the rest is
+   * sent as numbered batch requests (see TRANSLATION_BATCH_MAX_ITEMS / TRANSLATION_BATCH_MAX_CHARS).
+   * @returns one result per input text, in input order
+   */
+  public async replaceTexts(
+    texts: string[],
+  ): Promise<FullTextAnalysisResponse[]> {
+    if (!this.config.useGptApi) {
+      return texts.map((text) => this.createEmptyResult(text));
+    }
+
+    try {
+      const settings = this.buildUserSettings();
+
+      if (TRANSLATION_BATCH_MAX_ITEMS <= 1) {
+        return await Promise.all(
+          texts.map((text) => this.processTranslation(text, settings)),
+        );
+      }
+
+      const executor = new BatchTranslationExecutor(
+        this.segmentCache,
+        {
+          translateOne: (text) => this.requestTranslation(text, settings),
+          translateMany: (batch) =>
+            this.callBatchTranslationAPI(batch, settings),
+        },
+        {
+          maxItems: TRANSLATION_BATCH_MAX_ITEMS,
+          maxChars: TRANSLATION_BATCH_MAX_CHARS,
+        },
+      );
+      const outcomes = await executor.translate(
+        texts,
+        texts.map((text) => this.generateCacheKey(text, settings)),
+      );
+
+      return texts.map((text, index) =>
+        responseFromOutcome(text, outcomes[index], settings.replacementRate),
+      );
+    } catch (error) {
+      console.error('Batch text replacement failed:', error);
+      return texts.map((text) => this.createErrorResult(text, error));
     }
   }
 
@@ -148,6 +211,23 @@ export class TextReplacerService {
       original: text,
       processed: text,
       replacements: [],
+      status: 'empty',
+    };
+  }
+
+  /**
+   * Create a failed result. Failed results are never cached so the segment can be retried later.
+   */
+  private createErrorResult(
+    text: string,
+    error: unknown,
+  ): FullTextAnalysisResponse {
+    return {
+      original: text,
+      processed: text,
+      replacements: [],
+      status: 'error',
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 
@@ -165,35 +245,49 @@ export class TextReplacerService {
   }
 
   /**
-   * Unified translation handling method
+   * Unified translation handling method: in-page cache, then in-flight request, then API call.
    * @param text Original text
    * @param settings user settings
-   * @returns translation result
+   * @returns translation result with positions computed for this exact text
    */
   private async processTranslation(
     text: string,
     settings: UserSettings,
   ): Promise<FullTextAnalysisResponse> {
-    // Generate cache key
     const cacheKey = this.generateCacheKey(text, settings);
 
-    // Check cache
-    const cachedResult = this.getCachedResult(cacheKey);
-    if (cachedResult) {
-      return cachedResult;
+    const { outcome, source } = await this.segmentCache.resolve(cacheKey, () =>
+      this.requestTranslation(text, settings),
+    );
+
+    if (source === 'cache') {
+      translationStats.recordCacheHit();
+    } else if (source === 'inflight') {
+      translationStats.recordCoalesced();
     }
 
+    return responseFromOutcome(text, outcome, settings.replacementRate);
+  }
+
+  /**
+   * Call the API for one segment and reduce the response to a cacheable outcome
+   */
+  private async requestTranslation(
+    text: string,
+    settings: UserSettings,
+  ): Promise<TranslationOutcome> {
     try {
-      // Get API result
       const apiResult = await this.callTranslationAPI(text, settings);
-
-      // Store in cache
-      this.setCachedResult(cacheKey, apiResult);
-
-      return apiResult;
+      return toTranslationOutcome({
+        ...apiResult,
+        status: getResponseStatus(apiResult),
+      });
     } catch (error) {
       console.error('Translation failed:', error);
-      return await this.handleTranslationError(text, settings, error);
+      return {
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   }
 
@@ -213,95 +307,62 @@ export class TextReplacerService {
     // Use the factory method to create the correct provider instance
     const translationProvider = ApiServiceFactory.createProvider(activeConfig);
 
-    // Call the API to translate
-    return await translationProvider.analyzeFullText(text, settings);
+    // Call the API to translate, capped per tab
+    return await this.requestLimiter.run(() =>
+      translationProvider.analyzeFullText(text, settings),
+    );
   }
 
   /**
-   * Handle translation errors - simplified
+   * Call the batch translation API (numbered segments in one request)
    */
-  private async handleTranslationError(
-    text: string,
+  private async callBatchTranslationAPI(
+    texts: string[],
     settings: UserSettings,
-    error: any,
-  ): Promise<FullTextAnalysisResponse> {
-    console.log('Translation failed, returning original text:', error);
+  ): Promise<BatchAnalysisResponse> {
+    const activeConfig = this.config.activeApiConfig;
 
-    // No fallback logic after simplification, return the original text directly
-    return this.createEmptyResult(text);
+    if (!activeConfig) {
+      throw new Error('No active API config found');
+    }
+
+    const translationProvider = ApiServiceFactory.createProvider(activeConfig);
+    if (!translationProvider.analyzeBatch) {
+      // The executor retries every item with a single request
+      return { status: 'error', error: 'Batching not supported', items: [] };
+    }
+
+    return await this.requestLimiter.run(() =>
+      translationProvider.analyzeBatch!(texts, settings),
+    );
   }
 
   /**
-   * Generate cache key
-   * @param text text
-   * @param settings settings
-   * @returns cache key string
+   * Generate the cache key: every setting that changes the model answer plus the normalized text.
+   * Full string key (no hash) so different segments can never collide.
    */
   private generateCacheKey(text: string, settings: UserSettings): string {
-    const targetLanguage = settings.multilingualConfig.targetLanguage;
+    const activeConfig = this.config.activeApiConfig;
+    const apiConfig = activeConfig?.config ?? this.config.apiConfig;
 
-    const keyData: CacheKey = {
-      text: text.trim(),
-      targetLanguage: targetLanguage,
-      userLevel: settings.userLevel,
-      replacementRate: settings.replacementRate,
-    };
-
-    return this.hashCacheKey(keyData);
-  }
-
-  /**
-   * Generate a hash of the cache key
-   */
-  private hashCacheKey(keyData: CacheKey): string {
-    const str = JSON.stringify(keyData);
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash; // convert to 32-bit integer
-    }
-    return Math.abs(hash).toString(36);
+    return buildTranslationCacheKey(
+      {
+        providerId: activeConfig?.id ?? '',
+        protocolFamily: activeConfig?.protocolFamily,
+        endpoint: apiConfig?.apiEndpoint,
+        model: apiConfig?.model ?? '',
+        temperature: apiConfig?.temperature,
+        customParams: apiConfig?.customParams,
+        targetLanguage: settings.multilingualConfig.targetLanguage,
+        userLevel: settings.userLevel,
+        replacementRate: settings.replacementRate,
+        promptVersion: TRANSLATION_PROMPT_VERSION,
+      },
+      text,
+    );
   }
 
   // ==================== Cache management methods ====================
-
-  /**
-   * Get cached result
-   */
-  private getCachedResult(cacheKey: string): FullTextAnalysisResponse | null {
-    return this.cache.get(cacheKey) || null;
-  }
-
-  /**
-   * Set cached result
-   */
-  private setCachedResult(
-    cacheKey: string,
-    result: FullTextAnalysisResponse,
-  ): void {
-    this.cache.set(cacheKey, result);
-    this.cleanupCache();
-  }
-
-  /**
-   * Clean up expired cache
-   */
-  private cleanupCache(): void {
-    if (this.cache.size > TextReplacerService.CACHE_MAX_SIZE) {
-      const keys = Array.from(this.cache.keys());
-      const deleteCount =
-        this.cache.size -
-        TextReplacerService.CACHE_MAX_SIZE +
-        TextReplacerService.CACHE_CLEANUP_BATCH;
-
-      for (let i = 0; i < deleteCount; i++) {
-        this.cache.delete(keys[i]);
-      }
-
-      console.log(`Cache cleanup: removed ${deleteCount} entries`);
-    }
-  }
 
   /**
    * Get cache statistics
@@ -309,15 +370,22 @@ export class TextReplacerService {
    */
   public getCacheStats(): CacheStats {
     return {
-      cacheSize: this.cache.size,
+      cacheSize: this.segmentCache.size,
     };
+  }
+
+  /**
+   * Per-tab request/token/cache counters (see TranslationStats)
+   */
+  public getTranslationStats(): TranslationStatsSnapshot {
+    return translationStats.getSnapshot();
   }
 
   /**
    * Clear all cache
    */
   public clearAllCache(): void {
-    this.cache.clear();
+    this.segmentCache.clear();
     console.log('All cache cleared');
   }
 

@@ -188,6 +188,14 @@ export class ProcessingStateManager {
   }
 
   /**
+   * Release the in-progress mark without recording the content as processed,
+   * so a failed (e.g. network or API error) segment can be retried later.
+   */
+  releaseProcessing(fingerprint: string): void {
+    this.activeProcessing.delete(fingerprint);
+  }
+
+  /**
    * Get processing statistics
    */
   getProcessingStats(): {

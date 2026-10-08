@@ -3,16 +3,12 @@
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { FullTextAnalysisResponse } from '../../shared/types/api';
 import { UserSettings } from '../../shared/types/storage';
 import { BaseProvider } from '../base/BaseProvider';
-import { mergeCustomParams } from '../utils/apiUtils';
-import { addPositionsToReplacements } from '../utils/textUtils';
-import { getSystemPromptByConfig } from '../../core/translation/PromptService';
+import { CompletionRequest, CompletionResult } from '../types';
+import { mergeCustomParams, getGeminiOutputConfig } from '../utils/apiUtils';
 import { getApiTimeout, mapParamsForProvider } from '@/src/utils';
 import { rateLimitManager } from '../../infrastructure/ratelimit';
-import { StructuredTextParser } from '../utils/structuredTextParser';
-import { languageService } from '../../core/translation/LanguageService';
 
 /**
  * Google Gemini API provider implementation
@@ -22,15 +18,17 @@ export class GoogleGeminiProvider extends BaseProvider {
     return 'Google Gemini';
   }
 
-  protected async doAnalyzeFullText(
-    text: string,
+  protected async requestCompletion(
+    request: CompletionRequest,
     settings: UserSettings,
-  ): Promise<FullTextAnalysisResponse> {
+  ): Promise<CompletionResult> {
     const genAI = new GoogleGenerativeAI(this.config.apiKey);
 
     // Base generation config
     const baseGenerationConfig: any = {
       temperature: this.config.temperature,
+      // Output cap (+ thinking off where possible); customParams below can override it
+      ...getGeminiOutputConfig(this.config.model, request.maxOutputTokens),
     };
 
     // Merge extra parameters from customParams
@@ -60,13 +58,7 @@ export class GoogleGeminiProvider extends BaseProvider {
       requestOptions,
     );
 
-    const systemPrompt = getSystemPromptByConfig({
-      targetLanguage: settings.multilingualConfig.targetLanguage,
-      userLevel: settings.userLevel,
-      replacementRate: settings.replacementRate,
-    });
-
-    const prompt = `${systemPrompt}\n\nTranslate to ${languageService.getTargetLanguageDisplayName(settings.multilingualConfig.targetLanguage)} (original||translation): ${text}`;
+    const prompt = `${request.systemPrompt}\n\n${request.userPrompt}`;
     const rateLimiter = rateLimitManager.getLimiter(
       this.config.apiEndpoint || 'google-gemini-native',
       this.config.requestsPerSecond || 0,
@@ -79,26 +71,10 @@ export class GoogleGeminiProvider extends BaseProvider {
     const response = result.response;
     const responseText = response.text();
 
-    // Use the structured text parser
-    const parseResult = StructuredTextParser.parse(responseText);
-
-    if (!parseResult.success) {
-      console.error('[Gemini] Parsing failed:', parseResult.errors);
-      throw new Error(
-        `Structured text parsing failed: ${parseResult.errors.join(', ')}`,
-      );
-    }
-
-    const replacements = addPositionsToReplacements(
-      text,
-      parseResult.replacements,
-      { replacementRate: settings.replacementRate },
-    );
-
     return {
-      original: text,
-      processed: '',
-      replacements,
+      text: responseText,
+      usage: response.usageMetadata,
+      truncated: response.candidates?.[0]?.finishReason === 'MAX_TOKENS',
     };
   }
 }

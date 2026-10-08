@@ -17,6 +17,8 @@ export class ProcessingService implements IProcessingService {
   private lazyLoadingService?: LazyLoadingService;
   private processingParams!: ProcessingParams;
   private pageReplacementBudget?: ReplacementBudget;
+  // One coordinator per tab so manual, lazy-loading and dynamic-content runs share its serial queue
+  private coordinator: ProcessingCoordinator;
 
   constructor(
     textProcessor: TextProcessorService,
@@ -27,6 +29,9 @@ export class ProcessingService implements IProcessingService {
     this.textProcessor = textProcessor;
     this.textReplacer = textReplacer;
     this.lazyLoadingService = lazyLoadingService;
+    this.coordinator = new ProcessingCoordinator(
+      textProcessor.getPronunciationService(),
+    );
     this.updateProcessingParams(settings);
 
     // Set lazy loading callback
@@ -133,10 +138,8 @@ export class ProcessingService implements IProcessingService {
   ): Promise<void> {
     // Batches must share the page budget and must not fall back to single-segment processRoot on failure.
     // Otherwise each entry point would claim a fresh proportional quota and low replacement rates would stop working.
-    const pronunciationService = this.textProcessor.getPronunciationService();
-    const coordinator = new ProcessingCoordinator(pronunciationService);
-
-    await coordinator.processSegments(
+    // All runs go through the shared coordinator, whose queue serializes them per tab.
+    await this.coordinator.processSegments(
       segments,
       this.textReplacer,
       this.processingParams.originalWordDisplayMode,

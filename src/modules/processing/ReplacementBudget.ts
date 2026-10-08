@@ -1,13 +1,19 @@
 import type { Replacement } from '../shared/types/api';
 import type { ContentSegment } from './ProcessingStateManager';
 
-export function countTranslationUnits(text: string): number {
-  const latinWords = text.match(/[A-Za-z]+(?:[-'][A-Za-z]+)*/g) ?? [];
-  const cjkChars = text.match(/[\p{Script=Han}]/gu) ?? [];
+const CJK_CHAR_PATTERN =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu;
+const WORD_PATTERN = /\p{L}[\p{L}\p{M}]*(?:[-'\u2019][\p{L}\p{M}]+)*/gu;
 
-  // Chinese has no natural whitespace word boundaries. Counting per character would noticeably inflate low replacement rates;
+export function countTranslationUnits(text: string): number {
+  const cjkChars = text.match(CJK_CHAR_PATTERN) ?? [];
+  // Words of every script that separates words with spaces (Latin, Cyrillic, Greek, Hangul, ...).
+  // Without this, non-Latin pages got a limit of 0 and every answer was discarded.
+  const words = text.replace(CJK_CHAR_PATTERN, ' ').match(WORD_PATTERN) ?? [];
+
+  // Chinese/Japanese have no natural whitespace word boundaries. Counting per character would noticeably inflate low replacement rates;
   // so we conservatively estimate two characters as roughly one learning unit, avoiding a word-segmentation dependency for the limit.
-  return latinWords.length + Math.ceil(cjkChars.length / 2);
+  return words.length + Math.ceil(cjkChars.length / 2);
 }
 
 export function calculateReplacementLimit(
