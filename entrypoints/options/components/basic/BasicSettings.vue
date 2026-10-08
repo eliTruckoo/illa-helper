@@ -25,40 +25,6 @@
           />
         </div>
 
-        <!-- Interface language settings -->
-        <div class="border-t border-border pt-6">
-          <div class="space-y-1">
-            <Label for="interface-language">
-              {{ $t('basicSettings.interfaceLanguage') }}
-            </Label>
-            <p class="text-xs text-muted-foreground">
-              {{ $t('basicSettings.interfaceLanguageDescription') }}
-            </p>
-          </div>
-          <div class="mt-2">
-            <Select
-              id="interface-language"
-              :model-value="currentLocale"
-              @update:model-value="changeLanguage"
-            >
-              <SelectTrigger>
-                <SelectValue
-                  :placeholder="$t('basicSettings.selectInterfaceLanguage')"
-                />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem
-                  v-for="locale in supportedLocales"
-                  :key="locale"
-                  :value="locale"
-                >
-                  {{ getLocaleName(locale) }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
         <!-- Native language settings -->
         <div class="border-t border-border pt-6">
           <Label class="text-sm mb-3">
@@ -559,7 +525,6 @@ import { useI18n } from 'vue-i18n';
 import { StorageService } from '@/src/modules/core/storage';
 import { StyleManager } from '@/src/modules/styles';
 import { LanguageService } from '@/src/modules/core/translation/LanguageService';
-import { SUPPORTED_LOCALES, LOCALE_NAMES, setLocale } from '@/src/i18n';
 import {
   UserSettings,
   DEFAULT_SETTINGS,
@@ -584,25 +549,11 @@ import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 
-const { t, locale } = useI18n();
+const { t } = useI18n();
 
 const settings = ref<UserSettings>(DEFAULT_SETTINGS);
-const currentLocale = ref(locale.value);
-const supportedLocales = SUPPORTED_LOCALES;
 const storageService = StorageService.getInstance();
 
-const getLocaleName = (locale: string) => {
-  return LOCALE_NAMES[locale] || locale;
-};
-
-const changeLanguage = (newLocale: any) => {
-  if (typeof newLocale === 'string') {
-    setLocale(newLocale as any);
-    locale.value = newLocale;
-    currentLocale.value = newLocale;
-    window.location.reload();
-  }
-};
 const styleManager = new StyleManager();
 const languageService = LanguageService.getInstance();
 
