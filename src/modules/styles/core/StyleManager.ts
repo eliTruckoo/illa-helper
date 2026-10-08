@@ -6,6 +6,12 @@
 import { TranslationStyle } from '../../shared/types/core';
 import { ALL_STYLES } from '../index';
 
+// Element ids double as the injection guard: several StyleManager instances
+// (content manager, text replacer, paragraph translation) share one document,
+// so the stylesheet must be injected once per document, not once per instance.
+const MAIN_STYLE_ELEMENT_ID = 'wxt-main-styles';
+const CUSTOM_STYLE_ELEMENT_ID = 'wxt-custom-translation-style';
+
 export class StyleManager {
   private currentStyle: TranslationStyle;
   private customCSS: string = '';
@@ -54,10 +60,12 @@ export class StyleManager {
    * Update custom styles
    */
   private updateCustomStyle(): void {
-    if (!this.customStyleElement) {
-      this.customStyleElement = document.createElement('style');
-      this.customStyleElement.id = 'wxt-custom-translation-style';
-      document.head.appendChild(this.customStyleElement);
+    if (!this.customStyleElement?.isConnected) {
+      this.customStyleElement =
+        (document.getElementById(
+          CUSTOM_STYLE_ELEMENT_ID,
+        ) as HTMLStyleElement | null) ??
+        this.createStyleElement(CUSTOM_STYLE_ELEMENT_ID);
     }
 
     // Safely wrap user CSS so it only applies to translation elements
@@ -73,15 +81,24 @@ export class StyleManager {
    * Inject CSS styles into the page
    */
   private initializeStyles(): void {
-    // Avoid duplicate injection
-    if (this.mainStyleElement) {
+    // Avoid duplicate injection, also across StyleManager instances
+    const existing = document.getElementById(
+      MAIN_STYLE_ELEMENT_ID,
+    ) as HTMLStyleElement | null;
+    if (existing) {
+      this.mainStyleElement = existing;
       return;
     }
 
-    this.mainStyleElement = document.createElement('style');
-    this.mainStyleElement.id = 'wxt-main-styles';
+    this.mainStyleElement = this.createStyleElement(MAIN_STYLE_ELEMENT_ID);
     this.mainStyleElement.textContent = ALL_STYLES;
-    document.head.appendChild(this.mainStyleElement);
+  }
+
+  private createStyleElement(id: string): HTMLStyleElement {
+    const style = document.createElement('style');
+    style.id = id;
+    (document.head || document.documentElement).appendChild(style);
+    return style;
   }
 
   /**

@@ -955,4 +955,42 @@ pronunciationService.destroy();
   hoverHost.remove();
 }
 
+// ------------------------------------------------------------
+// Styles: one main stylesheet per document, prefixed keyframes (illa-helper-ei3.10)
+// ------------------------------------------------------------
+
+{
+  const { StyleManager } = await import(
+    '../src/modules/styles/core/StyleManager.ts'
+  );
+  const { ALL_STYLES } = await import('../src/modules/styles/index.ts');
+
+  const managers = [new StyleManager(), new StyleManager(), new StyleManager()];
+  assert.equal(
+    document.querySelectorAll('#wxt-main-styles').length,
+    1,
+    'the main stylesheet is injected once regardless of StyleManager instances',
+  );
+  managers[0].setCustomCSS('color: red;');
+  managers[1].setCustomCSS('color: blue;');
+  const customStyles = document.querySelectorAll(
+    '#wxt-custom-translation-style',
+  );
+  assert.equal(customStyles.length, 1, 'custom CSS shares one style element');
+  assert.match(customStyles[0].textContent, /blue/);
+
+  const keyframeNames = [...ALL_STYLES.matchAll(/@keyframes\s+([\w-]+)/g)].map(
+    (match) => match[1],
+  );
+  assert.ok(keyframeNames.length > 0);
+  for (const name of keyframeNames) {
+    assert.ok(name.startsWith('wxt-'), `keyframes "${name}" must be prefixed`);
+  }
+  assert.ok(
+    !/animation:[^;]*\bspin\b/.test(ALL_STYLES.replace(/wxt-spin/g, '')),
+    'no rule references the unprefixed spin keyframes',
+  );
+  managers[0].cleanup();
+}
+
 console.log('main regression passed');

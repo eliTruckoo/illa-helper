@@ -129,10 +129,42 @@ button.wxt-processing *,
   }
 }
 
-/* Animation definitions */
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+/* Animation definitions (all keyframes are wxt-prefixed to avoid clashing with page styles) */
+@keyframes wxt-glow-animation {
+  from {
+    background-color: rgba(106, 136, 224, 0.3);
+    box-shadow: 0 0 8px rgba(106, 136, 224, 0.5);
+  }
+  to {
+    background-color: transparent;
+    box-shadow: 0 0 0 transparent;
+  }
+}
+
+@keyframes wxt-processing-animation {
+  0% { background-color: rgba(106, 136, 224, 0.1); }
+  50% { background-color: rgba(106, 136, 224, 0.3); }
+  100% { background-color: rgba(106, 136, 224, 0.1); }
+}
+
+/* Brief highlight after a segment has been translated */
+.wxt-glow {
+  animation: wxt-glow-animation 0.8s ease-out;
+  border-radius: 3px;
+}
+
+/* Pulse while a segment is being translated (removed when processing ends) */
+.wxt-processing {
+  animation: wxt-processing-animation 2s infinite ease-in-out;
+  border-radius: 3px;
+  transition: background-color 0.3s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wxt-glow,
+  .wxt-processing {
+    animation: none !important;
+  }
 }
 
 /* ===== Translation state control system ===== */
