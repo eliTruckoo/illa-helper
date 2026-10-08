@@ -51,7 +51,7 @@ export class UpdateCheckService {
   private static instance: UpdateCheckService;
   private readonly currentVersion: string;
   private readonly githubApiUrl =
-    'https://api.github.com/repos/xiao-zaiyi/illa-helper/releases/latest';
+    'https://api.github.com/repos/eliTruckoo/illa-helper/releases/latest';
   private storageService: StorageService;
   private listenersRegistered = false;
   private readonly handleAlarm = (alarm: { name: string }): void => {
@@ -259,6 +259,11 @@ export class UpdateCheckService {
         },
         cache: 'no-cache',
       });
+
+      // 404 means the repo has no published release yet
+      if (response.status === 404) {
+        return this.createUpdateInfo(false, this.currentVersion);
+      }
 
       if (!response.ok) {
         const errorText = await response.text();

@@ -11,7 +11,7 @@
       <CardContent class="space-y-4">
         <div class="flex items-center space-x-4">
           <img
-            src="/assets/logo.png"
+            src="/assets/logo.svg"
             :alt="$t('about.logoAlt')"
             class="w-16 h-16"
           />
@@ -209,11 +209,11 @@
           {{ $t('about.supportDescription') }}
         </p>
         <div class="mt-4 flex flex-wrap gap-2">
-          <a href="https://github.com/xiao-zaiyi/illa-helper" target="_blank">
+          <a href="https://github.com/eliTruckoo/illa-helper" target="_blank">
             <Button>⭐ {{ $t('about.starOnGitHub') }}</Button>
           </a>
           <a
-            href="https://github.com/xiao-zaiyi/illa-helper/issues"
+            href="https://github.com/eliTruckoo/illa-helper/issues"
             target="_blank"
           >
             <Button variant="outline">
@@ -222,7 +222,7 @@
             </Button>
           </a>
           <a
-            href="https://github.com/xiao-zaiyi/illa-helper/pulls"
+            href="https://github.com/eliTruckoo/illa-helper/pulls"
             target="_blank"
           >
             <Button variant="outline">

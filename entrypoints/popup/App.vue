@@ -218,7 +218,7 @@ const extensionVersion = ref('N/A');
       <div class="header-content">
         <div class="logo">
           <img
-            src="/assets/vue.svg"
+            src="/assets/logo.svg"
             alt="logo"
             style="width: 40px; height: 40px"
           />

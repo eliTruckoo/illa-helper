@@ -195,7 +195,7 @@ class ReleaseManager {
       try {
         // Delete the GitHub Release
         console.log('💥 Deleting GitHub Release...');
-        this.exec(`gh repo set-default xiao-zaiyi/illa-helper`);
+        this.exec(`gh repo set-default eliTruckoo/illa-helper`);
 
         try {
           execSync(`gh release delete ${tag} --yes`, {
@@ -314,10 +314,10 @@ class ReleaseManager {
 
     console.log('\n🔗 View progress:');
     console.log(
-      '   GitHub Actions: https://github.com/xiao-zaiyi/illa-helper/actions',
+      '   GitHub Actions: https://github.com/eliTruckoo/illa-helper/actions',
     );
     console.log(
-      '   Releases: https://github.com/xiao-zaiyi/illa-helper/releases',
+      '   Releases: https://github.com/eliTruckoo/illa-helper/releases',
     );
   }
 

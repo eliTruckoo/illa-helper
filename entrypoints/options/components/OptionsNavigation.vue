@@ -22,7 +22,7 @@
           class="flex items-center space-x-3 cursor-pointer"
           @click="handleLogoClick"
         >
-          <img src="/assets/vue.svg" alt="logo" class="w-8 h-8" />
+          <img src="/assets/logo.svg" alt="logo" class="w-8 h-8" />
           <div class="py-4">
             <h4
               class="text-sm font-semibold text-center font-mono bg-clip-text text-transparent bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500 drop-shadow-[0_0_15px_rgba(236,72,153,0.8)] animate-flicker relative"
@@ -185,7 +185,7 @@ const managementTools = computed<NavigationItem[]>(() => [
 ]);
 
 const handleLogoClick = () => {
-  window.open('https://illa.xlike.cc', '_blank');
+  window.open('https://github.com/eliTruckoo/illa-helper', '_blank');
 };
 
 // Check whether the device is mobile

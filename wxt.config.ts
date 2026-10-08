@@ -12,15 +12,30 @@ const packageJson = JSON.parse(
 );
 const version = packageJson.version;
 
+// Firefox-only settings. AMO needs a stable add-on ID, and new add-ons must
+// declare data collection for Firefox's built-in consent prompt (Firefox 140+).
+// Page text goes to the user's configured AI provider, hence websiteContent.
+const gecko = {
+  id: 'elilla-assistant@elias-nzirorera',
+  strict_min_version: '140.0',
+  data_collection_permissions: {
+    required: ['websiteContent'],
+  },
+};
+
 // See https://wxt.dev/api/config.html
 export default defineConfig({
   modules: ['@wxt-dev/module-vue'],
-  manifest: {
-    name: 'Elilla Assistant',
-    author: {
-      email: 'xiao1932794922@gmail.com',
+  hooks: {
+    // Ship the MIT license inside every package, as the license requires
+    'build:publicAssets': (_wxt, files) => {
+      files.push({ absoluteSrc: resolve('LICENSE'), relativeDest: 'LICENSE' });
     },
+  },
+  manifest: ({ browser }) => ({
+    name: 'Elilla Assistant',
     description: `Elilla Assistant extension turns browsing into language learning. AI uses "i+1" theory, supports 20+ languages.`,
+    ...(browser === 'firefox' && { browser_specific_settings: { gecko } }),
     version,
     permissions: [
       'storage',
@@ -40,6 +55,10 @@ export default defineConfig({
         description: 'Translate with one click',
       },
     },
+  }),
+  zip: {
+    // README screenshots aren't needed to rebuild the extension from sources
+    excludeSources: ['images/**'],
   },
   imports: {
     eslintrc: {
