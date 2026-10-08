@@ -5,6 +5,10 @@
 
 import { ApiServiceFactory } from '../../api';
 import { getResponseStatus } from '../../api/utils/apiUtils';
+import {
+  translationStats,
+  type TranslationStatsSnapshot,
+} from './TranslationStats';
 import { StyleManager } from '../../styles';
 
 // Replacement result interface
@@ -198,6 +202,7 @@ export class TextReplacerService {
     // Check cache
     const cachedResult = this.getCachedResult(cacheKey);
     if (cachedResult) {
+      translationStats.recordCacheHit();
       return cachedResult;
     }
 
@@ -331,6 +336,13 @@ export class TextReplacerService {
     return {
       cacheSize: this.cache.size,
     };
+  }
+
+  /**
+   * Per-tab request/token/cache counters (see TranslationStats)
+   */
+  public getTranslationStats(): TranslationStatsSnapshot {
+    return translationStats.getSnapshot();
   }
 
   /**

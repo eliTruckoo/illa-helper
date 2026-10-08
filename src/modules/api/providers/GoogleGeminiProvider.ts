@@ -78,6 +78,7 @@ export class GoogleGeminiProvider extends BaseProvider {
     const [result] = await rateLimiter.executeBatch([apiRequestFunction]);
     const response = result.response;
     const responseText = response.text();
+    this.recordUsage(response.usageMetadata);
 
     // Use the structured text parser
     const parseResult = StructuredTextParser.parse(responseText);

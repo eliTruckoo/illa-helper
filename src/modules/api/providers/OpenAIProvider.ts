@@ -74,6 +74,7 @@ export class OpenAIProvider extends BaseProvider {
     }
 
     const data = await response.json();
+    this.recordUsage(data?.usage);
     return this.extractReplacements(data, text, settings.replacementRate);
   }
 

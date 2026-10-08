@@ -11,6 +11,7 @@ import {
   createEmptyResponse,
   getResponseStatus,
 } from '../utils/apiUtils';
+import { translationStats } from '../../core/translation/TranslationStats';
 
 /**
  * Base provider abstract class
@@ -43,9 +44,11 @@ export abstract class BaseProvider implements ITranslationProvider {
     }
 
     try {
+      translationStats.recordRequest(1);
       const result = await this.doAnalyzeFullText(originalText, settings);
       return { ...result, status: getResponseStatus(result) };
     } catch (error: any) {
+      translationStats.recordError();
       console.error(`${this.getProviderName()} API request failed:`, error);
       return createErrorResponse(
         originalText,
@@ -66,6 +69,13 @@ export abstract class BaseProvider implements ITranslationProvider {
    * Get the provider name (used for logging)
    */
   protected abstract getProviderName(): string;
+
+  /**
+   * Record provider-reported token usage for the per-tab statistics
+   */
+  protected recordUsage(usage: unknown): void {
+    translationStats.recordUsage(usage);
+  }
 
   /**
    * Get configuration

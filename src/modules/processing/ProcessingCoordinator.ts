@@ -18,6 +18,7 @@ import {
   planStableReplacements,
 } from './ReplacementPlanner';
 import { applyReplacementToRange as writeReplacementToRange } from './RangeReplacementWriter';
+import { translationStats } from '../core/translation/TranslationStats';
 import type {
   PronunciationRegistrar,
   TextReplacementEngine,
@@ -160,6 +161,11 @@ export class ProcessingCoordinator {
       globalProcessingState.markProcessingStart(segment.fingerprint),
     );
 
+    if (successfullyMarked.length > 0) {
+      translationStats.recordRun();
+      translationStats.recordSegments(successfullyMarked.length);
+    }
+
     try {
       // Process segments in parallel (with limited concurrency)
       const batchSize = 8; // Limit concurrency to avoid overload
@@ -258,6 +264,11 @@ export class ProcessingCoordinator {
 
     // Update statistics
     this.updateStats(processedCount, skippedCount, errorCount, duration);
+    if (successfullyMarked.length > 0) {
+      translationStats.logSummary(
+        `run of ${successfullyMarked.length} segments (${isLazyLoading ? 'lazy' : 'direct'}, ${duration} ms)`,
+      );
+    }
 
     return {
       success: errorCount === 0,

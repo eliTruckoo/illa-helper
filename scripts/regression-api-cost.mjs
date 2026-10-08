@@ -23,6 +23,9 @@ const { ProcessingCoordinator } = await import(
 const { globalProcessingState } = await import(
   '../src/modules/processing/ProcessingStateManager.ts'
 );
+const { translationStats, extractTokenUsage } = await import(
+  '../src/modules/core/translation/TranslationStats.ts'
+);
 
 const settings = {
   multilingualConfig: { targetLanguage: 'de', nativeLanguage: 'en' },
@@ -41,7 +44,7 @@ class FakeProvider extends BaseProvider {
     return 'Fake';
   }
   async doAnalyzeFullText(text) {
-    return this.impl(text);
+    return this.impl.call(this, text);
   }
 }
 
@@ -145,5 +148,35 @@ assert.equal(
   false,
   'Failed segments must release their in-progress mark',
 );
+
+// ---------- eq7.10: instrumentation ----------
+
+assert.deepEqual(
+  extractTokenUsage({ prompt_tokens: 120, completion_tokens: 30 }),
+  { inputTokens: 120, outputTokens: 30 },
+  'OpenAI usage must be read',
+);
+assert.deepEqual(
+  extractTokenUsage({ promptTokenCount: 80, candidatesTokenCount: 12 }),
+  { inputTokens: 80, outputTokens: 12 },
+  'Gemini usageMetadata must be read',
+);
+assert.equal(extractTokenUsage(undefined), null);
+
+translationStats.reset();
+await silenceErrors(() =>
+  new FakeProvider(() => {
+    throw new Error('HTTP 500');
+  }).analyzeFullText('Some text to translate', settings),
+);
+await new FakeProvider(function (text) {
+  this.recordUsage({ prompt_tokens: 50, completion_tokens: 10 });
+  return { original: text, processed: '', replacements: [] };
+}).analyzeFullText('Some text to translate', settings);
+const statsSnapshot = translationStats.getSnapshot();
+assert.equal(statsSnapshot.requests, 2);
+assert.equal(statsSnapshot.errors, 1);
+assert.equal(statsSnapshot.inputTokens, 50);
+assert.equal(statsSnapshot.outputTokens, 10);
 
 console.log('api cost regression passed');
