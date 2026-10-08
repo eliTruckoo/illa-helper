@@ -116,7 +116,8 @@ export class ProcessingCoordinator {
         replacementBudget,
       );
     });
-    this.processingQueue = nextTask;
+    // A failed run must not break the queue for later runs sharing this coordinator
+    this.processingQueue = nextTask.catch(() => undefined);
     return nextTask;
   }
 

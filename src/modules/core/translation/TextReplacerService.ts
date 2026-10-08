@@ -19,6 +19,10 @@ import {
   type TranslationOutcome,
 } from './SegmentTranslationCache';
 import { TRANSLATION_PROMPT_VERSION } from './PromptService';
+import {
+  ConcurrencyLimiter,
+  MAX_CONCURRENT_TRANSLATION_REQUESTS,
+} from './ConcurrencyLimiter';
 
 // Replacement result interface
 export interface ReplacementResult {
@@ -58,6 +62,10 @@ export class TextReplacerService {
   public readonly styleManager: StyleManager;
   private config: ReplacementConfig;
   private segmentCache: SegmentTranslationCache;
+  // One per-tab limiter shared by every run (manual, lazy loading, dynamic content)
+  private requestLimiter = new ConcurrencyLimiter(
+    MAX_CONCURRENT_TRANSLATION_REQUESTS,
+  );
 
   /**
    * Private constructor, enforces the singleton pattern
@@ -245,8 +253,10 @@ export class TextReplacerService {
     // Use the factory method to create the correct provider instance
     const translationProvider = ApiServiceFactory.createProvider(activeConfig);
 
-    // Call the API to translate
-    return await translationProvider.analyzeFullText(text, settings);
+    // Call the API to translate, capped per tab
+    return await this.requestLimiter.run(() =>
+      translationProvider.analyzeFullText(text, settings),
+    );
   }
 
   /**

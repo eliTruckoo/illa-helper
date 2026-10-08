@@ -298,4 +298,25 @@ assert.equal(
   'error',
 );
 
+// ---------- ei3.6: per-tab request limiter ----------
+
+const { ConcurrencyLimiter } = await import(
+  '../src/modules/core/translation/ConcurrencyLimiter.ts'
+);
+const limiter = new ConcurrencyLimiter(2);
+let running = 0;
+let peak = 0;
+await Promise.all(
+  Array.from({ length: 6 }, () =>
+    limiter.run(async () => {
+      running++;
+      peak = Math.max(peak, running);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      running--;
+    }),
+  ),
+);
+assert.equal(peak, 2, 'The per-tab limiter caps concurrent requests');
+assert.equal(limiter.activeCount, 0);
+
 console.log('api cost regression passed');
