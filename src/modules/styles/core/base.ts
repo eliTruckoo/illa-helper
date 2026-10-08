@@ -27,34 +27,7 @@ export const BASE_STYLES = `
   vertical-align: baseline;
 }
 
-/* Learning mode styles */
-.wxt-translation-term--learning {
-  filter: blur(5px);
-  cursor: pointer;
-  color: var(--wxt-primary-color);
-  transition: filter 0.2s ease-in-out;
-}
-
-.wxt-translation-term--learning:hover {
-  filter: blur(0);
-}
-
-/* Learning mode original text styles - enhanced hover support */
-.wxt-original-word--learning {
-  filter: blur(5px);
-  cursor: pointer;
-  transition: filter 0.2s ease-in-out;
-}
-
-.wxt-original-word--learning:hover {
-  filter: blur(0) !important;
-}
-
-/* Enhanced hover support for learning mode inside a tags */
-a .wxt-original-word--learning:hover,
-a:hover .wxt-original-word--learning {
-  filter: blur(0) !important;
-}
+/* Learning mode styles live in themes/translation.ts */
 
 /* Phrase translation two-layer interaction styles */
 .wxt-has-word-overlay {

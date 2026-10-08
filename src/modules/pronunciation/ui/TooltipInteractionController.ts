@@ -612,6 +612,11 @@ export class TooltipInteractionController {
         elementData.word,
       );
       if (!meaningResult.success || !meaningResult.data) {
+        if (elementData.tooltip) {
+          this.options.renderer.updateTooltipWithMeaningError(
+            elementData.tooltip,
+          );
+        }
         return;
       }
 
@@ -626,6 +631,11 @@ export class TooltipInteractionController {
       }
     } catch (error) {
       console.error('Failed to get AI translation:', error);
+      if (elementData.tooltip) {
+        this.options.renderer.updateTooltipWithMeaningError(
+          elementData.tooltip,
+        );
+      }
     }
   }
 
@@ -653,18 +663,21 @@ export class TooltipInteractionController {
     try {
       const meaningResult =
         await this.options.translationProvider.getMeaning(word);
-      if (
-        meaningResult.success &&
-        meaningResult.data &&
-        this.currentWordTooltip === wordTooltip
-      ) {
+      if (this.currentWordTooltip !== wordTooltip) return;
+
+      if (meaningResult.success && meaningResult.data) {
         this.options.renderer.updateTooltipWithMeaning(
           wordTooltip,
           meaningResult.data.explain,
         );
+      } else {
+        this.options.renderer.updateTooltipWithMeaningError(wordTooltip);
       }
     } catch (error) {
       console.error('Failed to get word tooltip definition:', error);
+      if (this.currentWordTooltip === wordTooltip) {
+        this.options.renderer.updateTooltipWithMeaningError(wordTooltip);
+      }
     }
   }
 

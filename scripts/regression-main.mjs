@@ -919,6 +919,16 @@ pronunciationService.destroy();
   pointer('mouseover', words[0].firstElementChild);
   await wait(TIMER_CONSTANTS.SHOW_DELAY + 50);
   assert.equal(visibleTooltips(), 1, 'hovering a word shows its tooltip');
+  await wait(0);
+  assert.ok(
+    document.querySelector('.wxt-pronunciation-tooltip .wxt-meaning-error'),
+    'a failed definition replaces the loader with an error state',
+  );
+  assert.equal(
+    document.querySelector('.wxt-pronunciation-tooltip .wxt-meaning-loading'),
+    null,
+    'the loading skeleton does not stay on screen after a failure',
+  );
 
   // Moving inside the word is not a leave
   pointer('mouseout', words[0].firstElementChild, words[0]);
@@ -1057,6 +1067,82 @@ pronunciationService.destroy();
 
   floatingBall.destroy();
   assert.equal(ballRoot(), undefined);
+}
+
+// ------------------------------------------------------------
+// Floating ball: document drag listeners only while dragging (illa-helper-ei3.11)
+// ------------------------------------------------------------
+
+{
+  const { FloatingBallManager } = await import(
+    '../src/modules/floatingBall/managers/FloatingBallManager.ts'
+  );
+  const activeDocumentListeners = new Map();
+  const originalAdd = document.addEventListener.bind(document);
+  const originalRemove = document.removeEventListener.bind(document);
+  document.addEventListener = (type, listener, options) => {
+    activeDocumentListeners.set(
+      type,
+      (activeDocumentListeners.get(type) ?? 0) + 1,
+    );
+    return originalAdd(type, listener, options);
+  };
+  document.removeEventListener = (type, listener, options) => {
+    activeDocumentListeners.set(
+      type,
+      (activeDocumentListeners.get(type) ?? 0) - 1,
+    );
+    return originalRemove(type, listener, options);
+  };
+  const dragListenerCount = () =>
+    ['mousemove', 'mouseup', 'touchmove', 'touchend'].reduce(
+      (sum, type) => sum + (activeDocumentListeners.get(type) ?? 0),
+      0,
+    );
+
+  try {
+    const floatingBall = new FloatingBallManager({
+      enabled: true,
+      position: 50,
+      opacity: 0.8,
+    });
+    floatingBall.init(() => undefined);
+    assert.equal(
+      dragListenerCount(),
+      0,
+      'no document-level move/up listeners while idle',
+    );
+
+    const ball = document
+      .getElementById('illa-floating-root')
+      .shadowRoot.querySelector('.wxt-floating-ball');
+    assert.ok(
+      !ball.style.cssText.includes('animation'),
+      'the pulse animation is not always on',
+    );
+
+    const mouse = (type, target) => {
+      const event = new window.Event(type, { bubbles: true });
+      Object.defineProperty(event, 'clientY', { value: 100 });
+      Object.defineProperty(event, 'buttons', { value: 1 });
+      target.dispatchEvent(event);
+    };
+    mouse('mousedown', ball);
+    assert.equal(
+      activeDocumentListeners.get('mousemove'),
+      1,
+      'mousemove is attached for the drag gesture',
+    );
+    mouse('mouseup', document);
+    assert.equal(dragListenerCount(), 0, 'drag listeners are released');
+
+    mouse('mousedown', ball);
+    floatingBall.destroy();
+    assert.equal(dragListenerCount(), 0, 'destroy() releases drag listeners');
+  } finally {
+    document.addEventListener = originalAdd;
+    document.removeEventListener = originalRemove;
+  }
 }
 
 console.log('main regression passed');
