@@ -822,4 +822,137 @@ pronunciationService.destroy();
   }
 }
 
+// ------------------------------------------------------------
+// Tooltip controller: delegated hover, no per-word registry (illa-helper-bfn.2)
+// ------------------------------------------------------------
+
+{
+  const { TooltipInteractionController } = await import(
+    '../src/modules/pronunciation/ui/TooltipInteractionController.ts'
+  );
+  const { TooltipRenderer } = await import(
+    '../src/modules/pronunciation/ui/TooltipRenderer.ts'
+  );
+  const { DEFAULT_PRONUNCIATION_CONFIG, TIMER_CONSTANTS } = await import(
+    '../src/modules/pronunciation/config/index.ts'
+  );
+  const { StorageService } = await import(
+    '../src/modules/core/storage/StorageService.ts'
+  );
+
+  window.innerWidth = 1024;
+  window.scrollX = 0;
+  window.scrollY = 0;
+  globalThis.requestAnimationFrame = (callback) => setTimeout(callback, 0);
+
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const meaningRequests = [];
+  const controller = new TooltipInteractionController({
+    getConfig: () => DEFAULT_PRONUNCIATION_CONFIG,
+    phoneticProvider: {
+      getPhonetic: async (word) => ({
+        success: true,
+        data: { word, phonetics: [{ text: `/${word}/` }] },
+      }),
+    },
+    translationProvider: {
+      getMeaning: async (word) => {
+        meaningRequests.push(word);
+        return { success: false, error: 'offline' };
+      },
+    },
+    renderer: new TooltipRenderer(
+      DEFAULT_PRONUNCIATION_CONFIG.uiConfig,
+      'visible',
+    ),
+    storageService: StorageService.getInstance(),
+    speakText: async () => undefined,
+    speakTextWithAccent: async () => undefined,
+  });
+
+  const hoverHost = document.createElement('p');
+  document.body.appendChild(hoverHost);
+  const words = ['alpha', 'beta', 'gamma'].map((word) => {
+    const element = document.createElement('span');
+    element.textContent = word;
+    const inner = document.createElement('b');
+    inner.textContent = '!';
+    element.appendChild(inner);
+    hoverHost.appendChild(element);
+    return element;
+  });
+  for (const element of words) {
+    assert.equal(
+      await controller.register(element, element.firstChild.textContent),
+      true,
+    );
+  }
+  assert.equal(
+    await controller.register(words[0], 'alpha'),
+    false,
+    'double registration is rejected',
+  );
+  assert.ok(words[0].classList.contains('wxt-pronunciation-enabled'));
+
+  const pointer = (type, target, relatedTarget = null) => {
+    const event = new window.Event(type, { bubbles: true });
+    Object.defineProperty(event, 'relatedTarget', { value: relatedTarget });
+    target.dispatchEvent(event);
+  };
+  const visibleTooltips = () =>
+    document.querySelectorAll('.wxt-pronunciation-tooltip').length;
+
+  const key = (type, keyName) => {
+    const event = new window.Event(type, { bubbles: true });
+    Object.defineProperty(event, 'key', { value: keyName });
+    document.dispatchEvent(event);
+  };
+
+  // With the default hotkey, hovering alone does not open the tooltip
+  pointer('mouseover', words[0]);
+  await wait(TIMER_CONSTANTS.SHOW_DELAY + 50);
+  assert.equal(visibleTooltips(), 0, 'the hotkey is required by default');
+  pointer('mouseout', words[0], hoverHost);
+  key('keydown', 'Control');
+
+  // Hovering a child of a registered word opens exactly one tooltip
+  pointer('mouseover', words[0].firstElementChild);
+  await wait(TIMER_CONSTANTS.SHOW_DELAY + 50);
+  assert.equal(visibleTooltips(), 1, 'hovering a word shows its tooltip');
+
+  // Moving inside the word is not a leave
+  pointer('mouseout', words[0].firstElementChild, words[0]);
+  pointer('mouseover', words[0]);
+  await wait(TIMER_CONSTANTS.HIDE_DELAY + 50);
+  assert.equal(
+    visibleTooltips(),
+    1,
+    'moving within the word keeps the tooltip',
+  );
+
+  // Switching words replaces the tooltip instead of stacking them
+  pointer('mouseout', words[0], words[1]);
+  pointer('mouseover', words[1]);
+  await wait(TIMER_CONSTANTS.SHOW_DELAY + 50);
+  assert.equal(visibleTooltips(), 1, 'only one main tooltip at a time');
+
+  // A tooltip whose anchor left the DOM is dropped on the next pointer move
+  words[1].remove();
+  pointer('mouseover', hoverHost);
+  assert.equal(visibleTooltips(), 0, 'disconnected anchors hide their tooltip');
+
+  // Failed definitions are requested once per hover and do not throw
+  assert.ok(meaningRequests.includes('alpha'));
+
+  key('keyup', 'Control');
+
+  // destroy() removes the delegated listeners and the word markers
+  controller.destroy();
+  assert.ok(!words[2].classList.contains('wxt-pronunciation-enabled'));
+  pointer('mouseover', words[2]);
+  await wait(TIMER_CONSTANTS.SHOW_DELAY + 50);
+  assert.equal(visibleTooltips(), 0, 'no tooltips after destroy()');
+  hoverHost.remove();
+}
+
 console.log('main regression passed');
