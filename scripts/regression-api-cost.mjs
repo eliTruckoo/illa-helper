@@ -179,4 +179,123 @@ assert.equal(statsSnapshot.errors, 1);
 assert.equal(statsSnapshot.inputTokens, 50);
 assert.equal(statsSnapshot.outputTokens, 10);
 
+// ---------- eq7.2: in-page segment cache ----------
+
+const {
+  SegmentTranslationCache,
+  LruCache,
+  buildTranslationCacheKey,
+  normalizeSegmentText,
+  responseFromOutcome,
+  toTranslationOutcome,
+} = await import('../src/modules/core/translation/SegmentTranslationCache.ts');
+
+const keyParts = {
+  providerId: 'cfg-1',
+  model: 'gpt-4o-mini',
+  targetLanguage: 'de',
+  userLevel: 3,
+  replacementRate: 0.3,
+  promptVersion: '1',
+};
+assert.equal(
+  normalizeSegmentText(' Hello\u200B   world \n'),
+  'Hello world',
+  'Normalization strips zero-width chars and collapses whitespace',
+);
+assert.equal(
+  buildTranslationCacheKey(keyParts, 'Hello  world'),
+  buildTranslationCacheKey(keyParts, ' Hello world\u200D'),
+  'Whitespace/zero-width variants share a cache key',
+);
+assert.notEqual(
+  buildTranslationCacheKey(keyParts, 'Hello world'),
+  buildTranslationCacheKey({ ...keyParts, model: 'gpt-4o' }, 'Hello world'),
+  'Switching the model must not reuse cached answers',
+);
+assert.notEqual(
+  buildTranslationCacheKey(keyParts, 'Hello world'),
+  buildTranslationCacheKey({ ...keyParts, promptVersion: '2' }, 'Hello world'),
+  'A prompt change must invalidate cached answers',
+);
+assert.ok(
+  buildTranslationCacheKey(keyParts, 'Hello world').endsWith('Hello world'),
+  'The key keeps the full normalized text instead of a 32-bit hash',
+);
+
+const lru = new LruCache(2);
+lru.set('a', 1);
+lru.set('b', 2);
+lru.get('a');
+lru.set('c', 3);
+assert.equal(lru.has('a'), true, 'Recently used entries survive eviction');
+assert.equal(lru.has('b'), false, 'The least recently used entry is evicted');
+
+const segmentCache = new SegmentTranslationCache(10);
+let fetchCount = 0;
+let releaseFetch;
+const slowFetch = () => {
+  fetchCount++;
+  return new Promise((resolve) => {
+    releaseFetch = () =>
+      resolve({
+        status: 'ok',
+        pairs: [{ original: 'world', translation: 'Welt' }],
+      });
+  });
+};
+const first = segmentCache.resolve('k', slowFetch);
+const second = segmentCache.resolve('k', slowFetch);
+await Promise.resolve();
+releaseFetch();
+const [firstResult, secondResult] = await Promise.all([first, second]);
+assert.equal(fetchCount, 1, 'Identical concurrent segments send one request');
+assert.equal(firstResult.source, 'request');
+assert.equal(secondResult.source, 'inflight');
+assert.equal(
+  (await segmentCache.resolve('k', slowFetch)).source,
+  'cache',
+  'The settled answer is cached',
+);
+
+const errorFetch = async () => ({ status: 'error', error: 'HTTP 429' });
+assert.equal(
+  (await segmentCache.resolve('err', errorFetch)).outcome.status,
+  'error',
+);
+let retried = false;
+await segmentCache.resolve('err', async () => {
+  retried = true;
+  return { status: 'empty', pairs: [] };
+});
+assert.equal(retried, true, 'Errors are never cached, the next caller retries');
+assert.equal(
+  (await segmentCache.resolve('err', errorFetch)).source,
+  'cache',
+  'A valid empty answer is cached',
+);
+
+const cachedOutcome = toTranslationOutcome({
+  original: 'Hello world',
+  processed: '',
+  replacements: [
+    {
+      original: 'world',
+      translation: 'Welt',
+      position: { start: 6, end: 11 },
+      isNew: true,
+    },
+  ],
+});
+const recomputed = responseFromOutcome('  Hello   world', cachedOutcome);
+assert.deepEqual(
+  recomputed.replacements[0].position,
+  { start: 10, end: 15 },
+  'Cached pairs get positions recomputed for the caller text',
+);
+assert.equal(
+  toTranslationOutcome({ ...recomputed, status: 'error' }).status,
+  'error',
+);
+
 console.log('api cost regression passed');

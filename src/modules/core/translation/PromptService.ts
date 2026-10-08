@@ -3,6 +3,12 @@ import { PromptConfig } from './types';
 import { languageService } from './LanguageService';
 
 /**
+ * Version of the word-mode prompt and output format.
+ * Part of the translation cache key: bump it whenever the prompt changes so cached answers are not reused.
+ */
+export const TRANSLATION_PROMPT_VERSION = '1';
+
+/**
  * Prompt service - singleton
  */
 export class PromptService {

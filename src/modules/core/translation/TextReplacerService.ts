@@ -10,6 +10,15 @@ import {
   type TranslationStatsSnapshot,
 } from './TranslationStats';
 import { StyleManager } from '../../styles';
+import {
+  SegmentTranslationCache,
+  SEGMENT_CACHE_MAX_ENTRIES,
+  buildTranslationCacheKey,
+  responseFromOutcome,
+  toTranslationOutcome,
+  type TranslationOutcome,
+} from './SegmentTranslationCache';
+import { TRANSLATION_PROMPT_VERSION } from './PromptService';
 
 // Replacement result interface
 export interface ReplacementResult {
@@ -24,15 +33,6 @@ export interface ReplacementResult {
     };
     isNew: boolean; // whether it is a new word
   }>;
-}
-
-// Cache key interface
-interface CacheKey {
-  text: string;
-  sourceLanguage?: string;
-  targetLanguage: string;
-  userLevel: number;
-  replacementRate: number;
 }
 
 // Cache statistics
@@ -54,14 +54,10 @@ export class TextReplacerService {
   // Singleton instance
   private static instance: TextReplacerService | null = null;
 
-  // Cache config constants
-  private static readonly CACHE_MAX_SIZE = 100;
-  private static readonly CACHE_CLEANUP_BATCH = 20;
-
   // Service components
   public readonly styleManager: StyleManager;
   private config: ReplacementConfig;
-  private cache: Map<string, FullTextAnalysisResponse>;
+  private segmentCache: SegmentTranslationCache;
 
   /**
    * Private constructor, enforces the singleton pattern
@@ -69,7 +65,7 @@ export class TextReplacerService {
   private constructor(config: ReplacementConfig) {
     this.config = config;
     this.styleManager = new StyleManager();
-    this.cache = new Map<string, FullTextAnalysisResponse>();
+    this.segmentCache = new SegmentTranslationCache(SEGMENT_CACHE_MAX_ENTRIES);
     this.initializeStyleManager();
   }
 
@@ -187,38 +183,49 @@ export class TextReplacerService {
   }
 
   /**
-   * Unified translation handling method
+   * Unified translation handling method: in-page cache, then in-flight request, then API call.
    * @param text Original text
    * @param settings user settings
-   * @returns translation result
+   * @returns translation result with positions computed for this exact text
    */
   private async processTranslation(
     text: string,
     settings: UserSettings,
   ): Promise<FullTextAnalysisResponse> {
-    // Generate cache key
     const cacheKey = this.generateCacheKey(text, settings);
 
-    // Check cache
-    const cachedResult = this.getCachedResult(cacheKey);
-    if (cachedResult) {
+    const { outcome, source } = await this.segmentCache.resolve(cacheKey, () =>
+      this.requestTranslation(text, settings),
+    );
+
+    if (source === 'cache') {
       translationStats.recordCacheHit();
-      return cachedResult;
+    } else if (source === 'inflight') {
+      translationStats.recordCoalesced();
     }
 
+    return responseFromOutcome(text, outcome, settings.replacementRate);
+  }
+
+  /**
+   * Call the API for one segment and reduce the response to a cacheable outcome
+   */
+  private async requestTranslation(
+    text: string,
+    settings: UserSettings,
+  ): Promise<TranslationOutcome> {
     try {
-      // Get API result
       const apiResult = await this.callTranslationAPI(text, settings);
-
-      // Only successful results (including valid empty answers) may be cached
-      if (getResponseStatus(apiResult) !== 'error') {
-        this.setCachedResult(cacheKey, apiResult);
-      }
-
-      return apiResult;
+      return toTranslationOutcome({
+        ...apiResult,
+        status: getResponseStatus(apiResult),
+      });
     } catch (error) {
       console.error('Translation failed:', error);
-      return await this.handleTranslationError(text, settings, error);
+      return {
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   }
 
@@ -243,90 +250,31 @@ export class TextReplacerService {
   }
 
   /**
-   * Handle translation errors - simplified
-   */
-  private async handleTranslationError(
-    text: string,
-    settings: UserSettings,
-    error: any,
-  ): Promise<FullTextAnalysisResponse> {
-    console.log('Translation failed, returning original text:', error);
-
-    // No fallback logic after simplification, return the original text directly
-    return this.createErrorResult(text, error);
-  }
-
-  /**
-   * Generate cache key
-   * @param text text
-   * @param settings settings
-   * @returns cache key string
+   * Generate the cache key: every setting that changes the model answer plus the normalized text.
+   * Full string key (no hash) so different segments can never collide.
    */
   private generateCacheKey(text: string, settings: UserSettings): string {
-    const targetLanguage = settings.multilingualConfig.targetLanguage;
+    const activeConfig = this.config.activeApiConfig;
+    const apiConfig = activeConfig?.config ?? this.config.apiConfig;
 
-    const keyData: CacheKey = {
-      text: text.trim(),
-      targetLanguage: targetLanguage,
-      userLevel: settings.userLevel,
-      replacementRate: settings.replacementRate,
-    };
-
-    return this.hashCacheKey(keyData);
-  }
-
-  /**
-   * Generate a hash of the cache key
-   */
-  private hashCacheKey(keyData: CacheKey): string {
-    const str = JSON.stringify(keyData);
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash; // convert to 32-bit integer
-    }
-    return Math.abs(hash).toString(36);
+    return buildTranslationCacheKey(
+      {
+        providerId: activeConfig?.id ?? '',
+        protocolFamily: activeConfig?.protocolFamily,
+        endpoint: apiConfig?.apiEndpoint,
+        model: apiConfig?.model ?? '',
+        temperature: apiConfig?.temperature,
+        customParams: apiConfig?.customParams,
+        targetLanguage: settings.multilingualConfig.targetLanguage,
+        userLevel: settings.userLevel,
+        replacementRate: settings.replacementRate,
+        promptVersion: TRANSLATION_PROMPT_VERSION,
+      },
+      text,
+    );
   }
 
   // ==================== Cache management methods ====================
-
-  /**
-   * Get cached result
-   */
-  private getCachedResult(cacheKey: string): FullTextAnalysisResponse | null {
-    return this.cache.get(cacheKey) || null;
-  }
-
-  /**
-   * Set cached result
-   */
-  private setCachedResult(
-    cacheKey: string,
-    result: FullTextAnalysisResponse,
-  ): void {
-    this.cache.set(cacheKey, result);
-    this.cleanupCache();
-  }
-
-  /**
-   * Clean up expired cache
-   */
-  private cleanupCache(): void {
-    if (this.cache.size > TextReplacerService.CACHE_MAX_SIZE) {
-      const keys = Array.from(this.cache.keys());
-      const deleteCount =
-        this.cache.size -
-        TextReplacerService.CACHE_MAX_SIZE +
-        TextReplacerService.CACHE_CLEANUP_BATCH;
-
-      for (let i = 0; i < deleteCount; i++) {
-        this.cache.delete(keys[i]);
-      }
-
-      console.log(`Cache cleanup: removed ${deleteCount} entries`);
-    }
-  }
 
   /**
    * Get cache statistics
@@ -334,7 +282,7 @@ export class TextReplacerService {
    */
   public getCacheStats(): CacheStats {
     return {
-      cacheSize: this.cache.size,
+      cacheSize: this.segmentCache.size,
     };
   }
 
@@ -349,7 +297,7 @@ export class TextReplacerService {
    * Clear all cache
    */
   public clearAllCache(): void {
-    this.cache.clear();
+    this.segmentCache.clear();
     console.log('All cache cleared');
   }
 
