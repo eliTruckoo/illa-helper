@@ -39,12 +39,91 @@ export function isProcessingResultNode(node: Node): boolean {
   return isExtensionOwnedElement(node) || hasProcessedAttribute(node);
 }
 
-export function shouldSkipSubtree(element: Element): boolean {
-  if (SKIP_TAGS.has(element.tagName.toUpperCase())) {
-    return true;
+/**
+ * Cheap check for MutationObserver callbacks: is this element itself an
+ * extension-owned node or marked as processed? Unlike isProcessingResultNode it
+ * never walks ancestors (no closest()).
+ */
+export function isOwnedOrProcessedElement(element: Element): boolean {
+  return (
+    isExtensionOwnedElement(element, false) || hasProcessedAttribute(element)
+  );
+}
+
+/**
+ * Computed style values the DOM pipeline needs. Reading them once per element
+ * and caching the result avoids repeated style recalculation during a walk.
+ */
+export interface StyleSnapshot {
+  display: string;
+  visibility: string;
+}
+
+/**
+ * Per-walk memo of style reads and skip decisions. It must not outlive a
+ * single walk: styles and attributes can change between walks.
+ */
+export interface DomPolicyCache {
+  styles: WeakMap<Element, StyleSnapshot | null>;
+  skip: WeakMap<Element, boolean>;
+}
+
+export function createDomPolicyCache(): DomPolicyCache {
+  return { styles: new WeakMap(), skip: new WeakMap() };
+}
+
+export function getStyleSnapshot(
+  element: Element,
+  cache?: DomPolicyCache,
+): StyleSnapshot | null {
+  if (cache?.styles.has(element)) {
+    return cache.styles.get(element) ?? null;
   }
 
-  if (isHiddenElement(element)) {
+  const view =
+    element.ownerDocument?.defaultView ??
+    (typeof window !== 'undefined' ? window : null);
+  const style = view?.getComputedStyle?.(element);
+  const snapshot = style
+    ? { display: style.display ?? '', visibility: style.visibility ?? '' }
+    : null;
+  cache?.styles.set(element, snapshot);
+  return snapshot;
+}
+
+export function shouldSkipSubtree(element: Element): boolean {
+  return evaluateSkip(element, undefined, true);
+}
+
+/**
+ * Memoized variant of shouldSkipSubtree for tree walks.
+ *
+ * When `ancestorsVerified` is true the caller guarantees that every ancestor of
+ * `element` has already been checked and was not skipped, so the
+ * extension-ownership test only looks at the element itself instead of running
+ * closest() up to the document root.
+ */
+export function shouldSkipSubtreeCached(
+  element: Element,
+  cache: DomPolicyCache,
+  ancestorsVerified: boolean,
+): boolean {
+  const cached = cache.skip.get(element);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const result = evaluateSkip(element, cache, !ancestorsVerified);
+  cache.skip.set(element, result);
+  return result;
+}
+
+function evaluateSkip(
+  element: Element,
+  cache: DomPolicyCache | undefined,
+  checkAncestors: boolean,
+): boolean {
+  if (SKIP_TAGS.has(element.tagName.toUpperCase())) {
     return true;
   }
 
@@ -56,11 +135,20 @@ export function shouldSkipSubtree(element: Element): boolean {
     return true;
   }
 
+  if (
+    isExtensionOwnedElement(element, checkAncestors) ||
+    hasProcessedAttribute(element)
+  ) {
+    return true;
+  }
+
   if ((element as HTMLElement).isContentEditable) {
     return true;
   }
 
-  return isExtensionOwnedElement(element) || hasProcessedAttribute(element);
+  // Style reads come last: they are the only checks that can force a style
+  // recalculation.
+  return isHiddenElement(element, cache);
 }
 
 export function isTranslatableTextNode(
@@ -71,13 +159,16 @@ export function isTranslatableTextNode(
     return false;
   }
 
+  // Every ancestor up to the boundary is checked individually, so only the
+  // boundary needs closest() to cover the ancestors above it.
   let parent = node.parentElement;
   while (parent) {
-    if (shouldSkipSubtree(parent)) {
+    const isBoundary = parent === boundary;
+    if (evaluateSkip(parent, undefined, isBoundary)) {
       return false;
     }
 
-    if (parent === boundary) {
+    if (isBoundary) {
       break;
     }
 
@@ -104,9 +195,16 @@ export function isTranslationCandidateNode(
   return text.length >= minTextLength && !isMostlyPunctuation(text);
 }
 
-function isExtensionOwnedElement(element: Element): boolean {
+function isExtensionOwnedElement(
+  element: Element,
+  checkAncestors = true,
+): boolean {
   if (element.tagName.toLowerCase() === 'wxt-floating-menu') {
     return true;
+  }
+
+  if (!checkAncestors) {
+    return Boolean(element.matches?.(EXTENSION_RESULT_SELECTOR));
   }
 
   return Boolean(
@@ -119,12 +217,12 @@ function hasProcessedAttribute(element: Element): boolean {
   return PROCESSED_ATTRIBUTES.some((attr) => element.hasAttribute(attr));
 }
 
-function isHiddenElement(element: Element): boolean {
+function isHiddenElement(element: Element, cache?: DomPolicyCache): boolean {
   if (element.hasAttribute('hidden')) {
     return true;
   }
 
-  const style = element.ownerDocument.defaultView?.getComputedStyle?.(element);
+  const style = getStyleSnapshot(element, cache);
   if (!style) {
     return false;
   }

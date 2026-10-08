@@ -12,7 +12,7 @@ import {
   ContentSegment,
   globalProcessingState,
 } from './ProcessingStateManager';
-import { walkAndCollectParagraphs } from './DomWalker';
+import { walkAndCollectParagraphsAsync, type ParagraphInfo } from './DomWalker';
 
 export interface SegmenterConfig {
   maxSegmentLength: number;
@@ -23,8 +23,35 @@ export interface SegmenterConfig {
 const DEFAULT_CONFIG: SegmenterConfig = {
   maxSegmentLength: 400,
   minSegmentLength: 20,
-  mergeSmallSegments: true,
+  // Off by default: request batching already packs small segments into one
+  // request, and merging them prevents exact deduplication of repeated text.
+  mergeSmallSegments: false,
 };
+
+/**
+ * Ensure every text node ends up in at most one segment.
+ *
+ * The walker also reports inline paragraphs nested in another paragraph (e.g.
+ * a long <a> inside a <p>); paragraph mode needs them for element selection,
+ * but as word-mode segments they would send the same text twice. Paragraphs
+ * arrive in document order, so the outer paragraph claims its text nodes
+ * first: a fully covered paragraph is dropped (null), a partially covered one
+ * keeps only its unclaimed text nodes.
+ */
+export function withUnclaimedTextNodes(
+  paragraph: ParagraphInfo,
+  claimed: ReadonlySet<Text>,
+): ParagraphInfo | null {
+  const textNodes = paragraph.textNodes.filter((node) => !claimed.has(node));
+  if (textNodes.length === 0) return null;
+  if (textNodes.length === paragraph.textNodes.length) return paragraph;
+
+  return {
+    element: paragraph.element,
+    textNodes,
+    textContent: textNodes.map((node) => node.textContent ?? '').join(''),
+  };
+}
 
 export class ContentSegmenter {
   private config: SegmenterConfig;
@@ -34,19 +61,25 @@ export class ContentSegmenter {
   }
 
   /**
-   * Split the root node into content segments
+   * Split a root node into content segments.
+   * The DOM walk is time-sliced, so this yields to the main thread on large roots.
    */
-  segmentContent(root: Node): ContentSegment[] {
+  async segmentContent(root: Node): Promise<ContentSegment[]> {
     if (!(root instanceof HTMLElement)) return [];
 
-    // Get all paragraphs via DomWalker
-    const paragraphs = walkAndCollectParagraphs(root);
+    // Get all paragraphs from the DomWalker
+    const paragraphs = await walkAndCollectParagraphsAsync(root);
     const segments: ContentSegment[] = [];
+    const claimedTextNodes = new Set<Text>();
 
-    for (const para of paragraphs) {
+    for (const rawPara of paragraphs) {
+      const para = withUnclaimedTextNodes(rawPara, claimedTextNodes);
+      if (!para) continue;
+
       if (para.textContent.trim().length < this.config.minSegmentLength) {
         continue;
       }
+      para.textNodes.forEach((node) => claimedTextNodes.add(node));
 
       const domPath = globalProcessingState.generateDomPath(para.element);
 

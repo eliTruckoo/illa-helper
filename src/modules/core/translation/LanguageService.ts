@@ -148,6 +148,14 @@ const LANGUAGE_CODE_NORMALIZATION: { [key: string]: string } = {
   fil: 'tl', // Filipino variant
 };
 
+/** Characters sampled for page language detection */
+const PAGE_LANGUAGE_SAMPLE_LENGTH = 1000;
+/** Below this, the paragraph sample is topped up from other text nodes */
+const PAGE_LANGUAGE_MIN_SAMPLE_LENGTH = 200;
+/** Hard bound on text nodes visited by the fallback sample */
+const PAGE_LANGUAGE_MAX_TEXT_NODES = 2000;
+const NON_CONTENT_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE']);
+
 // ==================== Language management service class ====================
 
 /**
@@ -161,6 +169,12 @@ export class LanguageService {
   private _targetLanguageOptionsCache: LanguageOption[] | null = null;
   private _popularLanguagesCache: Language[] | null = null;
   private _otherLanguagesCache: Language[] | null = null;
+
+  /** Page language detected for the current URL (in-flight or settled) */
+  private pageLanguageCache: {
+    pageKey: string;
+    language: Promise<string>;
+  } | null = null;
 
   /**
    * Private constructor to prevent external instantiation
@@ -223,8 +237,43 @@ export class LanguageService {
    * Unified page language detection entry point, so modules do not each implement their own version of the detection logic.
    */
   public async detectPageLanguage(): Promise<string> {
+    // Detect once per page; SPA navigations change the URL and invalidate it.
+    const pageKey = this.getPageKey();
+    if (this.pageLanguageCache?.pageKey === pageKey) {
+      return this.pageLanguageCache.language;
+    }
+
+    const language = this.detectPageLanguageUncached();
+    this.pageLanguageCache = { pageKey, language };
+    return language;
+  }
+
+  /**
+   * Forget the cached page language (e.g. after the document was replaced).
+   */
+  public invalidatePageLanguage(): void {
+    this.pageLanguageCache = null;
+  }
+
+  private getPageKey(): string {
     try {
-      const textSample = document.body.innerText.substring(0, 1000);
+      const { origin, pathname, search } = window.location;
+      return `${origin}${pathname}${search}`;
+    } catch {
+      return '';
+    }
+  }
+
+  private async detectPageLanguageUncached(): Promise<string> {
+    try {
+      // 1. The declared document language is free to read.
+      const declared = this.getDeclaredPageLanguage();
+      if (declared) {
+        return declared;
+      }
+
+      // 2. A bounded textContent sample: no layout, unlike innerText.
+      const textSample = this.samplePageText(PAGE_LANGUAGE_SAMPLE_LENGTH);
       if (!textSample.trim()) {
         return 'zh';
       }
@@ -240,6 +289,70 @@ export class LanguageService {
       console.warn('[LanguageService] Page language detection failed:', error);
       return 'zh';
     }
+  }
+
+  /**
+   * Supported language declared by `<html lang>`, or null.
+   */
+  private getDeclaredPageLanguage(): string | null {
+    const lang = document.documentElement?.getAttribute('lang')?.trim();
+    if (!lang) return null;
+
+    const normalized = this.normalizeLanguageCode(lang.replace(/_/g, '-'));
+    if (normalized in LANGUAGE_DEFINITIONS) return normalized;
+
+    const primary = this.normalizeLanguageCode(normalized.split('-')[0]);
+    return primary in LANGUAGE_DEFINITIONS ? primary : null;
+  }
+
+  /**
+   * Collect up to `maxLength` characters of visible-ish page text, preferring
+   * paragraphs in the main content. Reads textContent only (never innerText)
+   * and stops as soon as enough text has been gathered.
+   */
+  private samplePageText(maxLength: number): string {
+    let sample = '';
+    const append = (text: string | null | undefined) => {
+      const normalized = text?.replace(/\s+/g, ' ').trim();
+      if (normalized) sample += `${normalized} `;
+    };
+
+    // getElementsByTagName is lazy, so only the first few <p> are touched.
+    const scope =
+      document.querySelector('main, article, [role="main"]') ?? document.body;
+    const paragraphs = scope?.getElementsByTagName('p');
+    for (
+      let i = 0;
+      paragraphs &&
+      i < paragraphs.length &&
+      i < 20 &&
+      sample.length < maxLength;
+      i++
+    ) {
+      append(paragraphs[i].textContent);
+    }
+
+    if (sample.length < PAGE_LANGUAGE_MIN_SAMPLE_LENGTH && document.body) {
+      // Few or no <p>: walk text nodes, skipping script/style content.
+      const walker = document.createTreeWalker(
+        document.body,
+        NodeFilter.SHOW_TEXT,
+      );
+      let node: Node | null;
+      let visited = 0;
+      while (
+        sample.length < maxLength &&
+        visited < PAGE_LANGUAGE_MAX_TEXT_NODES &&
+        (node = walker.nextNode())
+      ) {
+        visited++;
+        const parentTag = node.parentElement?.tagName;
+        if (parentTag && NON_CONTENT_TAGS.has(parentTag)) continue;
+        append(node.nodeValue);
+      }
+    }
+
+    return sample.substring(0, maxLength);
   }
 
   /**

@@ -255,11 +255,11 @@ export class TextProcessorService {
       this.updateSegmentConfig({
         maxSegmentLength: maxLength,
         minSegmentLength: 20,
-        mergeSmallSegments: true,
+        mergeSmallSegments: false,
       });
 
       // Use the smart segmenter to split the root node into content segments
-      const segments = this.contentSegmenter.segmentContent(root);
+      const segments = await this.contentSegmenter.segmentContent(root);
       if (segments.length === 0) {
         return;
       }

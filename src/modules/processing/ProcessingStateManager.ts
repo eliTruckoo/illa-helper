@@ -59,6 +59,13 @@ export class ProcessingStateManager {
   /** Content validity period (4 hours) */
   private readonly CONTENT_TTL = 4 * 60 * 60 * 1000;
 
+  /** Upper bound of the processed-content store (least recently used evicted) */
+  private readonly MAX_PROCESSED_ENTRIES = 5000;
+
+  /** Element identity keys used for fingerprints (does not retain elements) */
+  private elementIds = new WeakMap<Element, number>();
+  private elementIdCounter = 0;
+
   constructor() {
     this.startCleanupTimer();
   }
@@ -84,37 +91,20 @@ export class ProcessingStateManager {
   }
 
   /**
-   * Generate the DOM path
-   * Generate a unique DOM path identifier for the element
+   * Generate the DOM identity key of an element (stored as `domPath`).
+   *
+   * Fingerprints must dedupe the same node with the same text, not the same
+   * text elsewhere on the page. An identity key from a WeakMap does exactly
+   * that in O(1), instead of building a selector path with an O(siblings)
+   * index lookup per ancestor. A re-rendered (new) element gets a new key.
    */
   generateDomPath(element: Element): string {
-    const path: string[] = [];
-    let current: Element | null = element;
-
-    while (current && current !== document.body) {
-      let selector = current.tagName.toLowerCase();
-
-      // Add class names (if any and not processing-related)
-      const classList = Array.from(current.classList)
-        .filter((cls) => !cls.startsWith('wxt-'))
-        .slice(0, 2); // limit the number of class names
-
-      if (classList.length > 0) {
-        selector += '.' + classList.join('.');
-      }
-
-      // Add position info (if there are several siblings of the same type)
-      const siblings = current.parentElement?.children;
-      if (siblings && siblings.length > 1) {
-        const index = Array.from(siblings).indexOf(current);
-        selector += `:nth-child(${index + 1})`;
-      }
-
-      path.unshift(selector);
-      current = current.parentElement;
+    let id = this.elementIds.get(element);
+    if (id === undefined) {
+      id = ++this.elementIdCounter;
+      this.elementIds.set(element, id);
     }
-
-    return path.join(' > ');
+    return `${element.tagName.toLowerCase()}#${id}`;
   }
 
   /**
@@ -131,6 +121,9 @@ export class ProcessingStateManager {
       return false;
     }
 
+    // Refresh the LRU position
+    this.processedContent.delete(fingerprint);
+    this.processedContent.set(fingerprint, info);
     return true;
   }
 
@@ -168,7 +161,13 @@ export class ProcessingStateManager {
     // Remove the in-progress mark
     this.activeProcessing.delete(fingerprint);
 
-    // Add to the processed list
+    // Add to the processed list (re-insert so the entry becomes the most recent)
+    this.processedContent.delete(fingerprint);
+    while (this.processedContent.size >= this.MAX_PROCESSED_ENTRIES) {
+      const oldest = this.processedContent.keys().next().value;
+      if (oldest === undefined) break;
+      this.processedContent.delete(oldest);
+    }
     this.processedContent.set(fingerprint, {
       fingerprint,
       timestamp: Date.now(),

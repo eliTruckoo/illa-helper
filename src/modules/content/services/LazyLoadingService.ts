@@ -15,6 +15,9 @@ import {
   type SegmentObserverCallback,
 } from '../utils/SegmentObserver';
 
+/** Upper bound of remembered processed fingerprints (oldest evicted first) */
+const MAX_PROCESSED_FINGERPRINTS = 5000;
+
 /**
  * Lazy loading callback function type
  */
@@ -110,10 +113,16 @@ export class LazyLoadingService {
    * Schedule processing - prevents concurrency issues
    */
   private scheduleProcessing(segments: ContentSegment[]): void {
-    // Filter out already-processed segments
-    const unprocessedSegments = segments.filter(
-      (segment) => !this.state.processedSegments.has(segment.fingerprint),
-    );
+    // Filter out already processed segments
+    const unprocessedSegments: ContentSegment[] = [];
+    segments.forEach((segment) => {
+      if (this.state.processedSegments.has(segment.fingerprint)) {
+        // Already done (e.g. re-observed by a rescan): stop observing it.
+        this.observer?.unobserve(segment);
+      } else {
+        unprocessedSegments.push(segment);
+      }
+    });
 
     if (unprocessedSegments.length === 0) return;
 
@@ -165,14 +174,17 @@ export class LazyLoadingService {
     try {
       await this.runProcessingCallbackWhenIdle(segmentsToProcess);
 
-      // Mark as processed and remove from the cache
+      // Mark as processed and remove from the cache; processed segments are no longer
+      // observed, so the observer releases their elements.
       segmentsToProcess.forEach((segment) => {
-        this.state.processedSegments.add(segment.fingerprint);
+        this.rememberProcessed(segment.fingerprint);
         this.state.processingQueue.delete(segment.fingerprint);
         this.state.segmentCache.delete(segment.fingerprint);
       });
+      this.observer?.unobserveMultiple(segmentsToProcess);
     } catch (_) {
-      // Clear the queue even on failure to avoid reprocessing
+      // Clean up the queue even on failure to avoid reprocessing. Failed segments stay observed
+      // so they are retried when they re-enter the viewport.
       segmentsToProcess.forEach((segment) => {
         this.state.processingQueue.delete(segment.fingerprint);
         this.state.segmentCache.delete(segment.fingerprint);
@@ -183,6 +195,17 @@ export class LazyLoadingService {
         // New segments that enter the viewport during processing stay in the queue and are drained after the current batch.
         this.scheduleQueueDrain();
       }
+    }
+  }
+
+  private rememberProcessed(fingerprint: string): void {
+    const processed = this.state.processedSegments;
+    processed.delete(fingerprint);
+    processed.add(fingerprint);
+    while (processed.size > MAX_PROCESSED_FINGERPRINTS) {
+      const oldest = processed.values().next().value;
+      if (oldest === undefined) break;
+      processed.delete(oldest);
     }
   }
 
@@ -239,20 +262,32 @@ export class LazyLoadingService {
   updateConfig(newConfig: LazyLoadingConfig): void {
     if (this.isDestroyed) return;
 
-    const oldEnabled = this.config.enabled;
+    const oldConfig = this.config;
     this.config = { ...newConfig };
 
     // If the enabled state changed
-    if (oldEnabled !== newConfig.enabled) {
+    if (oldConfig.enabled !== newConfig.enabled) {
       this.state.enabled = newConfig.enabled;
       if (!newConfig.enabled) {
         this.stopAllObservation();
+        return;
       }
     }
 
-    // If the observer config changed, recreate the observer
-    if (this.state.initialized && this.observer) {
+    if (!this.state.initialized || !newConfig.enabled) return;
+
+    if (!this.observer) {
+      // Enabled after initialization without an observer
       this.createObserver();
+      return;
+    }
+
+    // Only a changed preload distance needs a new IntersectionObserver; the
+    // observed segments are carried over instead of being dropped.
+    if (oldConfig.preloadDistance !== newConfig.preloadDistance) {
+      this.observer.updateOptions({
+        preloadDistance: newConfig.preloadDistance,
+      });
     }
   }
 

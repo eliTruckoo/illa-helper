@@ -31,8 +31,12 @@ const { document, window } = parseHTML(`
 window.setTimeout = setTimeout;
 window.clearTimeout = clearTimeout;
 window.getComputedStyle = (element) => ({
-  display: ['A', 'SPAN', 'EM'].includes(element.tagName) ? 'inline' : 'block',
-  visibility: 'visible',
+  display:
+    element.getAttribute?.('data-display') ??
+    (['A', 'SPAN', 'EM', 'STRONG', 'B', 'I'].includes(element.tagName)
+      ? 'inline'
+      : 'block'),
+  visibility: element.getAttribute?.('data-visibility') ?? 'visible',
 });
 
 globalThis.window = window;
@@ -154,5 +158,468 @@ assert.equal(
 );
 
 await import('./regression-api-cost.mjs');
+
+// ------------------------------------------------------------
+// DomWalker: single-pass walk must match the original algorithm
+// ------------------------------------------------------------
+
+const { walkAndCollectParagraphsAsync, extractTextFromNode, isInlineElement } =
+  await import('../src/modules/processing/DomWalker.ts');
+const { shouldSkipSubtree, isTranslatableTextNode, isHTMLElement } =
+  await import('../src/modules/processing/DomTranslationPolicy.ts');
+const { ATOMIC_INLINE_TAGS } = await import(
+  '../src/modules/shared/constants.ts'
+);
+
+/** Reference implementation of the original attribute-labelling walker. */
+function referenceWalk(root) {
+  const P = 'data-ref-paragraph';
+  const B = 'data-ref-block';
+  const labelled = [];
+  const walk = (element) => {
+    if (ATOMIC_INLINE_TAGS.has(element.tagName)) return true;
+    if (shouldSkipSubtree(element)) return false;
+    let hasInlineChild = false;
+    for (const child of element.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        if (child.textContent?.trim()) hasInlineChild = true;
+      } else if (isHTMLElement(child) && walk(child)) {
+        hasInlineChild = true;
+      }
+    }
+    if (hasInlineChild) element.setAttribute(P, '');
+    const inline = isInlineElement(element);
+    if (!inline) element.setAttribute(B, '');
+    labelled.push(element);
+    return inline;
+  };
+  walk(root);
+
+  const candidates = [
+    ...(root.hasAttribute(P) ? [root] : []),
+    ...root.querySelectorAll(`[${P}]`),
+  ];
+  const result = [];
+  for (const element of candidates) {
+    const children = [...element.querySelectorAll(`[${P}]`)];
+    if (children.some((child) => child.hasAttribute(B))) continue;
+    const textContent = extractTextFromNode(element);
+    if (textContent.trim().length < 2) continue;
+    const textNodes = [];
+    const visit = (node) => {
+      for (const child of node.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          if (isTranslatableTextNode(child, element)) textNodes.push(child);
+        } else {
+          visit(child);
+        }
+      }
+    };
+    visit(element);
+    if (textNodes.length === 0) continue;
+    result.push({ element, textContent, textNodes });
+  }
+  labelled.forEach((element) => {
+    element.removeAttribute(P);
+    element.removeAttribute(B);
+  });
+  return result;
+}
+
+const walkerFixture = document.createElement('section');
+walkerFixture.id = 'walker-fixture';
+walkerFixture.innerHTML = `
+  <div id="w-mixed">Lead text <p id="w-inner-p">Inner block paragraph text.</p></div>
+  <p id="w-nested">Read the <a id="w-long-link" href="#">very long link text inside a paragraph</a> and <strong>bold</strong> words<br>next line <time id="w-time">2024-01-01</time>.</p>
+  <ul id="w-list"><li id="w-li-1"><a href="#">Home</a></li><li id="w-li-2"><a href="#">About us</a></li></ul>
+  <div id="w-hidden" data-display="none"><p>Hidden paragraph text</p></div>
+  <div id="w-vis" data-visibility="hidden"><p>Invisible paragraph text</p></div>
+  <p id="w-aria">Visible <span aria-hidden="true">aria hidden text</span> tail text</p>
+  <div id="w-inline-block"><span data-display="inline-block"><div id="w-deep">Deep block text</div></span> after</div>
+  <p id="w-own"><span class="wxt-translation-term">owned</span> plain text after term</p>
+  <p id="w-processed" data-wxt-text-processed="true">Already processed text</p>
+  <div id="w-script">Script sibling text<script>var ignored = 1;</script></div>
+  <p id="w-abbr"><abbr title="x">HTML</abbr></p>
+  <div id="w-empty-inline"><span> </span><em>emphasis only</em></div>
+  <div id="w-contents" data-display="contents">Contents display text</div>
+`;
+document.body.appendChild(walkerFixture);
+
+const describe = (paragraphs) =>
+  paragraphs.map((p) => ({
+    id: p.element.id || p.element.tagName,
+    text: p.textContent,
+    nodes: p.textNodes.map((node) => node.textContent),
+  }));
+
+const expectedParagraphs = referenceWalk(walkerFixture);
+assert.ok(
+  expectedParagraphs.length >= 10,
+  'walker fixture should exercise many paragraph shapes',
+);
+const syncParagraphs = walkAndCollectParagraphs(walkerFixture);
+assert.deepEqual(
+  describe(syncParagraphs),
+  describe(expectedParagraphs),
+  'single-pass DomWalker must return the same paragraphs as the original walker',
+);
+syncParagraphs.forEach((paragraph, index) => {
+  assert.equal(paragraph.element, expectedParagraphs[index].element);
+  assert.deepEqual(paragraph.textNodes, expectedParagraphs[index].textNodes);
+});
+assert.equal(
+  walkerFixture.querySelectorAll(
+    '[data-illa-walked], [data-illa-paragraph], [data-illa-block], [data-illa-inline]',
+  ).length,
+  0,
+  'the walk must not write label attributes into the page DOM',
+);
+
+const asyncParagraphs = await walkAndCollectParagraphsAsync(walkerFixture, {
+  sliceMs: 0,
+});
+assert.deepEqual(
+  describe(asyncParagraphs),
+  describe(expectedParagraphs),
+  'time-sliced walk must produce the same paragraphs as the synchronous walk',
+);
+
+const bodyReference = describe(referenceWalk(document.body));
+assert.deepEqual(
+  describe(walkAndCollectParagraphs(document.body)),
+  bodyReference,
+  'single-pass DomWalker must match the original walker on the whole page',
+);
+
+// ------------------------------------------------------------
+// ProcessingStateManager: identity keys and bounded fingerprint store
+// ------------------------------------------------------------
+
+window.setInterval = () => 0;
+window.clearInterval = () => undefined;
+
+const { ProcessingStateManager } = await import(
+  '../src/modules/processing/ProcessingStateManager.ts'
+);
+const stateManager = new ProcessingStateManager();
+const sameTextA = document.createElement('p');
+const sameTextB = document.createElement('p');
+assert.equal(
+  stateManager.generateDomPath(sameTextA),
+  stateManager.generateDomPath(sameTextA),
+  'the same element must always get the same identity key',
+);
+assert.notEqual(
+  stateManager.generateContentFingerprint(
+    'Same text',
+    stateManager.generateDomPath(sameTextA),
+  ),
+  stateManager.generateContentFingerprint(
+    'Same text',
+    stateManager.generateDomPath(sameTextB),
+  ),
+  'the same text in a different element must get a different fingerprint',
+);
+for (let i = 0; i <= 5000; i++) {
+  stateManager.markProcessingComplete(`fp-${i}`, 'p#1', 0);
+}
+assert.equal(
+  stateManager.getProcessingStats().processedCount,
+  5000,
+  'the processed fingerprint store must be capped',
+);
+assert.equal(stateManager.isContentProcessed('fp-0'), false);
+assert.equal(stateManager.isContentProcessed('fp-5000'), true);
+stateManager.destroy();
+
+// ------------------------------------------------------------
+// ContentSegmenter: every text node belongs to at most one segment
+// ------------------------------------------------------------
+
+const { ContentSegmenter } = await import(
+  '../src/modules/processing/ContentSegmenter.ts'
+);
+const segmentFixture = document.createElement('section');
+segmentFixture.innerHTML = `
+  <p id="s-nested">This paragraph contains <a id="s-link" href="#">a rather long hyperlink text here</a> and more trailing words.</p>
+  <p id="s-long">${Array.from({ length: 12 }, (_, i) => `<span>Sentence number ${i} is part of a long paragraph.</span>`).join(' ')}</p>
+`;
+document.body.appendChild(segmentFixture);
+
+const segments = await new ContentSegmenter({
+  maxSegmentLength: 200,
+}).segmentContent(segmentFixture);
+const seenTextNodes = new Set();
+for (const segment of segments) {
+  for (const node of segment.textNodes) {
+    assert.ok(
+      !seenTextNodes.has(node),
+      `text node "${node.textContent}" must not appear in two segments`,
+    );
+    seenTextNodes.add(node);
+  }
+}
+assert.ok(
+  !segments.some((segment) => segment.element.id === 's-link'),
+  'a nested inline paragraph must not become its own segment',
+);
+const longSegments = segments.filter(
+  (segment) => segment.element.id === 's-long',
+);
+assert.ok(longSegments.length > 1, 'a long paragraph must be split');
+assert.equal(
+  new Set(longSegments.map((segment) => segment.fingerprint)).size,
+  longSegments.length,
+  'split sub-segments of one element must have distinct fingerprints',
+);
+
+// ------------------------------------------------------------
+// LanguageService: cheap, cached page language detection
+// ------------------------------------------------------------
+
+let detectLanguageCalls = 0;
+globalThis.browser.i18n = {
+  detectLanguage: async () => {
+    detectLanguageCalls++;
+    return { languages: [{ language: 'fr' }] };
+  },
+};
+const { languageService } = await import(
+  '../src/modules/core/translation/LanguageService.ts'
+);
+document.documentElement.setAttribute('lang', 'de-AT');
+languageService.invalidatePageLanguage();
+assert.equal(
+  await languageService.detectPageLanguage(),
+  'de',
+  '<html lang> must be used first',
+);
+document.documentElement.setAttribute('lang', 'es');
+assert.equal(
+  await languageService.detectPageLanguage(),
+  'de',
+  'the page language must be cached for the same page',
+);
+document.documentElement.removeAttribute('lang');
+languageService.invalidatePageLanguage();
+assert.equal(await languageService.detectPageLanguage(), 'fr');
+await languageService.detectPageLanguage();
+assert.equal(
+  detectLanguageCalls,
+  1,
+  'text-sample detection must run once per page',
+);
+
+// ------------------------------------------------------------
+// Paragraph mode: selection and per-page result cache
+// ------------------------------------------------------------
+
+const selectionFixture = document.createElement('section');
+selectionFixture.innerHTML = `
+  <ul><li id="sel-li"><a id="sel-a" href="#">Short</a></li></ul>
+  <div id="sel-two"><a href="#">First link item</a> text <a href="#">Second link item</a></div>
+`;
+document.body.appendChild(selectionFixture);
+assert.deepEqual(
+  selectParagraphTranslationElements(
+    walkAndCollectParagraphs(selectionFixture),
+  ).map((element) => element.id),
+  ['sel-a', 'sel-two'],
+  'a short block with exactly one inline candidate selects the inline child',
+);
+
+const { ParagraphTranslationApi } = await import(
+  '../src/modules/core/translation/ParagraphTranslationApi.ts'
+);
+const paragraphApi = ParagraphTranslationApi.getInstance();
+const requested = [];
+paragraphApi.requestTranslation = async (text) => {
+  requested.push(text);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  if (text.startsWith('fail')) throw new Error('api down');
+  return `de:${text}`;
+};
+const paragraphSettings = {
+  activeApiConfigId: 'cfg',
+  apiConfigs: [{ id: 'cfg', config: { model: 'model-a' } }],
+  multilingualConfig: { targetLanguage: 'de', nativeLanguage: 'en' },
+};
+const context = { settings: paragraphSettings };
+const [first, second] = await Promise.all([
+  paragraphApi.translateParagraph('Hello  world', 'de', context),
+  paragraphApi.translateParagraph('Hello world', 'de', context),
+]);
+assert.equal(first, 'de:Hello  world');
+assert.equal(second, first, 'concurrent identical paragraphs share a request');
+await paragraphApi.translateParagraph('Hello world', 'de', context);
+assert.equal(requested.length, 1, 'repeated paragraphs are served from cache');
+await paragraphApi.translateParagraph('Hello world', 'fr', context);
+assert.equal(requested.length, 2, 'the target language is part of the key');
+const originalConsoleError = console.error;
+console.error = () => undefined;
+await assert.rejects(
+  paragraphApi.translateParagraph('fail once', 'de', context),
+);
+await assert.rejects(
+  paragraphApi.translateParagraph('fail once', 'de', context),
+);
+console.error = originalConsoleError;
+assert.equal(requested.length, 4, 'failures must never be cached');
+
+// ------------------------------------------------------------
+// Mutation batching: debounce with maxWait
+// ------------------------------------------------------------
+
+const { createBatchScheduler } = await import(
+  '../src/modules/content/utils/domUtils.ts'
+);
+
+function createFakeClock() {
+  let time = 0;
+  let timers = [];
+  let nextId = 1;
+  return {
+    setTimeout(callback, delay) {
+      const id = nextId++;
+      timers.push({ id, at: time + delay, callback });
+      return id;
+    },
+    clearTimeout(id) {
+      timers = timers.filter((timer) => timer.id !== id);
+    },
+    now: () => time,
+    advanceTo(target) {
+      for (;;) {
+        const due = timers
+          .filter((timer) => timer.at <= target)
+          .sort((a, b) => a.at - b.at)[0];
+        if (!due) break;
+        timers = timers.filter((timer) => timer !== due);
+        time = due.at;
+        due.callback();
+      }
+      time = target;
+    },
+  };
+}
+
+const clock = createFakeClock();
+const flushTimes = [];
+const scheduler = createBatchScheduler(
+  () => flushTimes.push(clock.now()),
+  { wait: 150, maxWait: 750 },
+  clock,
+);
+scheduler.schedule();
+clock.advanceTo(149);
+assert.deepEqual(flushTimes, [], 'no flush before the debounce delay');
+clock.advanceTo(150);
+assert.deepEqual(flushTimes, [150], 'a quiet batch flushes after the delay');
+
+for (let t = 200; t <= 1200; t += 100) {
+  clock.advanceTo(t);
+  scheduler.schedule();
+}
+assert.deepEqual(
+  flushTimes,
+  [150, 950],
+  'continuous mutations must flush after maxWait instead of starving',
+);
+scheduler.cancel();
+clock.advanceTo(5000);
+assert.equal(flushTimes.length, 2, 'cancel drops the pending flush');
+
+// ------------------------------------------------------------
+// SegmentObserver: split paragraphs, release after processing
+// ------------------------------------------------------------
+
+const observedTargets = new Set();
+let intersectionCallback;
+globalThis.IntersectionObserver = class {
+  constructor(callback) {
+    intersectionCallback = callback;
+  }
+  observe(target) {
+    observedTargets.add(target);
+  }
+  unobserve(target) {
+    observedTargets.delete(target);
+  }
+  disconnect() {
+    observedTargets.clear();
+  }
+};
+window.innerHeight = 800;
+window.HTMLElement.prototype.getBoundingClientRect = () => ({
+  top: 10000,
+  bottom: 10100,
+});
+
+const { SegmentObserver } = await import(
+  '../src/modules/content/utils/SegmentObserver.ts'
+);
+const visibleBatches = [];
+const segmentObserver = new SegmentObserver((visible) => {
+  if (visible.length > 0) visibleBatches.push(visible);
+});
+const splitElement = document.createElement('p');
+document.body.appendChild(splitElement);
+const splitSegments = [0, 1, 2].map((index) => ({
+  id: `split-${index}`,
+  textContent: `part ${index}`,
+  element: splitElement,
+  elements: [splitElement],
+  textNodes: [],
+  fingerprint: `split-fp-${index}`,
+  domPath: 'p#split',
+}));
+segmentObserver.observeMultiple(splitSegments);
+segmentObserver.observe(splitSegments[0]);
+assert.equal(
+  segmentObserver.getObservedCount(),
+  3,
+  'all sub-segments of a split paragraph must be kept (no overwrite, no duplicates)',
+);
+intersectionCallback([{ target: splitElement, isIntersecting: true }]);
+assert.deepEqual(
+  visibleBatches.at(-1).map((segment) => segment.id),
+  ['split-0', 'split-1', 'split-2'],
+  'an element entering the viewport reports every sub-segment',
+);
+segmentObserver.unobserveMultiple(splitSegments.slice(0, 2));
+assert.ok(observedTargets.has(splitElement));
+segmentObserver.unobserve(splitSegments[2]);
+assert.equal(segmentObserver.getObservedCount(), 0);
+assert.ok(
+  !observedTargets.has(splitElement),
+  'the element is unobserved once all its segments are processed',
+);
+
+const detachedElement = document.createElement('p');
+document.body.appendChild(detachedElement);
+segmentObserver.observe({ ...splitSegments[0], element: detachedElement });
+detachedElement.remove();
+intersectionCallback([{ target: detachedElement, isIntersecting: false }]);
+assert.equal(
+  segmentObserver.getObservedCount(),
+  0,
+  'detached elements must be released',
+);
+segmentObserver.destroy();
+
+// Small segments stay separate by default (batching packs them; merging
+// would defeat exact deduplication of repeated text).
+const smallFixture = document.createElement('section');
+smallFixture.innerHTML = `
+  <p>Repeated short caption A1</p>
+  <p>Repeated short caption A1</p>
+`;
+document.body.appendChild(smallFixture);
+const smallSegments = await new ContentSegmenter().segmentContent(smallFixture);
+assert.deepEqual(
+  smallSegments.map((segment) => segment.textContent),
+  ['Repeated short caption A1', 'Repeated short caption A1'],
+  'small segments must not be merged by default',
+);
 
 console.log('main regression passed');

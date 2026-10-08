@@ -10,7 +10,8 @@ export function selectParagraphTranslationElements(
   const orderedElements = paragraphs.map((paragraph) => paragraph.element);
   const selected = new Set<HTMLElement>();
 
-  for (const element of orderedElements) {
+  for (let index = 0; index < orderedElements.length; index++) {
+    const element = orderedElements[index];
     if (selected.has(element)) continue;
     if (hasParagraphTranslation(element)) continue;
     if (hasParagraphTranslationAncestor(element)) continue;
@@ -22,7 +23,11 @@ export function selectParagraphTranslationElements(
       continue;
     }
 
-    const shortInlineChild = findShortInlineOnlyChild(element, orderedElements);
+    const shortInlineChild = findShortInlineOnlyChild(
+      element,
+      orderedElements,
+      index,
+    );
     if (shortInlineChild) {
       selected.add(shortInlineChild);
       continue;
@@ -71,18 +76,29 @@ function hasParagraphTranslationSibling(element: HTMLElement): boolean {
   );
 }
 
+/**
+ * `candidates` are in document (pre-)order, so the descendants of the element
+ * at `index` are exactly the candidates directly following it. Scanning stops
+ * at the first non-descendant (or the second descendant) instead of testing
+ * every candidate, which made selection O(P^2).
+ */
 function findShortInlineOnlyChild(
   element: HTMLElement,
   candidates: HTMLElement[],
+  index: number,
 ): HTMLElement | null {
   if (isInlineCandidate(element)) return null;
 
-  const childCandidates = candidates.filter(
-    (candidate) => candidate !== element && element.contains(candidate),
-  );
-  if (childCandidates.length !== 1) return null;
+  let child: HTMLElement | null = null;
+  for (let next = index + 1; next < candidates.length; next++) {
+    const candidate = candidates[next];
+    if (candidate === element) continue;
+    if (!element.contains(candidate)) break;
+    if (child) return null; // more than one descendant candidate
+    child = candidate;
+  }
+  if (!child) return null;
 
-  const [child] = childCandidates;
   const text = element.textContent?.trim() ?? '';
   if (text.length === 0 || text.length > SHORT_INLINE_TEXT_MAX_LENGTH) {
     return null;
