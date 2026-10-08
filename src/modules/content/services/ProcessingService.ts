@@ -104,7 +104,7 @@ export class ProcessingService implements IProcessingService {
         mergeSmallSegments: false,
       });
 
-      return contentSegmenter.segmentContent(root);
+      return await contentSegmenter.segmentContent(root);
     } catch (error) {
       console.error(
         '[ProcessingService] Failed to get content segments:',
