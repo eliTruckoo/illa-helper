@@ -4,6 +4,7 @@
  */
 
 import { ApiServiceFactory } from '../../api';
+import { getResponseStatus } from '../../api/utils/apiUtils';
 import { StyleManager } from '../../styles';
 
 // Replacement result interface
@@ -136,7 +137,7 @@ export class TextReplacerService {
       return await this.processTranslation(text, settingsForApi);
     } catch (error) {
       console.error('Text replacement failed:', error);
-      return this.createEmptyResult(text);
+      return this.createErrorResult(text, error);
     }
   }
 
@@ -148,6 +149,23 @@ export class TextReplacerService {
       original: text,
       processed: text,
       replacements: [],
+      status: 'empty',
+    };
+  }
+
+  /**
+   * Create a failed result. Failed results are never cached so the segment can be retried later.
+   */
+  private createErrorResult(
+    text: string,
+    error: unknown,
+  ): FullTextAnalysisResponse {
+    return {
+      original: text,
+      processed: text,
+      replacements: [],
+      status: 'error',
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 
@@ -187,8 +205,10 @@ export class TextReplacerService {
       // Get API result
       const apiResult = await this.callTranslationAPI(text, settings);
 
-      // Store in cache
-      this.setCachedResult(cacheKey, apiResult);
+      // Only successful results (including valid empty answers) may be cached
+      if (getResponseStatus(apiResult) !== 'error') {
+        this.setCachedResult(cacheKey, apiResult);
+      }
 
       return apiResult;
     } catch (error) {
@@ -228,7 +248,7 @@ export class TextReplacerService {
     console.log('Translation failed, returning original text:', error);
 
     // No fallback logic after simplification, return the original text directly
-    return this.createEmptyResult(text);
+    return this.createErrorResult(text, error);
   }
 
   /**

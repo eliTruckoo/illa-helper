@@ -2,6 +2,11 @@
  * API-related utility functions
  */
 
+import type {
+  FullTextAnalysisResponse,
+  TranslationResultStatus,
+} from '../../shared/types/api';
+
 /**
  * Merge custom parameters into the base parameter object
  */
@@ -31,14 +36,48 @@ export function mergeCustomParams(
 }
 
 /**
- * Create a generic error response
+ * Create a generic error response. Error responses must never be cached.
  */
-export function createErrorResponse(originalText: string) {
+export function createErrorResponse(
+  originalText: string,
+  error?: string,
+): FullTextAnalysisResponse {
   return {
     original: originalText,
     processed: originalText,
     replacements: [],
+    status: 'error',
+    error,
   };
+}
+
+/**
+ * Create a successful response without replacements (cacheable).
+ */
+export function createEmptyResponse(
+  originalText: string,
+): FullTextAnalysisResponse {
+  return {
+    original: originalText,
+    processed: '',
+    replacements: [],
+    status: 'empty',
+  };
+}
+
+/**
+ * Resolve the status of a response, deriving it from the replacements when the provider did not set one.
+ */
+export function getResponseStatus(
+  response: FullTextAnalysisResponse | null | undefined,
+): TranslationResultStatus {
+  if (!response) {
+    return 'error';
+  }
+  if (response.status) {
+    return response.status;
+  }
+  return response.replacements.length > 0 ? 'ok' : 'empty';
 }
 
 /**

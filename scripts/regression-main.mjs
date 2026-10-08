@@ -153,4 +153,6 @@ assert.equal(
   'The translation of a short inline nav item should be attached inside the original element',
 );
 
+await import('./regression-api-cost.mjs');
+
 console.log('main regression passed');

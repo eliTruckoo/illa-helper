@@ -40,11 +40,8 @@ export class StructuredTextParser {
       result.replacements = replacements.filter(
         (r: ParsedReplacement) => r.original && r.translation,
       );
-      result.success = result.replacements.length > 0;
-
-      if (result.replacements.length === 0) {
-        result.errors.push('No valid replacement items found');
-      }
+      // A response without any pairs is a valid, empty answer (e.g. nothing worth translating), not a failure.
+      result.success = true;
     } catch (error) {
       result.errors.push(
         `Parse error: ${error instanceof Error ? error.message : String(error)}`,

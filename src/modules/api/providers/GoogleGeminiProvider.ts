@@ -99,6 +99,7 @@ export class GoogleGeminiProvider extends BaseProvider {
       original: text,
       processed: '',
       replacements,
+      status: replacements.length > 0 ? 'ok' : 'empty',
     };
   }
 }

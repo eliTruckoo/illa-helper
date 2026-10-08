@@ -230,20 +230,14 @@ export class ProcessingCoordinator {
           errorCount++;
           errors.push(result.error || 'Unknown error');
 
-          // Mark processing failed
-          globalProcessingState.markProcessingFailed(
-            result.segment.fingerprint,
-            result.segment.domPath,
-          );
+          // Failed segments are not recorded as processed so they can be retried later
+          globalProcessingState.releaseProcessing(result.segment.fingerprint);
         }
       });
     } catch (globalError) {
-      // Clear all markers
+      // Clear all markers; nothing is recorded as processed so a later run can retry
       successfullyMarked.forEach((segment) => {
-        globalProcessingState.markProcessingFailed(
-          segment.fingerprint,
-          segment.domPath,
-        );
+        globalProcessingState.releaseProcessing(segment.fingerprint);
       });
 
       const duration = Date.now() - startTime;
@@ -289,10 +283,19 @@ export class ProcessingCoordinator {
 
       const result = await textReplacer.replaceText(segment.textContent);
 
+      if (!result || result.status === 'error') {
+        return {
+          segment,
+          success: false,
+          replacements: [],
+          error: result?.error || 'Translation request failed',
+        };
+      }
+
       return {
         segment,
         success: true,
-        replacements: result?.replacements ?? [],
+        replacements: result.replacements ?? [],
       };
     } catch (error) {
       return {

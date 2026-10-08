@@ -5,7 +5,12 @@
 import { ApiConfig, FullTextAnalysisResponse } from '../../shared/types/api';
 import { UserSettings } from '../../shared/types/storage';
 import { ITranslationProvider } from '../types';
-import { validateInputs, createErrorResponse } from '../utils/apiUtils';
+import {
+  validateInputs,
+  createErrorResponse,
+  createEmptyResponse,
+  getResponseStatus,
+} from '../utils/apiUtils';
 
 /**
  * Base provider abstract class
@@ -27,16 +32,25 @@ export abstract class BaseProvider implements ITranslationProvider {
   ): Promise<FullTextAnalysisResponse> {
     const originalText = text || '';
 
+    // Nothing to translate is a successful empty result, not a failure
+    if (!originalText.trim()) {
+      return createEmptyResponse(originalText);
+    }
+
     // Validate input
     if (!validateInputs(originalText, this.config.apiKey)) {
-      return createErrorResponse(originalText);
+      return createErrorResponse(originalText, 'API key is not configured');
     }
 
     try {
-      return await this.doAnalyzeFullText(originalText, settings);
+      const result = await this.doAnalyzeFullText(originalText, settings);
+      return { ...result, status: getResponseStatus(result) };
     } catch (error: any) {
       console.error(`${this.getProviderName()} API request failed:`, error);
-      return createErrorResponse(originalText);
+      return createErrorResponse(
+        originalText,
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
 

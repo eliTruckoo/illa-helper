@@ -112,6 +112,7 @@ export class OpenAIProvider extends BaseProvider {
         original: originalText,
         processed: '',
         replacements,
+        status: replacements.length > 0 ? 'ok' : 'empty',
       };
     } catch (error) {
       console.error('Failed to extract replacement info:', error);
