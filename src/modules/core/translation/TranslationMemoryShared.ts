@@ -18,6 +18,7 @@ export const TM_MESSAGE_TYPES = {
   STORE: 'tm-store',
   STATS: 'tm-stats',
   CLEAR: 'tm-clear',
+  WORDS_RECORD: 'tm-words-record',
 } as const;
 
 /** Defaults of `UserSettings.translationCache` */
@@ -106,11 +107,163 @@ export interface TmStats {
   /** Lookups / hits since the background (service worker) started */
   sessionLookups: number;
   sessionHits: number;
-  /** Word exposure tracking (illa-helper-eq7.14), when available */
-  words?: number;
-  wordExposures?: number;
+  /** Word exposure tracking: distinct words and total exposures */
+  words: number;
+  wordExposures: number;
+  /** Most frequently shown words */
+  topWords: Array<{ surface: string; translation: string; exposures: number }>;
   /** Whether IndexedDB could be opened */
   persistent: boolean;
+}
+
+// ==================== Word exposure (learning layer) ====================
+
+/** Distinct words kept; the least recently seen are evicted above it */
+export const TM_WORDS_MAX_ENTRIES = 50000;
+/** Translations remembered per word (most frequent first) */
+export const TM_WORD_MAX_TRANSLATIONS = 8;
+/** Words per `tm-words-record` message */
+export const TM_MAX_WORDS_PER_MESSAGE = 500;
+const MAX_SURFACE_LENGTH = 80;
+
+/** One applied replacement shown to the user, aggregated on the content side */
+export interface TmWordDelta {
+  surface: string;
+  translation: string;
+  count: number;
+}
+
+export interface TmWordsRecordMessage {
+  type: typeof TM_MESSAGE_TYPES.WORDS_RECORD;
+  srcLang: string;
+  tgtLang: string;
+  items: TmWordDelta[];
+}
+
+/** Stored record (`tm_words`) */
+export interface TmWordRecord {
+  /** `${srcLang}|${tgtLang}|${surface.toLowerCase()}` */
+  id: string;
+  srcLang: string;
+  tgtLang: string;
+  surface: string;
+  translations: Record<string, number>;
+  exposures: number;
+  firstSeen: number;
+  lastSeen: number;
+}
+
+export function normalizeLanguageTag(tag: string | undefined): string {
+  const base = (tag || '').trim().toLowerCase().split(/[-_]/)[0];
+  return /^[a-z]{2,3}$/.test(base) ? base : 'und';
+}
+
+export function normalizeWordSurface(surface: string): string {
+  return normalizeSegmentText(surface).toLowerCase();
+}
+
+export function buildWordId(
+  srcLang: string,
+  tgtLang: string,
+  surface: string,
+): string {
+  return `${normalizeLanguageTag(srcLang)}|${normalizeLanguageTag(tgtLang)}|${normalizeWordSurface(surface)}`;
+}
+
+/**
+ * Validate and merge deltas of one message by word id (the background never trusts payloads).
+ */
+export function aggregateWordDeltas(
+  srcLang: string,
+  tgtLang: string,
+  items: unknown,
+): Map<
+  string,
+  { surface: string; translations: Map<string, number>; count: number }
+> {
+  const result = new Map<
+    string,
+    { surface: string; translations: Map<string, number>; count: number }
+  >();
+  if (!Array.isArray(items)) return result;
+
+  for (const item of items.slice(0, TM_MAX_WORDS_PER_MESSAGE)) {
+    const surface =
+      typeof item?.surface === 'string'
+        ? normalizeWordSurface(item.surface)
+        : '';
+    const translation =
+      typeof item?.translation === 'string'
+        ? item.translation.trim().slice(0, MAX_SURFACE_LENGTH)
+        : '';
+    const count = Math.min(
+      1000,
+      Math.max(1, Math.floor(Number(item?.count) || 1)),
+    );
+    if (!surface || surface.length > MAX_SURFACE_LENGTH || !translation) {
+      continue;
+    }
+
+    const id = buildWordId(srcLang, tgtLang, surface);
+    const entry = result.get(id) ?? {
+      surface,
+      translations: new Map<string, number>(),
+      count: 0,
+    };
+    entry.count += count;
+    entry.translations.set(
+      translation,
+      (entry.translations.get(translation) ?? 0) + count,
+    );
+    result.set(id, entry);
+  }
+  return result;
+}
+
+/**
+ * Apply one aggregated delta to a stored word record (or create it).
+ */
+export function mergeWordRecord(
+  existing: TmWordRecord | undefined,
+  id: string,
+  srcLang: string,
+  tgtLang: string,
+  delta: { surface: string; translations: Map<string, number>; count: number },
+  now: number,
+): TmWordRecord {
+  const translations: Record<string, number> = {
+    ...(existing?.translations ?? {}),
+  };
+  for (const [translation, count] of delta.translations) {
+    translations[translation] = (translations[translation] ?? 0) + count;
+  }
+  const kept = Object.entries(translations)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, TM_WORD_MAX_TRANSLATIONS);
+
+  return {
+    id,
+    srcLang: normalizeLanguageTag(srcLang),
+    tgtLang: normalizeLanguageTag(tgtLang),
+    surface: delta.surface,
+    translations: Object.fromEntries(kept),
+    exposures: (existing?.exposures ?? 0) + delta.count,
+    firstSeen: existing?.firstSeen ?? now,
+    lastSeen: now,
+  };
+}
+
+/** Most frequent translation of a word record */
+export function primaryTranslation(record: TmWordRecord): string {
+  let best = '';
+  let bestCount = -1;
+  for (const [translation, count] of Object.entries(record.translations)) {
+    if (count > bestCount) {
+      best = translation;
+      bestCount = count;
+    }
+  }
+  return best;
 }
 
 export interface TmPolicy {

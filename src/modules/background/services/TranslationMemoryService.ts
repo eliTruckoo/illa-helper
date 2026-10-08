@@ -11,6 +11,9 @@
  * - 'error' results are never stored; 'empty' answers expire after 3 days.
  * - Incognito tabs use a separate in-memory map and never touch IndexedDB.
  * - Every failure is a miss (fail open): translation must never depend on the cache.
+ *
+ * Also keeps the word exposure history (`tm_words`, learning layer): how often each
+ * word was shown with which translation. Never recorded for incognito tabs.
  */
 
 import { browser } from 'wxt/browser';
@@ -18,11 +21,15 @@ import {
   DEFAULT_TM_POLICY,
   TM_MAX_TEXTS_PER_MESSAGE,
   TM_MESSAGE_TYPES,
+  TM_EVICTION_FRACTION,
+  TM_WORDS_MAX_ENTRIES,
+  aggregateWordDeltas,
   deriveSegmentKey,
   estimateEntryBytes,
   hash128,
   isEntryExpired,
   planEviction,
+  primaryTranslation,
   resolveTmPolicy,
   sanitizePairs,
   type TmClearScope,
@@ -32,6 +39,7 @@ import {
   type TmPolicy,
   type TmStats,
   type TmStoreItem,
+  type TmWordRecord,
 } from '../../core/translation/TranslationMemoryShared';
 import { LruCache } from '../../core/translation/SegmentTranslationCache';
 import { StorageService } from '../../core/storage/StorageService';
@@ -41,8 +49,10 @@ import {
 } from '../../../utils/debounce';
 import {
   IndexedDbSegmentBackend,
+  IndexedDbWordBackend,
   TranslationMemoryDatabase,
   type TmSegmentBackend,
+  type TmWordBackend,
 } from './TranslationMemoryDatabase';
 
 /** In-memory entries shared by all regular tabs */
@@ -59,6 +69,8 @@ const FULL_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const FINGERPRINT_CACHE_SIZE = 64;
 /** Policy (settings) is re-read after this long even without a change event */
 const POLICY_MAX_AGE_MS = 60 * 1000;
+/** Words listed in the stats */
+const TOP_WORDS_COUNT = 10;
 
 /** Who sent a message; only `tab.incognito` matters here */
 export interface TmRequestContext {
@@ -72,6 +84,8 @@ export interface TmMessageSender {
 export interface TranslationMemoryDeps {
   /** null disables persistence (memory only) */
   backend?: TmSegmentBackend | null;
+  /** null disables word exposure tracking */
+  wordBackend?: TmWordBackend | null;
   loadPolicy?: () => Promise<TmPolicy>;
   now?: () => number;
 }
@@ -80,6 +94,7 @@ export class TranslationMemoryService {
   private static instance: TranslationMemoryService | null = null;
 
   private readonly backend: TmSegmentBackend | null;
+  private readonly wordBackend: TmWordBackend | null;
   private readonly loadPolicyFn: () => Promise<TmPolicy>;
   private readonly now: () => number;
 
@@ -99,6 +114,7 @@ export class TranslationMemoryService {
   private readonly touched = new Set<string>();
   private readonly touchFlush: DebouncedTask<[]>;
   private readonly sweep: DebouncedTask<[]>;
+  private readonly wordSweep: DebouncedTask<[]>;
   private lastFullSweep = 0;
   private persistentFailed = false;
 
@@ -106,12 +122,17 @@ export class TranslationMemoryService {
   private sessionHits = 0;
 
   constructor(deps: TranslationMemoryDeps = {}) {
+    const database = TranslationMemoryDatabase.isAvailable()
+      ? new TranslationMemoryDatabase()
+      : null;
     this.backend =
       deps.backend !== undefined
         ? deps.backend
-        : TranslationMemoryDatabase.isAvailable()
-          ? new IndexedDbSegmentBackend(new TranslationMemoryDatabase())
-          : null;
+        : database && new IndexedDbSegmentBackend(database);
+    this.wordBackend =
+      deps.wordBackend !== undefined
+        ? deps.wordBackend
+        : database && new IndexedDbWordBackend(database);
     this.loadPolicyFn = deps.loadPolicy ?? loadPolicyFromSettings;
     this.now = deps.now ?? Date.now;
     this.touchFlush = createDebouncedTask(
@@ -119,6 +140,10 @@ export class TranslationMemoryService {
       TOUCH_FLUSH_DELAY_MS,
     );
     this.sweep = createDebouncedTask(() => this.runSweep(), SWEEP_DELAY_MS);
+    this.wordSweep = createDebouncedTask(
+      () => this.sweepWords(),
+      SWEEP_DELAY_MS,
+    );
   }
 
   static getInstance(): TranslationMemoryService {
@@ -136,7 +161,8 @@ export class TranslationMemoryService {
       type === TM_MESSAGE_TYPES.LOOKUP ||
       type === TM_MESSAGE_TYPES.STORE ||
       type === TM_MESSAGE_TYPES.STATS ||
-      type === TM_MESSAGE_TYPES.CLEAR
+      type === TM_MESSAGE_TYPES.CLEAR ||
+      type === TM_MESSAGE_TYPES.WORDS_RECORD
     );
   }
 
@@ -162,6 +188,15 @@ export class TranslationMemoryService {
         case TM_MESSAGE_TYPES.CLEAR:
           await this.clear(message.scope);
           return { success: true };
+        case TM_MESSAGE_TYPES.WORDS_RECORD:
+          return {
+            recorded: await this.recordWords(
+              message.srcLang,
+              message.tgtLang,
+              message.items,
+              context,
+            ),
+          };
         default:
           return undefined;
       }
@@ -386,24 +421,51 @@ export class TranslationMemoryService {
       memoryEntries: this.l1.size,
       sessionLookups: this.sessionLookups,
       sessionHits: this.sessionHits,
+      words: 0,
+      wordExposures: 0,
+      topWords: [],
       persistent: !!this.backend && !this.persistentFailed,
     };
-    if (!this.backend) return stats;
 
-    // Pending hit counts first, so the numbers include them
-    await this.flushTouched();
-    try {
-      await this.backend.scan((entry) => {
-        stats.entries++;
-        if (entry.status === 'empty') stats.emptyEntries++;
-        else stats.okEntries++;
-        stats.hits += entry.hits || 0;
-        stats.approxBytes += estimateEntryBytes(entry);
-      });
-      stats.persistent = true;
-    } catch (error) {
-      this.reportPersistentFailure(error);
-      stats.persistent = false;
+    if (this.backend) {
+      // Pending hit counts first, so the numbers include them
+      await this.flushTouched();
+      try {
+        await this.backend.scan((entry) => {
+          stats.entries++;
+          if (entry.status === 'empty') stats.emptyEntries++;
+          else stats.okEntries++;
+          stats.hits += entry.hits || 0;
+          stats.approxBytes += estimateEntryBytes(entry);
+        });
+        stats.persistent = true;
+      } catch (error) {
+        this.reportPersistentFailure(error);
+        stats.persistent = false;
+      }
+    }
+
+    if (this.wordBackend) {
+      const top: TmWordRecord[] = [];
+      try {
+        await this.wordBackend.scan((record) => {
+          stats.words++;
+          stats.wordExposures += record.exposures || 0;
+          top.push(record);
+          if (top.length > TOP_WORDS_COUNT * 4) {
+            top.sort((a, b) => b.exposures - a.exposures);
+            top.length = TOP_WORDS_COUNT;
+          }
+        });
+        top.sort((a, b) => b.exposures - a.exposures);
+        stats.topWords = top.slice(0, TOP_WORDS_COUNT).map((record) => ({
+          surface: record.surface,
+          translation: primaryTranslation(record),
+          exposures: record.exposures,
+        }));
+      } catch (error) {
+        this.reportPersistentFailure(error);
+      }
     }
     return stats;
   }
@@ -417,6 +479,60 @@ export class TranslationMemoryService {
       this.sessionLookups = 0;
       this.sessionHits = 0;
       await this.backend?.clear();
+    }
+    if (scope === 'words' || scope === 'all') {
+      await this.wordBackend?.clear();
+    }
+  }
+
+  // ==================== Word exposure ====================
+
+  /**
+   * Add exposures of applied replacements (already aggregated per page by the content side).
+   * Skipped for incognito tabs and when the cache is disabled.
+   */
+  async recordWords(
+    srcLang: unknown,
+    tgtLang: unknown,
+    items: unknown,
+    context: TmRequestContext = {},
+  ): Promise<number> {
+    if (context.incognito || !this.wordBackend) return 0;
+    if (typeof srcLang !== 'string' || typeof tgtLang !== 'string') return 0;
+
+    const policy = await this.getPolicy();
+    if (!policy.enabled) return 0;
+
+    const aggregated = aggregateWordDeltas(srcLang, tgtLang, items);
+    if (aggregated.size === 0) return 0;
+
+    try {
+      await this.wordBackend.applyDeltas(
+        [...aggregated].map(([id, delta]) => ({ id, srcLang, tgtLang, delta })),
+        this.now(),
+      );
+      this.wordSweep.schedule();
+    } catch (error) {
+      this.reportPersistentFailure(error);
+      return 0;
+    }
+    return aggregated.size;
+  }
+
+  /** Keep the word history below TM_WORDS_MAX_ENTRIES (least recently seen go first) */
+  async sweepWords(): Promise<number> {
+    if (!this.wordBackend) return 0;
+    try {
+      const count = await this.wordBackend.count();
+      if (count <= TM_WORDS_MAX_ENTRIES) return 0;
+      const target =
+        TM_WORDS_MAX_ENTRIES -
+        Math.ceil(TM_WORDS_MAX_ENTRIES * TM_EVICTION_FRACTION);
+      await this.wordBackend.deleteOldest(count - target);
+      return count - target;
+    } catch (error) {
+      this.reportPersistentFailure(error);
+      return 0;
     }
   }
 

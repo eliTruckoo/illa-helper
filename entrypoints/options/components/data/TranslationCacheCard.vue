@@ -73,6 +73,43 @@
         </p>
       </div>
 
+      <div v-if="stats" class="border-t border-border pt-6 space-y-3">
+        <h3 class="text-lg font-medium">
+          {{ $t('translationCache.wordsTitle') }}
+        </h3>
+        <p class="text-sm text-muted-foreground">
+          {{
+            $t('translationCache.wordsSummary', {
+              words: n(stats.words),
+              exposures: n(stats.wordExposures),
+            })
+          }}
+        </p>
+        <ul v-if="stats.topWords.length > 0" class="text-sm space-y-1">
+          <li
+            v-for="word in stats.topWords"
+            :key="word.surface"
+            class="flex justify-between gap-4"
+          >
+            <span class="truncate">
+              <span class="font-medium text-foreground">
+                {{ word.surface }}
+              </span>
+              <span class="text-muted-foreground">
+                → {{ word.translation }}
+              </span>
+            </span>
+            <span class="text-muted-foreground shrink-0">
+              {{
+                $t('translationCache.wordExposures', {
+                  count: n(word.exposures),
+                })
+              }}
+            </span>
+          </li>
+        </ul>
+      </div>
+
       <div class="border-t border-border pt-6 grid gap-4 md:grid-cols-2">
         <div class="space-y-2">
           <Label for="translation-cache-max-entries">
@@ -111,9 +148,21 @@
       </div>
 
       <div class="border-t border-border pt-6 flex flex-wrap gap-2">
-        <Button variant="destructive" :disabled="clearing" @click="clearCache">
+        <Button
+          variant="destructive"
+          :disabled="clearing"
+          @click="clearData('segments')"
+        >
           <Trash2 class="w-4 h-4 mr-2" />
           {{ $t('translationCache.clear') }}
+        </Button>
+        <Button
+          variant="outline"
+          :disabled="clearing"
+          @click="clearData('words')"
+        >
+          <Trash2 class="w-4 h-4 mr-2" />
+          {{ $t('translationCache.clearWords') }}
         </Button>
       </div>
     </CardContent>
@@ -234,18 +283,26 @@ async function refreshStats(): Promise<void> {
   }
 }
 
-async function clearCache(): Promise<void> {
-  if (!window.confirm(t('translationCache.clearConfirm'))) return;
+async function clearData(scope: 'segments' | 'words'): Promise<void> {
+  const isWords = scope === 'words';
+  const confirmKey = isWords
+    ? 'translationCache.clearWordsConfirm'
+    : 'translationCache.clearConfirm';
+  if (!window.confirm(t(confirmKey))) return;
   clearing.value = true;
   try {
     const reply = (await browser.runtime.sendMessage({
       type: TM_MESSAGE_TYPES.CLEAR,
-      scope: 'segments',
+      scope,
     })) as { success?: boolean } | undefined;
     if (!reply?.success) throw new Error('Clear failed');
-    emit('saveMessage', t('translationCache.cleared'), 'success');
+    emit(
+      'saveMessage',
+      t(isWords ? 'translationCache.wordsCleared' : 'translationCache.cleared'),
+      'success',
+    );
   } catch (error) {
-    console.error('Failed to clear the translation cache:', error);
+    console.error('Failed to clear translation data:', error);
     emit('saveMessage', t('translationCache.clearError'), 'error');
   } finally {
     clearing.value = false;

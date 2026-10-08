@@ -7,6 +7,7 @@ import { StorageService } from '@/src/modules/core/storage';
 import { StyleManager } from '@/src/modules/styles';
 import { TextReplacerService } from '@/src/modules/core/translation/TextReplacerService';
 import { languageService } from '@/src/modules/core/translation/LanguageService';
+import { wordExposureRecorder } from '@/src/modules/core/translation/WordExposureRecorder';
 import { IConfigurationService } from '../types';
 
 /**
@@ -37,6 +38,13 @@ export class ConfigurationService implements IConfigurationService {
       settings,
       pageLanguage,
     );
+
+    // Word exposure history follows the translation cache toggle
+    wordExposureRecorder.configure({
+      enabled: effectiveSettings.translationCache?.enabled !== false,
+      srcLang: pageLanguage || document.documentElement?.lang || '',
+      tgtLang: effectiveSettings.multilingualConfig.targetLanguage,
+    });
 
     // Get the currently active API configuration
     const activeConfig = effectiveSettings.apiConfigs.find(

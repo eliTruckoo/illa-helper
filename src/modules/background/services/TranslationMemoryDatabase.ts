@@ -7,12 +7,17 @@
  * reopened on the next call.
  */
 
-import type { TmEntry } from '../../core/translation/TranslationMemoryShared';
+import {
+  mergeWordRecord,
+  type TmEntry,
+  type TmWordRecord,
+} from '../../core/translation/TranslationMemoryShared';
 
 export const TM_DB_NAME = 'illa-translation-memory';
-export const TM_DB_VERSION = 1;
+export const TM_DB_VERSION = 2;
 
 export const TM_STORE_SEGMENTS = 'tm_segments';
+export const TM_STORE_WORDS = 'tm_words';
 
 /** Store definitions; upgrades create whatever is missing */
 const STORE_DEFINITIONS: Array<{
@@ -27,6 +32,11 @@ const STORE_DEFINITIONS: Array<{
       { name: 'lastAccess', keyPath: 'lastAccess' },
       { name: 'fp', keyPath: 'fp' },
     ],
+  },
+  {
+    name: TM_STORE_WORDS,
+    keyPath: 'id',
+    indexes: [{ name: 'lastSeen', keyPath: 'lastSeen' }],
   },
 ];
 
@@ -229,5 +239,80 @@ export class IndexedDbSegmentBackend implements TmSegmentBackend {
 
   clear(): Promise<void> {
     return this.db.clear(TM_STORE_SEGMENTS);
+  }
+}
+
+/** Aggregated exposure delta of one word (see aggregateWordDeltas) */
+export interface TmWordDeltaEntry {
+  id: string;
+  srcLang: string;
+  tgtLang: string;
+  delta: { surface: string; translations: Map<string, number>; count: number };
+}
+
+/**
+ * Storage operations of the word exposure store.
+ */
+export interface TmWordBackend {
+  /** Read-modify-write of every word in one transaction */
+  applyDeltas(deltas: TmWordDeltaEntry[], now: number): Promise<void>;
+  count(): Promise<number>;
+  scan(visit: (record: TmWordRecord) => void): Promise<void>;
+  /** Delete the `count` least recently seen words */
+  deleteOldest(count: number): Promise<void>;
+  clear(): Promise<void>;
+}
+
+export class IndexedDbWordBackend implements TmWordBackend {
+  constructor(private readonly db: TranslationMemoryDatabase) {}
+
+  applyDeltas(deltas: TmWordDeltaEntry[], now: number): Promise<void> {
+    if (deltas.length === 0) return Promise.resolve();
+    return this.db.withStore(TM_STORE_WORDS, 'readwrite', (store) => {
+      for (const { id, srcLang, tgtLang, delta } of deltas) {
+        const request = store.get(id);
+        request.onsuccess = () => {
+          store.put(
+            mergeWordRecord(
+              request.result as TmWordRecord | undefined,
+              id,
+              srcLang,
+              tgtLang,
+              delta,
+              now,
+            ),
+          );
+        };
+      }
+      return () => undefined;
+    });
+  }
+
+  count(): Promise<number> {
+    return this.db.count(TM_STORE_WORDS);
+  }
+
+  scan(visit: (record: TmWordRecord) => void): Promise<void> {
+    return this.db.scan<TmWordRecord>(TM_STORE_WORDS, visit);
+  }
+
+  deleteOldest(count: number): Promise<void> {
+    if (count <= 0) return Promise.resolve();
+    return this.db.withStore(TM_STORE_WORDS, 'readwrite', (store) => {
+      let remaining = count;
+      const request = store.index('lastSeen').openCursor();
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor || remaining <= 0) return;
+        cursor.delete();
+        remaining--;
+        cursor.continue();
+      };
+      return () => undefined;
+    });
+  }
+
+  clear(): Promise<void> {
+    return this.db.clear(TM_STORE_WORDS);
   }
 }

@@ -427,7 +427,13 @@
     "clear": "Clear translation cache",
     "clearConfirm": "Delete all remembered translations? Pages will be translated again by the AI service.",
     "cleared": "Translation cache cleared",
-    "clearError": "Failed to clear the translation cache"
+    "clearError": "Failed to clear the data",
+    "wordsTitle": "Word history",
+    "wordsSummary": "{words} different words shown {exposures} times in total (not recorded in private windows).",
+    "wordExposures": "{count}×",
+    "clearWords": "Clear word history",
+    "clearWordsConfirm": "Delete the history of words you have seen?",
+    "wordsCleared": "Word history cleared"
   },
   "appearanceSettings": {
     "floatingBall": {

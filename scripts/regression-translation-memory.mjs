@@ -602,4 +602,166 @@ assert.equal(
   'a failing memory is a miss',
 );
 
+// ------------------------------------------------------------
+// Word exposure tracking (learning layer)
+// ------------------------------------------------------------
+
+const {
+  aggregateWordDeltas,
+  buildWordId,
+  mergeWordRecord,
+  normalizeLanguageTag,
+} = await import('../src/modules/core/translation/TranslationMemoryShared.ts');
+const { WordExposureRecorder } = await import(
+  '../src/modules/core/translation/WordExposureRecorder.ts'
+);
+
+assert.equal(normalizeLanguageTag('en-US'), 'en');
+assert.equal(normalizeLanguageTag(''), 'und');
+assert.equal(buildWordId('de-DE', 'en', '  Haus '), 'de|en|haus');
+
+const aggregated = aggregateWordDeltas('de', 'en', [
+  { surface: 'Haus', translation: 'house', count: 2 },
+  { surface: 'haus', translation: 'home', count: 1 },
+  { surface: '', translation: 'x', count: 1 },
+  { surface: 'Baum', translation: '', count: 1 },
+  'garbage',
+]);
+assert.deepEqual(
+  [...aggregated.keys()],
+  ['de|en|haus'],
+  'invalid items are dropped',
+);
+const hausDelta = aggregated.get('de|en|haus');
+assert.equal(hausDelta.count, 3);
+
+const firstRecord = mergeWordRecord(
+  undefined,
+  'de|en|haus',
+  'de',
+  'en',
+  hausDelta,
+  1000,
+);
+assert.deepEqual(firstRecord.translations, { house: 2, home: 1 });
+assert.equal(firstRecord.exposures, 3);
+assert.equal(firstRecord.firstSeen, 1000);
+const secondRecord = mergeWordRecord(
+  firstRecord,
+  'de|en|haus',
+  'de',
+  'en',
+  hausDelta,
+  2000,
+);
+assert.equal(secondRecord.exposures, 6);
+assert.equal(secondRecord.firstSeen, 1000);
+assert.equal(secondRecord.lastSeen, 2000);
+
+function createWordBackend() {
+  const records = new Map();
+  return {
+    records,
+    applyCalls: 0,
+    async applyDeltas(deltas, at) {
+      this.applyCalls++;
+      for (const { id, srcLang, tgtLang, delta } of deltas) {
+        records.set(
+          id,
+          mergeWordRecord(records.get(id), id, srcLang, tgtLang, delta, at),
+        );
+      }
+    },
+    async count() {
+      return records.size;
+    },
+    async scan(visit) {
+      for (const record of records.values()) visit(record);
+    },
+    async deleteOldest() {},
+    async clear() {
+      records.clear();
+    },
+  };
+}
+
+const wordBackend = createWordBackend();
+const wordService = new TranslationMemoryService({
+  backend: createMemoryBackend(),
+  wordBackend,
+  now: () => clock,
+  loadPolicy: async () => resolveTmPolicy({}),
+});
+const wordMessage = {
+  type: TM_MESSAGE_TYPES.WORDS_RECORD,
+  srcLang: 'de',
+  tgtLang: 'en',
+  items: [
+    { surface: 'Haus', translation: 'house', count: 2 },
+    { surface: 'Baum', translation: 'tree', count: 1 },
+  ],
+};
+assert.deepEqual(await wordService.handleMessage(wordMessage), { recorded: 2 });
+assert.equal(wordBackend.applyCalls, 1, 'one transaction per message');
+assert.deepEqual(
+  await wordService.handleMessage(wordMessage, { tab: { incognito: true } }),
+  { recorded: 0 },
+  'incognito exposures are never recorded',
+);
+assert.equal(wordBackend.records.get('de|en|haus').exposures, 2);
+const wordStats = await wordService.getStats();
+assert.equal(wordStats.words, 2);
+assert.equal(wordStats.wordExposures, 3);
+assert.deepEqual(wordStats.topWords[0], {
+  surface: 'haus',
+  translation: 'house',
+  exposures: 2,
+});
+await wordService.clear('words');
+assert.equal(wordBackend.records.size, 0, 'clear words empties the word store');
+
+const recorderSent = [];
+const recorder = new WordExposureRecorder(
+  async (message) => {
+    recorderSent.push(message);
+  },
+  1,
+  () => false,
+);
+recorder.record([{ original: 'Haus', translation: 'house' }]);
+assert.equal(recorder.pendingCount, 0, 'disabled until configured');
+recorder.configure({ enabled: true, srcLang: 'de-DE', tgtLang: 'en' });
+recorder.record([
+  { original: 'Haus', translation: 'house' },
+  { original: 'haus', translation: 'house' },
+  { original: 'Baum', translation: 'tree' },
+]);
+recorder.record([{ original: 'Haus', translation: 'house' }]);
+await new Promise((resolve) => setTimeout(resolve, 10));
+assert.equal(
+  recorderSent.length,
+  1,
+  'exposures are sent in one debounced message',
+);
+assert.equal(recorderSent[0].srcLang, 'de');
+assert.deepEqual(
+  recorderSent[0].items.map((item) => [item.surface, item.count]),
+  [
+    ['Haus', 3],
+    ['Baum', 1],
+  ],
+);
+const incognitoRecorder = new WordExposureRecorder(
+  async (message) => recorderSent.push(message),
+  1,
+  () => true,
+);
+incognitoRecorder.configure({ enabled: true, srcLang: 'de', tgtLang: 'en' });
+incognitoRecorder.record([{ original: 'Haus', translation: 'house' }]);
+assert.equal(
+  incognitoRecorder.pendingCount,
+  0,
+  'incognito tabs record nothing',
+);
+
 console.log('translation memory regression passed');
