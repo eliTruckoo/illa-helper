@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "illa_helper",
+  "project_id": "95f4bf3d-f2c1-4345-860f-1a25eaa7798d"
+}
