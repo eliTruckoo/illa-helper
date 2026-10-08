@@ -27,7 +27,6 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
     "@intlify/unplugin-vue-i18n": "^6.0.8",
     "@tailwindcss/vite": "^4.1.10",
     "@tanstack/vue-table": "^8.21.3",

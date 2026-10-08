@@ -331,4 +331,103 @@ assert.deepEqual(proxy.getConcurrencyStats(), { running: 0, queued: 0 });
 
 globalThis.fetch = originalFetch;
 
+// ---------- eq7.5: Gemini goes through the background proxy ----------
+
+const { buildGeminiRequest, toGeminiContentResponse, generateGeminiContent } =
+  await import('../src/modules/api/utils/requestUtils.ts');
+
+const geminiConfig = {
+  apiKey: 'gemini-key',
+  apiEndpoint: '',
+  model: 'gemini-2.5-flash',
+  temperature: 0.2,
+};
+const geminiRequest = buildGeminiRequest(geminiConfig, 'system\n\nuser', {
+  generationConfig: { temperature: 0.2, maxOutputTokens: 256 },
+  timeout: 15000,
+});
+assert.equal(
+  geminiRequest.url,
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+);
+assert.equal(geminiRequest.headers['x-goog-api-key'], 'gemini-key');
+assert.ok(
+  !geminiRequest.url.includes('gemini-key'),
+  'the key must not be put in the URL',
+);
+assert.equal(geminiRequest.timeout, 15000);
+assert.deepEqual(JSON.parse(geminiRequest.body), {
+  contents: [{ role: 'user', parts: [{ text: 'system\n\nuser' }] }],
+  generationConfig: { temperature: 0.2, maxOutputTokens: 256 },
+});
+assert.equal(
+  buildGeminiRequest(
+    {
+      ...geminiConfig,
+      apiEndpoint: 'https://proxy.example/',
+      model: 'tunedModels/x',
+    },
+    'p',
+  ).url,
+  'https://proxy.example/v1beta/tunedModels/x:generateContent',
+  'a custom endpoint is the base URL, like the SDK baseUrl',
+);
+
+const geminiPayload = {
+  candidates: [
+    {
+      content: { parts: [{ text: 'Hello ' }, { text: 'world' }] },
+      finishReason: 'MAX_TOKENS',
+    },
+  ],
+  usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 2 },
+};
+const geminiResponse = toGeminiContentResponse(geminiPayload);
+assert.equal(geminiResponse.text(), 'Hello world');
+assert.equal(geminiResponse.candidates[0].finishReason, 'MAX_TOKENS');
+assert.equal(geminiResponse.usageMetadata.promptTokenCount, 3);
+assert.equal(toGeminiContentResponse({}).text(), '');
+assert.throws(
+  () =>
+    toGeminiContentResponse({
+      promptFeedback: { blockReason: 'SAFETY' },
+    }).text(),
+  /blocked due to SAFETY/,
+);
+assert.throws(
+  () =>
+    toGeminiContentResponse({
+      candidates: [{ finishReason: 'RECITATION', content: { parts: [] } }],
+    }).text(),
+  /RECITATION/,
+);
+
+let sentMessage;
+globalThis.browser.runtime.sendMessage = async (message) => {
+  sentMessage = message;
+  return { success: true, data: geminiPayload };
+};
+const geminiResult = await generateGeminiContent(geminiConfig, 'hi', {
+  generationConfig: { temperature: 0.2 },
+});
+assert.equal(sentMessage.type, 'api-request', 'Gemini uses the proxy path');
+assert.equal(sentMessage.data.method, 'POST');
+assert.equal(geminiResult.response.text(), 'Hello world');
+
+globalThis.browser.runtime.sendMessage = async () => ({
+  success: false,
+  error: {
+    message: 'HTTP 400: API key not valid',
+    status: 400,
+    statusText: 'Bad Request',
+    code: 'http',
+  },
+});
+await assert.rejects(
+  generateGeminiContent(geminiConfig, 'hi'),
+  (error) => error.status === 400 && /API key not valid/.test(error.message),
+  'HTTP errors are thrown like the SDK did',
+);
+globalThis.browser.runtime.sendMessage = originalSendMessage;
+
 console.log('transport regression passed');

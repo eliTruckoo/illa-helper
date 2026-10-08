@@ -4,7 +4,7 @@
  */
 
 import { StorageService } from '../../core/storage';
-import { sendApiRequest } from '../utils/requestUtils';
+import { sendApiRequest, generateGeminiContent } from '../utils/requestUtils';
 import { mergeCustomParams } from '../utils/apiUtils';
 import {
   ApiConfigItem,
@@ -12,7 +12,6 @@ import {
   ApiProtocolFamily,
 } from '../../shared/types/api';
 import { getApiTimeout } from '../../../utils';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import {
   getProtocolFamilyLabel,
   isGeminiFamily,
@@ -139,7 +138,7 @@ export class UniversalApiService {
   }
 
   /**
-   * Call the Google Gemini SDK
+   * Call Google Gemini (REST, through the background proxy)
    */
   private async callGoogleGemini(
     prompt: string,
@@ -148,7 +147,6 @@ export class UniversalApiService {
   ): Promise<UniversalApiResult> {
     try {
       const config = apiConfig.config;
-      const genAI = new GoogleGenerativeAI(config.apiKey);
 
       // Base generation configuration
       const baseGenerationConfig: any = {
@@ -165,23 +163,7 @@ export class UniversalApiService {
         options.customParams || config.customParams,
       );
 
-      // Request options, such as timeout and proxy endpoint
-      const requestOptions: { timeout?: number; baseUrl?: string } = {};
       const timeout = getApiTimeout(options.timeout);
-      if (timeout && timeout > 0) {
-        requestOptions.timeout = timeout;
-      }
-      if (config.apiEndpoint) {
-        requestOptions.baseUrl = config.apiEndpoint;
-      }
-
-      const model = genAI.getGenerativeModel(
-        {
-          model: config.model,
-          generationConfig,
-        },
-        requestOptions,
-      );
 
       // Build the full prompt
       let fullPrompt = prompt;
@@ -195,7 +177,10 @@ export class UniversalApiService {
         config: generationConfig,
       });
 
-      const result = await model.generateContent(fullPrompt);
+      const result = await generateGeminiContent(config, fullPrompt, {
+        generationConfig,
+        timeout,
+      });
       const response = result.response;
       const content = response.text();
 

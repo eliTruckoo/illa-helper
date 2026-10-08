@@ -191,3 +191,154 @@ function createHeaders(retryAfterMs?: number): Headers {
     ? new Headers(init)
     : (init as unknown as Headers);
 }
+
+// ================================
+// Google Gemini (REST, via the background proxy)
+// ================================
+
+/** Default Gemini REST base URL (same as the official SDK) */
+export const GEMINI_DEFAULT_BASE_URL =
+  'https://generativelanguage.googleapis.com';
+const GEMINI_API_VERSION = 'v1beta';
+
+/** Finish reasons for which the SDK's text() throws instead of returning text */
+const GEMINI_BLOCKED_FINISH_REASONS = ['RECITATION', 'SAFETY', 'LANGUAGE'];
+
+export interface GeminiGenerateOptions {
+  /** Gemini generationConfig (already mapped to Gemini parameter names) */
+  generationConfig?: Record<string, any>;
+  /** Per-attempt timeout in ms; omitted = proxy default, 0 = unlimited */
+  timeout?: number;
+}
+
+/**
+ * Subset of the SDK's EnhancedGenerateContentResponse used by callers
+ */
+export interface GeminiContentResponse {
+  candidates?: any[];
+  promptFeedback?: any;
+  usageMetadata?: any;
+  /** Text of the first candidate; throws if the response was blocked */
+  text(): string;
+}
+
+/**
+ * Build the generateContent REST request equivalent to
+ * `genAI.getGenerativeModel({ model, generationConfig }, { baseUrl }).generateContent(prompt)`
+ */
+export function buildGeminiRequest(
+  apiConfig: ApiConfig,
+  prompt: string,
+  options: GeminiGenerateOptions = {},
+): ProxyRequestData {
+  const baseUrl = (
+    apiConfig.apiEndpoint?.trim() || GEMINI_DEFAULT_BASE_URL
+  ).replace(/\/+$/, '');
+  const model = apiConfig.model.includes('/')
+    ? apiConfig.model
+    : `models/${apiConfig.model}`;
+
+  const body: Record<string, any> = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+  };
+  if (options.generationConfig) {
+    body.generationConfig = options.generationConfig;
+  }
+
+  return {
+    url: `${baseUrl}/${GEMINI_API_VERSION}/${model}:generateContent`,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiConfig.apiKey,
+    },
+    body: JSON.stringify(body),
+    timeout: options.timeout,
+  };
+}
+
+/**
+ * Wrap a raw generateContent JSON payload with an SDK-compatible text() helper
+ */
+export function toGeminiContentResponse(data: any): GeminiContentResponse {
+  const payload = data && typeof data === 'object' ? data : {};
+  return {
+    candidates: payload.candidates,
+    promptFeedback: payload.promptFeedback,
+    usageMetadata: payload.usageMetadata,
+    text: () => {
+      const candidates: any[] = payload.candidates || [];
+      if (candidates.length === 0) {
+        if (payload.promptFeedback) {
+          throw new Error(
+            `Text not available. ${formatGeminiBlockMessage(payload)}`,
+          );
+        }
+        return '';
+      }
+      const first = candidates[0];
+      if (GEMINI_BLOCKED_FINISH_REASONS.includes(first?.finishReason)) {
+        throw new Error(formatGeminiBlockMessage(payload));
+      }
+      const parts: any[] = first?.content?.parts || [];
+      return parts
+        .map((part) => {
+          if (part.text) return part.text;
+          if (part.executableCode) {
+            const { language, code } = part.executableCode;
+            return `\n\`\`\`${language}\n${code}\n\`\`\`\n`;
+          }
+          if (part.codeExecutionResult) {
+            return `\n\`\`\`\n${part.codeExecutionResult.output}\n\`\`\`\n`;
+          }
+          return '';
+        })
+        .join('');
+    },
+  };
+}
+
+function formatGeminiBlockMessage(payload: any): string {
+  const candidates: any[] = payload.candidates || [];
+  if (candidates.length === 0 && payload.promptFeedback) {
+    const feedback = payload.promptFeedback;
+    let message = 'Response was blocked';
+    if (feedback.blockReason) message += ` due to ${feedback.blockReason}`;
+    if (feedback.blockReasonMessage) {
+      message += `: ${feedback.blockReasonMessage}`;
+    }
+    return message;
+  }
+  const first = candidates[0];
+  let message = `Candidate was blocked due to ${first?.finishReason}`;
+  if (first?.finishMessage) message += `: ${first.finishMessage}`;
+  return message;
+}
+
+/**
+ * Call Gemini generateContent through the background proxy (same path as
+ * OpenAI-compatible requests: global concurrency cap, timeout, retries,
+ * cancellation). Throws on HTTP/transport errors, like the SDK did.
+ */
+export async function generateGeminiContent(
+  apiConfig: ApiConfig,
+  prompt: string,
+  options: GeminiGenerateOptions = {},
+): Promise<{ response: GeminiContentResponse }> {
+  const response = await sendViaBackground(
+    buildGeminiRequest(apiConfig, prompt, options),
+  );
+
+  if (!response.ok) {
+    const errorBody: any = await response.json().catch(() => null);
+    const detail = errorBody?.error?.message;
+    const error: Error & { status?: number } = new Error(
+      `Gemini API request failed: [${response.status} ${response.statusText}]` +
+        (detail && detail !== response.statusText ? ` ${detail}` : ''),
+    );
+    error.status = response.status;
+    throw error;
+  }
+
+  return { response: toGeminiContentResponse(await response.json()) };
+}

@@ -10,8 +10,10 @@ import {
   ApiConfigItem,
   ApiProtocolFamily,
 } from '../modules/shared/types';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { sendApiRequest } from '../modules/api/utils/requestUtils';
+import {
+  sendApiRequest,
+  generateGeminiContent,
+} from '../modules/api/utils/requestUtils';
 
 /**
  * Merge custom parameters into the base parameter object
@@ -105,8 +107,6 @@ export async function testGeminiConnection(
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(apiConfig.apiKey);
-
     const baseGenerationConfig: any = {
       temperature: apiConfig.temperature,
     };
@@ -119,25 +119,10 @@ export async function testGeminiConnection(
     // Adapt parameters
     generationConfig = mapParamsForProvider(generationConfig, 'gemini');
 
-    const requestOptions: { timeout?: number; baseUrl?: string } = {};
-    const timeout = getApiTimeout(baseTimeout || 0);
-    if (timeout) {
-      requestOptions.timeout = timeout;
-    }
-    if (apiConfig.apiEndpoint) {
-      requestOptions.baseUrl = apiConfig.apiEndpoint;
-    }
-
-    const model = genAI.getGenerativeModel(
-      {
-        model: apiConfig.model,
-        generationConfig,
-      },
-      requestOptions,
-    );
-
-    const result = await model.generateContent(
+    const result = await generateGeminiContent(
+      apiConfig,
       'Hello, this is a connection test. Please respond with "OK".',
+      { generationConfig, timeout: getApiTimeout(baseTimeout) },
     );
     const response = result.response;
     const text = response.text();
@@ -228,7 +213,7 @@ export async function testOpenAICompatibleConnection(
     const response = await sendApiRequest(
       requestBody,
       apiConfig,
-      getApiTimeout(baseTimeout || 0) || 0,
+      getApiTimeout(baseTimeout),
     );
 
     if (response.ok) {
