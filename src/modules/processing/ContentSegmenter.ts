@@ -23,7 +23,9 @@ export interface SegmenterConfig {
 const DEFAULT_CONFIG: SegmenterConfig = {
   maxSegmentLength: 400,
   minSegmentLength: 20,
-  mergeSmallSegments: true,
+  // Off by default: request batching already packs small segments into one
+  // request, and merging them prevents exact deduplication of repeated text.
+  mergeSmallSegments: false,
 };
 
 /**

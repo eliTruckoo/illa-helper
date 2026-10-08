@@ -101,7 +101,7 @@ export class ProcessingService implements IProcessingService {
       const contentSegmenter = new ContentSegmenter({
         maxSegmentLength: this.processingParams.maxLength || 400,
         minSegmentLength: 20,
-        mergeSmallSegments: true,
+        mergeSmallSegments: false,
       });
 
       return contentSegmenter.segmentContent(root);

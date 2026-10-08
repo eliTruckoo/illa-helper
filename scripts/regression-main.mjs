@@ -607,4 +607,19 @@ assert.equal(
 );
 segmentObserver.destroy();
 
+// Small segments stay separate by default (batching packs them; merging
+// would defeat exact deduplication of repeated text).
+const smallFixture = document.createElement('section');
+smallFixture.innerHTML = `
+  <p>Repeated short caption A1</p>
+  <p>Repeated short caption A1</p>
+`;
+document.body.appendChild(smallFixture);
+const smallSegments = await new ContentSegmenter().segmentContent(smallFixture);
+assert.deepEqual(
+  smallSegments.map((segment) => segment.textContent),
+  ['Repeated short caption A1', 'Repeated short caption A1'],
+  'small segments must not be merged by default',
+);
+
 console.log('main regression passed');
