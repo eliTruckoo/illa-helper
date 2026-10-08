@@ -10,26 +10,33 @@ import {
 } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
-  TranslationStyle,
-  TriggerMode,
   DEFAULT_SETTINGS,
   UserSettings,
-  OriginalWordDisplayMode,
   DEFAULT_MULTILINGUAL_CONFIG,
   DEFAULT_PRONUNCIATION_HOTKEY,
   DEFAULT_FLOATING_BALL_CONFIG,
 } from '@/src/modules/shared/types';
 import { StorageService } from '@/src/modules/core/storage';
 import { messagingService } from '@/src/modules/core/messaging';
-import { languageService } from '@/src/modules/core/translation/LanguageService';
 import {
   ExternalLink,
   Zap as ZapIcon,
   CheckCircle2 as CheckCircle2Icon,
   XCircle,
+  Ban as BanIcon,
 } from 'lucide-vue-next';
 import { testApiConnection, ApiTestResult } from '@/src/utils';
 import { getProtocolFamilyLabel } from '@/src/modules/shared/ApiConfigHelpers';
+import {
+  WebsiteManager,
+  WebsiteStatus,
+} from '@/src/modules/options/website-management';
+import {
+  extractDomain,
+  generateDomainPattern,
+  generateRuleDescription,
+  validateUrlForRule,
+} from '@/src/modules/options/website-management/utils';
 
 // Use i18n
 const { t } = useI18n();
@@ -71,9 +78,65 @@ onMounted(async () => {
     extensionVersion.value = 'DEV';
   }
 
+  await loadCurrentSite();
+
   // Check for updates
   await checkForUpdates();
 });
+
+// Current site rule state
+const websiteManager = new WebsiteManager();
+const currentTab = ref<{ id?: number; url?: string } | null>(null);
+const currentDomain = ref('');
+const currentSiteStatus = ref<WebsiteStatus>('normal');
+const canManageCurrentSite = ref(false);
+const isUpdatingSiteRule = ref(false);
+
+const loadCurrentSite = async () => {
+  try {
+    const [tab] = await browser.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
+    if (!tab?.url || !validateUrlForRule(tab.url).valid) return;
+
+    currentTab.value = { id: tab.id, url: tab.url };
+    currentDomain.value = extractDomain(tab.url).replace(/^www\./, '');
+    currentSiteStatus.value = await websiteManager.getWebsiteStatus(tab.url);
+    canManageCurrentSite.value = true;
+  } catch (error) {
+    console.error('Failed to load current site status', error);
+  }
+};
+
+const disableCurrentSite = async () => {
+  const tab = currentTab.value;
+  if (!tab?.url || isUpdatingSiteRule.value) return;
+
+  isUpdatingSiteRule.value = true;
+  try {
+    const pattern = generateDomainPattern(extractDomain(tab.url));
+    await websiteManager.addRule(
+      pattern,
+      'blacklist',
+      generateRuleDescription(pattern, 'blacklist'),
+    );
+    currentSiteStatus.value = 'blacklisted';
+    // Content scripts only check site rules on load, so reload to drop translations
+    if (tab.id) {
+      await browser.tabs.reload(tab.id);
+    }
+  } catch (error) {
+    console.error(t('errors.saveRuleFailed'), error);
+    showSavedMessage(t('settings.saveFailed'));
+  } finally {
+    isUpdatingSiteRule.value = false;
+  }
+};
+
+const openWebsiteManagement = () => {
+  browser.tabs.create({ url: 'options.html#website-management' });
+};
 
 // API test state
 const isTestingConnection = ref(false);
@@ -201,14 +264,6 @@ const showApiSettings = ref(true);
 const toggleApiSettings = () =>
   (showApiSettings.value = !showApiSettings.value);
 
-// Smart-mode reactive logic removed after simplification
-
-const targetLanguageOptions = computed(() =>
-  languageService.getTargetLanguageOptions(),
-);
-
-// v-model is used directly after simplification, no separate event handler needed
-
 // Multi-config support
 const activeConfig = computed(() => {
   return settings.value.apiConfigs?.find(
@@ -232,53 +287,11 @@ const handleActiveConfigChange = async () => {
   }
 };
 
-const levelOptions = computed(() => [
-  { value: 1, label: t('languageLevel.a1') },
-  { value: 2, label: t('languageLevel.a2') },
-  { value: 3, label: t('languageLevel.b1') },
-  { value: 4, label: t('languageLevel.b2') },
-  { value: 5, label: t('languageLevel.c1') },
-  { value: 6, label: t('languageLevel.c2') },
-]);
-
-const styleOptions = computed(() => [
-  { value: TranslationStyle.DEFAULT, label: t('translation.default') },
-  { value: TranslationStyle.SUBTLE, label: t('translation.subtle') },
-  { value: TranslationStyle.BOLD, label: t('translation.bold') },
-  { value: TranslationStyle.ITALIC, label: t('translation.italic') },
-  { value: TranslationStyle.UNDERLINED, label: t('translation.underlined') },
-  { value: TranslationStyle.HIGHLIGHTED, label: t('translation.highlighted') },
-  { value: TranslationStyle.DOTTED, label: t('translation.dotted') },
-  { value: TranslationStyle.LEARNING, label: t('translation.learning') },
-  { value: TranslationStyle.CUSTOM, label: t('translation.custom') },
-]);
-
-const triggerOptions = computed(() => [
-  { value: TriggerMode.AUTOMATIC, label: t('trigger.automatic') },
-  { value: TriggerMode.MANUAL, label: t('trigger.manual') },
-]);
-
-const originalWordDisplayOptions = computed(() => [
-  { value: OriginalWordDisplayMode.VISIBLE, label: t('display.visible') },
-  { value: OriginalWordDisplayMode.HIDDEN, label: t('display.hidden') },
-  { value: OriginalWordDisplayMode.LEARNING, label: t('display.learning') },
-]);
 const extensionVersion = ref('N/A');
 
 const openOptionsPage = () => {
   browser.tabs.create({ url: 'options.html#translation' });
 };
-
-const openOptionsBasePage = () => {
-  browser.tabs.create({ url: 'options.html#basic' });
-};
-
-// Native language setting options
-const nativeLanguageOptions = computed(() =>
-  languageService.getNativeLanguageOptions(),
-);
-
-// v-model is used after simplification, old event handlers removed
 </script>
 
 <template>
@@ -310,147 +323,31 @@ const nativeLanguageOptions = computed(() =>
     <div class="settings">
       <div class="main-layout">
         <div class="settings-card">
+          <div class="site-control">
+            <template v-if="!canManageCurrentSite">
+              <p class="site-control-note">{{ $t('site.unavailable') }}</p>
+            </template>
+            <template v-else-if="currentSiteStatus === 'blacklisted'">
+              <p class="site-control-note">
+                {{ $t('site.disabled', { domain: currentDomain }) }}
+              </p>
+              <button @click="openWebsiteManagement" class="tip-link-btn">
+                {{ $t('site.manage') }}
+              </button>
+            </template>
+            <button
+              v-else
+              @click="disableCurrentSite"
+              :disabled="isUpdatingSiteRule"
+              class="site-disable-btn"
+              :title="currentDomain"
+            >
+              <BanIcon class="w-4 h-4" />
+              <span>{{ $t('site.disable') }}</span>
+            </button>
+          </div>
+
           <div class="adaptive-settings-grid">
-            <div class="setting-group">
-              <label>{{ $t('language.nativeLanguage') }}</label>
-              <select v-model="settings.multilingualConfig.nativeLanguage">
-                <option value="" disabled>
-                  {{ $t('language.selectNativeLanguage') }}
-                </option>
-                <optgroup :label="$t('language.popularLanguages')">
-                  <option
-                    v-for="option in nativeLanguageOptions.filter(
-                      (opt) => opt.isPopular,
-                    )"
-                    :key="option.code"
-                    :value="option.code"
-                  >
-                    {{ option.name }} - {{ option.nativeName }}
-                  </option>
-                </optgroup>
-                <optgroup :label="$t('language.otherLanguages')">
-                  <option
-                    v-for="option in nativeLanguageOptions.filter(
-                      (opt) => !opt.isPopular,
-                    )"
-                    :key="option.code"
-                    :value="option.code"
-                  >
-                    {{ option.name }} - {{ option.nativeName }}
-                  </option>
-                </optgroup>
-              </select>
-            </div>
-
-            <div class="setting-group">
-              <label>{{ $t('language.targetLanguage') }}</label>
-              <select v-model="settings.multilingualConfig.targetLanguage">
-                <option value="" disabled>
-                  {{ $t('language.selectTargetLanguage') }}
-                </option>
-                <optgroup :label="$t('language.popularLanguages')">
-                  <option
-                    v-for="option in targetLanguageOptions.filter(
-                      (opt) => opt.isPopular,
-                    )"
-                    :key="option.code"
-                    :value="option.code"
-                  >
-                    {{ option.name }} - {{ option.nativeName }}
-                  </option>
-                </optgroup>
-                <optgroup :label="$t('language.otherLanguages')">
-                  <option
-                    v-for="option in targetLanguageOptions.filter(
-                      (opt) => !opt.isPopular,
-                    )"
-                    :key="option.code"
-                    :value="option.code"
-                  >
-                    {{ option.name }} - {{ option.nativeName }}
-                  </option>
-                </optgroup>
-              </select>
-            </div>
-
-            <div class="setting-group">
-              <label>{{ $t('language.languageLevel') }}</label>
-              <select v-model="settings.userLevel">
-                <option
-                  v-for="option in levelOptions"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </option>
-              </select>
-            </div>
-
-            <div class="setting-group">
-              <label>{{ $t('translation.style') }}</label>
-              <select v-model="settings.translationStyle">
-                <option
-                  v-for="option in styleOptions"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </option>
-              </select>
-              <!-- Custom style hint -->
-              <div
-                v-if="settings.translationStyle === 'custom'"
-                class="custom-style-tip"
-              >
-                <p class="tip-text">
-                  {{ $t('common.tip') }}
-                  <button @click="openOptionsBasePage" class="tip-link-btn">
-                    {{ $t('translation.setCSS') }}
-                  </button>
-                </p>
-              </div>
-            </div>
-
-            <div class="setting-group">
-              <label>{{ $t('trigger.mode') }}</label>
-              <select v-model="settings.triggerMode">
-                <option
-                  v-for="option in triggerOptions"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </option>
-              </select>
-            </div>
-
-            <div class="setting-group">
-              <label>{{ $t('display.originalWord') }}</label>
-              <select v-model="settings.originalWordDisplayMode">
-                <option
-                  v-for="option in originalWordDisplayOptions"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </option>
-              </select>
-            </div>
-
-            <div class="setting-group full-width">
-              <label>
-                {{ $t('replacement.rate') }}:
-                {{ Math.round(settings.replacementRate * 100) }}%
-              </label>
-              <input
-                type="range"
-                v-model.number="settings.replacementRate"
-                min="0.01"
-                max="1"
-                step="0.01"
-              />
-            </div>
-
             <div class="setting-group full-width">
               <label>
                 {{ $t('replacement.maxLength') }}: {{ settings.maxLength }}
@@ -1405,23 +1302,53 @@ footer p {
   opacity: 0;
 }
 
-/* Custom style hint */
-.custom-style-tip {
-  margin-top: 8px;
-  padding: 8px 10px;
-  background: rgba(106, 136, 224, 0.08);
-  border: 1px solid rgba(106, 136, 224, 0.2);
-  border-radius: 6px;
+/* Current site control */
+.site-control {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
-.tip-text {
+.site-control .tip-link-btn {
+  white-space: nowrap;
+}
+
+.site-control-note {
   margin: 0;
   font-size: 12px;
-  color: var(--text-color);
+  color: var(--label-color);
+  overflow-wrap: anywhere;
+}
+
+.site-disable-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
   font-weight: 500;
+  color: var(--text-color);
+  background: var(--input-bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+}
+
+.site-disable-btn:not(:disabled):hover {
+  color: #e53935;
+  border-color: #e53935;
+}
+
+.site-disable-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .tip-link-btn {

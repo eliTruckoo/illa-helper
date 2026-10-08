@@ -80,6 +80,12 @@
     "hidden": "Hidden",
     "learning": "Learning Mode"
   },
+  "site": {
+    "disable": "Don't translate this site",
+    "disabled": "Translation is turned off for {domain}",
+    "manage": "Manage sites",
+    "unavailable": "Site rules are not available on this page"
+  },
   "replacement": {
     "rate": "Replacement Rate",
     "maxLength": "Max Length"

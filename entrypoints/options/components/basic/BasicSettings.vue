@@ -116,6 +116,53 @@
           </div>
         </div>
 
+        <!-- Target language settings -->
+        <div class="border-t border-border pt-6">
+          <Label for="target-language" class="text-sm mb-3">
+            {{ $t('language.targetLanguage') }}
+          </Label>
+          <Select
+            id="target-language"
+            :model-value="settings.multilingualConfig.targetLanguage"
+            @update:model-value="
+              settings.multilingualConfig.targetLanguage = $event as string
+            "
+          >
+            <SelectTrigger>
+              <SelectValue :placeholder="$t('language.selectTargetLanguage')" />
+            </SelectTrigger>
+            <SelectContent class="max-h-60">
+              <div
+                class="px-2 py-1.5 text-xs font-medium text-muted-foreground"
+              >
+                {{ $t('basicSettings.popularLanguages') }}
+              </div>
+              <SelectItem
+                v-for="lang in popularTargetLanguages"
+                :key="lang.code"
+                :value="lang.code"
+              >
+                {{ lang.name }} - {{ lang.nativeName }}
+              </SelectItem>
+
+              <div class="border-t border-border my-1"></div>
+
+              <div
+                class="px-2 py-1.5 text-xs font-medium text-muted-foreground"
+              >
+                {{ $t('basicSettings.otherLanguages') }}
+              </div>
+              <SelectItem
+                v-for="lang in otherTargetLanguages"
+                :key="lang.code"
+                :value="lang.code"
+              >
+                {{ lang.name }} - {{ lang.nativeName }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         <div
           class="flex items-center justify-between border-t border-border pt-6"
         >
@@ -151,6 +198,33 @@
               </Label>
             </div>
           </RadioGroup>
+        </div>
+
+        <div class="border-t border-border pt-6">
+          <Label for="original-word-display" class="text-sm mb-3">
+            {{ $t('display.originalWord') }}
+          </Label>
+          <Select
+            id="original-word-display"
+            :model-value="settings.originalWordDisplayMode"
+            @update:model-value="
+              settings.originalWordDisplayMode =
+                $event as OriginalWordDisplayMode
+            "
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem
+                v-for="option in originalWordDisplayOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <!-- Translation mode selection -->
@@ -492,6 +566,7 @@ import {
   TranslationPosition,
   TranslationStyle,
   TranslationMode,
+  OriginalWordDisplayMode,
 } from '@/src/modules/shared/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -549,6 +624,25 @@ const popularNativeLanguages = computed(() => {
 const otherNativeLanguages = computed(() => {
   return nativeLanguageOptions.value.filter((lang) => !lang.isPopular);
 });
+
+// Target language options
+const targetLanguageOptions = computed(() => {
+  return languageService.getTargetLanguageOptions();
+});
+
+const popularTargetLanguages = computed(() => {
+  return targetLanguageOptions.value.filter((lang) => lang.isPopular);
+});
+
+const otherTargetLanguages = computed(() => {
+  return targetLanguageOptions.value.filter((lang) => !lang.isPopular);
+});
+
+const originalWordDisplayOptions = computed(() => [
+  { value: OriginalWordDisplayMode.VISIBLE, label: t('display.visible') },
+  { value: OriginalWordDisplayMode.HIDDEN, label: t('display.hidden') },
+  { value: OriginalWordDisplayMode.LEARNING, label: t('display.learning') },
+]);
 
 // User level options
 const userLevelOptions = computed(() => [
