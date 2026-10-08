@@ -8,7 +8,7 @@ import prettierConfig from 'eslint-config-prettier';
 
 export default defineConfig([
   {
-    ignores: ['**/.wxt/**', '**/.output/**'], // Ignore all .wxt files
+    ignores: ['**/.wxt/**', '**/.output/**', '.claude/**'], // Ignore generated files and agent worktrees
   },
   {
     files: ['**/*.{js,mjs,cjs,ts,mts,cts,vue}'],

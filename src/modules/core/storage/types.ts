@@ -53,6 +53,8 @@ export interface ValidationResult {
 export enum StorageEventType {
   SETTINGS_LOADED = 'settings_loaded',
   SETTINGS_SAVED = 'settings_saved',
+  /** Cached settings changed (local save or a write from another context); data is the new settings or null when cleared */
+  SETTINGS_CHANGED = 'settings_changed',
   API_CONFIG_ADDED = 'api_config_added',
   API_CONFIG_UPDATED = 'api_config_updated',
   API_CONFIG_REMOVED = 'api_config_removed',

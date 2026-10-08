@@ -96,6 +96,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   translationPosition: TranslationPosition.AFTER,
   showParentheses: true,
   apiRequestTimeout: 30000, // 30 s per attempt; 0 = unlimited (capped by the background proxy)
+  apiTimeoutMigrated: true,
   customTranslationCSS: '',
   lazyLoading: DEFAULT_LAZY_LOADING_CONFIG,
   translationCache: DEFAULT_TRANSLATION_CACHE_CONFIG,

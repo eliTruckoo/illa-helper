@@ -1,4 +1,6 @@
-# Immersive Language Learning Assistant
+# Elilla Assistant
+
+> Elilla Assistant is a fork of [illa-helper](https://github.com/xiao-zaiyi/illa-helper) by Xiao Zaiyi.
 
 <div align="center">
 <img src="public/icon/128.png" width="100" height="100"  />
@@ -461,7 +463,7 @@ We warmly welcome contributions of all kinds! Whether it's submitting a bug, pro
 
 ## 📧 Contact Us
 
-- **Author**: Xiao-zaiyi
+- **Author**: Elias Nzirorera (fork maintainer), based on the original work by Xiao-zaiyi
 - **GitHub**: [@xiao-zaiyi](https://github.com/xiao-zaiyi)
 - **Project Discussion**: Technical discussions through GitHub Issues
 

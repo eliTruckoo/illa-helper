@@ -5,3 +5,4 @@
 export * from './TimerManager';
 export * from './PositionUtils';
 export * from './DOMUtils';
+export * from './LookupCache';

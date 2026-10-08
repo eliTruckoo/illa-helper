@@ -10,15 +10,18 @@ import {
   PhoneticEntry,
   MeaningEntry,
   DefinitionEntry,
-  CacheEntry,
 } from '../types';
 import { API_CONSTANTS } from '../config';
+import { LookupCache, LookupOutcome } from '../utils/LookupCache';
 
 export class DictionaryApiProvider implements IPhoneticProvider {
   readonly name = 'dictionary-api';
   private readonly baseUrl = API_CONSTANTS.DICTIONARY_API_BASE_URL;
-  private cache = new Map<string, CacheEntry<PhoneticInfo>>();
   private readonly cacheTTL = API_CONSTANTS.AI_TRANSLATION_CACHE_TTL;
+  // Results, 404s and errors are cached; concurrent hovers share one request
+  private readonly lookups = new LookupCache<PhoneticInfo>({
+    maxEntries: 1000,
+  });
 
   /**
    * Get phonetic info for a word
@@ -34,18 +37,29 @@ export class DictionaryApiProvider implements IPhoneticProvider {
       }
 
       const cleanWord = word.toLowerCase().trim();
+      const result = await this.lookups.resolve(cleanWord, () =>
+        this.fetchPhonetic(cleanWord),
+      );
 
-      // Check the cache
-      const cached = this.getFromCache(cleanWord);
-      if (cached) {
-        return {
-          success: true,
-          data: cached,
-          cached: true,
-        };
-      }
+      return result.ok
+        ? { success: true, data: result.data, cached: result.cached }
+        : { success: false, error: result.error };
+    } catch (error) {
+      console.error('Failed to get phonetics:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
 
-      // Call the API
+  /**
+   * Fetch one word from the Dictionary API and classify the outcome for caching
+   */
+  private async fetchPhonetic(
+    cleanWord: string,
+  ): Promise<LookupOutcome<PhoneticInfo>> {
+    try {
       const response = await fetch(
         `${this.baseUrl}${encodeURIComponent(cleanWord)}`,
         {
@@ -61,32 +75,32 @@ export class DictionaryApiProvider implements IPhoneticProvider {
 
       if (!response.ok) {
         if (response.status === 404) {
+          // The word is not in the dictionary; this will not change soon
           return {
-            success: false,
+            ok: false,
             error: `No phonetics found for this word in the dictionary`,
+            ttlMs: API_CONSTANTS.NOT_FOUND_CACHE_TTL,
           };
         }
-        throw new Error(
-          `API request failed: ${response.status} ${response.statusText}`,
-        );
+        return {
+          ok: false,
+          error: `API request failed: ${response.status} ${response.statusText}`,
+          ttlMs: API_CONSTANTS.LOOKUP_ERROR_CACHE_TTL,
+        };
       }
 
       const data = await response.json();
-      const phoneticInfo = this.parseApiResponse(data, cleanWord);
-
-      // Store in the cache
-      this.setCache(cleanWord, phoneticInfo);
-
       return {
-        success: true,
-        data: phoneticInfo,
-        cached: false,
+        ok: true,
+        data: this.parseApiResponse(data, cleanWord),
+        ttlMs: this.cacheTTL,
       };
     } catch (error) {
       console.error('Failed to get phonetics:', error);
       return {
-        success: false,
+        ok: false,
         error: error instanceof Error ? error.message : 'Unknown error',
+        ttlMs: API_CONSTANTS.LOOKUP_ERROR_CACHE_TTL,
       };
     }
   }
@@ -177,41 +191,5 @@ export class DictionaryApiProvider implements IPhoneticProvider {
       phonetics,
       meanings,
     };
-  }
-
-  /**
-   * Get data from the cache
-   */
-  private getFromCache(word: string): PhoneticInfo | null {
-    const entry = this.cache.get(word);
-    if (entry && Date.now() - entry.timestamp < entry.ttl) {
-      return entry.data;
-    }
-
-    // Clean up expired cache
-    if (entry) {
-      this.cache.delete(word);
-    }
-
-    return null;
-  }
-
-  /**
-   * Set the cache
-   */
-  private setCache(word: string, data: PhoneticInfo): void {
-    this.cache.set(word, {
-      data,
-      timestamp: Date.now(),
-      ttl: this.cacheTTL,
-    });
-
-    // Limit the cache size
-    if (this.cache.size > 1000) {
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey) {
-        this.cache.delete(firstKey);
-      }
-    }
   }
 }

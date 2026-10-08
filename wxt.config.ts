@@ -16,11 +16,11 @@ const version = packageJson.version;
 export default defineConfig({
   modules: ['@wxt-dev/module-vue'],
   manifest: {
-    name: 'Immersive Language Learning Assistant (illa-helper)',
+    name: 'Elilla Assistant',
     author: {
       email: 'xiao1932794922@gmail.com',
     },
-    description: `Immersive Language Learning Assistant (illa-helper) extension turns browsing into language learning. AI uses "i+1" theory, supports 20+ languages.`,
+    description: `Elilla Assistant extension turns browsing into language learning. AI uses "i+1" theory, supports 20+ languages.`,
     version,
     permissions: [
       'storage',
