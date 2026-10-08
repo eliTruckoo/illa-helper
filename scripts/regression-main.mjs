@@ -466,4 +466,67 @@ await assert.rejects(
 console.error = originalConsoleError;
 assert.equal(requested.length, 4, 'failures must never be cached');
 
+// ------------------------------------------------------------
+// Mutation batching: debounce with maxWait
+// ------------------------------------------------------------
+
+const { createBatchScheduler } = await import(
+  '../src/modules/content/utils/domUtils.ts'
+);
+
+function createFakeClock() {
+  let time = 0;
+  let timers = [];
+  let nextId = 1;
+  return {
+    setTimeout(callback, delay) {
+      const id = nextId++;
+      timers.push({ id, at: time + delay, callback });
+      return id;
+    },
+    clearTimeout(id) {
+      timers = timers.filter((timer) => timer.id !== id);
+    },
+    now: () => time,
+    advanceTo(target) {
+      for (;;) {
+        const due = timers
+          .filter((timer) => timer.at <= target)
+          .sort((a, b) => a.at - b.at)[0];
+        if (!due) break;
+        timers = timers.filter((timer) => timer !== due);
+        time = due.at;
+        due.callback();
+      }
+      time = target;
+    },
+  };
+}
+
+const clock = createFakeClock();
+const flushTimes = [];
+const scheduler = createBatchScheduler(
+  () => flushTimes.push(clock.now()),
+  { wait: 150, maxWait: 750 },
+  clock,
+);
+scheduler.schedule();
+clock.advanceTo(149);
+assert.deepEqual(flushTimes, [], 'no flush before the debounce delay');
+clock.advanceTo(150);
+assert.deepEqual(flushTimes, [150], 'a quiet batch flushes after the delay');
+
+for (let t = 200; t <= 1200; t += 100) {
+  clock.advanceTo(t);
+  scheduler.schedule();
+}
+assert.deepEqual(
+  flushTimes,
+  [150, 950],
+  'continuous mutations must flush after maxWait instead of starving',
+);
+scheduler.cancel();
+clock.advanceTo(5000);
+assert.equal(flushTimes.length, 2, 'cancel drops the pending flush');
+
 console.log('main regression passed');

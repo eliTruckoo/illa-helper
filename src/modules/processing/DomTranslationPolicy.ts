@@ -40,6 +40,17 @@ export function isProcessingResultNode(node: Node): boolean {
 }
 
 /**
+ * Cheap check for MutationObserver callbacks: is this element itself an
+ * extension-owned node or marked as processed? Unlike isProcessingResultNode it
+ * never walks ancestors (no closest()).
+ */
+export function isOwnedOrProcessedElement(element: Element): boolean {
+  return (
+    isExtensionOwnedElement(element, false) || hasProcessedAttribute(element)
+  );
+}
+
+/**
  * Computed style values the DOM pipeline needs. Reading them once per element
  * and caching the result avoids repeated style recalculation during a walk.
  */
