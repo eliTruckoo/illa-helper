@@ -37,7 +37,11 @@ export function applyReplacementToRange(
 
     switch (options.originalWordDisplayMode) {
       case OriginalWordDisplayMode.HIDDEN:
+        // The translation takes the original word's place, so render it bare
+        // and reveal the replaced word on hover.
         originalWordWrapper.style.display = 'none';
+        translationSpan.textContent = replacement.translation;
+        translationSpan.title = replacement.original;
         break;
       case OriginalWordDisplayMode.LEARNING:
         originalWordWrapper.classList.add('wxt-original-word--learning');
