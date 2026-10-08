@@ -829,7 +829,10 @@ pronunciationService.destroy();
     syncStore.user_settings = JSON.stringify(legacyTimeout);
     const timeoutService = new StorageService();
     const migrated = await timeoutService.getUserSettings();
-    assert.equal(migrated.apiRequestTimeout, DEFAULT_SETTINGS.apiRequestTimeout);
+    assert.equal(
+      migrated.apiRequestTimeout,
+      DEFAULT_SETTINGS.apiRequestTimeout,
+    );
     assert.equal(migrated.apiTimeoutMigrated, true);
     migrated.apiRequestTimeout = 0;
     await timeoutService.saveUserSettings(migrated);
