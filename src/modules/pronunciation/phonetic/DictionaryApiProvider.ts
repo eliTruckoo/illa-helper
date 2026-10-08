@@ -64,12 +64,9 @@ export class DictionaryApiProvider implements IPhoneticProvider {
         `${this.baseUrl}${encodeURIComponent(cleanWord)}`,
         {
           method: 'GET',
-          headers: {
-            Accept: 'application/json',
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
-            Referer: location.href,
-          },
+          headers: { Accept: 'application/json' },
+          // Only the word is sent, never the page it was found on
+          referrerPolicy: 'no-referrer',
         },
       );
 
@@ -121,6 +118,7 @@ export class DictionaryApiProvider implements IPhoneticProvider {
     try {
       const testResponse = await fetch(`${this.baseUrl}hello`, {
         method: 'HEAD',
+        referrerPolicy: 'no-referrer',
         signal: AbortSignal.timeout(5000), // 5 second timeout
       });
       return testResponse.ok || testResponse.status === 404; // 404 also means the API is available

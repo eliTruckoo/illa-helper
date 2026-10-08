@@ -23,6 +23,11 @@ const gecko = {
   },
 };
 
+// Firefox for Android supports data_collection_permissions only from 142
+const geckoAndroid = {
+  strict_min_version: '142.0',
+};
+
 // See https://wxt.dev/api/config.html
 export default defineConfig({
   modules: ['@wxt-dev/module-vue'],
@@ -34,8 +39,12 @@ export default defineConfig({
   },
   manifest: ({ browser }) => ({
     name: 'Elilla Assistant',
-    description: `Elilla Assistant extension turns browsing into language learning. AI uses "i+1" theory, supports 20+ languages.`,
-    ...(browser === 'firefox' && { browser_specific_settings: { gecko } }),
+    // Store policies: say what it does to pages and that it needs a paid-for key
+    description:
+      'Learn a language as you browse: swaps some words on a page for translations at your level. Needs your own AI API key (may be paid).',
+    ...(browser === 'firefox' && {
+      browser_specific_settings: { gecko, gecko_android: geckoAndroid },
+    }),
     version,
     permissions: [
       'storage',
@@ -45,7 +54,11 @@ export default defineConfig({
       'webNavigation',
       'alarms',
     ],
-    host_permissions: ['<all_urls>', 'https://api.github.com/*'],
+    // GitHub is only for the update check, which Firefox builds don't run
+    host_permissions:
+      browser === 'firefox'
+        ? ['<all_urls>']
+        : ['<all_urls>', 'https://api.github.com/*'],
     commands: {
       'translate-page': {
         suggested_key: {

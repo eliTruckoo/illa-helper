@@ -17,9 +17,9 @@ The extension only sends data when you use a feature that needs it:
 | Data | Sent to | When |
 |---|---|---|
 | Text from the web page you are viewing, and your target-language settings | The AI translation provider you configure (for example OpenAI, Google Gemini, DeepSeek, SiliconFlow, or any custom OpenAI-compatible endpoint) | When a page or paragraph is translated, or a word definition is requested |
-| Single words | Free Dictionary API (`api.dictionaryapi.dev`) | When phonetic notation is shown for a word |
-| Single words | Youdao Dictionary (`dict.youdao.com`) | When you play a pronunciation with the Youdao voice selected. The browser's built-in voice is used instead if you choose "Web Speech" |
-| No personal data (a standard version request) | GitHub API (`api.github.com`) | Periodically, to check whether a new version has been released |
+| Single words (never the address of the page) | Free Dictionary API (`api.dictionaryapi.dev`) | When phonetic notation is shown for a word |
+| Single words | Youdao Dictionary (`dict.youdao.com`) | When you play a pronunciation with the Youdao voice selected. Like any audio a page loads, your browser may also send the site's domain (not the full address). The browser's built-in voice is used instead if you choose "Web Speech" |
+| No personal data (a standard version request) | GitHub API (`api.github.com`) | Chrome and Edge builds only: once a day, to check whether a new version has been released. The Firefox version never contacts GitHub; Firefox Add-ons handles its updates |
 
 Each provider handles that data under its own privacy policy. Check the policy of the AI provider you use before entering its API key.
 
@@ -34,7 +34,7 @@ Uninstalling the extension deletes its local data.
 
 - **Access to all websites**: needed to read and replace text on the pages you browse.
 - **Storage**: saves your settings and the translation cache.
-- **Context menus, notifications, alarms, web navigation, active tab**: power the right-click menu, error and update notices, scheduled update checks, and per-site rules.
+- **Context menus, notifications, alarms, web navigation, active tab**: power the right-click menu, error and update notices, the daily update check (Chrome and Edge builds only), and per-site rules.
 
 ## Children
 

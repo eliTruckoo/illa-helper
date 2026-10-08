@@ -51,7 +51,7 @@ The first-visit ranges cover 2 to 8 paragraphs per request, depending on how man
 - Memory is released on long-lived and single-page-app tabs.
 - The speech engine starts only on the first playback.
 - The stylesheet is added once per page, and tooltips are cheaper to draw.
-- The update check runs once a day instead of on every page load.
+- No GitHub update check in Firefox builds; Firefox Add-ons handles updates.
 
 **Changed features**
 
@@ -85,8 +85,8 @@ Requires Firefox 140 or newer and an API key for an OpenAI-compatible service (O
 ## Privacy
 
 - The text of the paragraphs being translated, and words you hover for AI definitions, are sent to the API you configure.
-- Words you hover are sent to dictionaryapi.dev for phonetics, and to Youdao when you play their pronunciation.
-- Once a day the extension checks GitHub for a new release.
+- Words you hover are sent to dictionaryapi.dev for phonetics (without the page address), and to Youdao when you play their pronunciation.
+- The extension never contacts GitHub or the developer; Firefox Add-ons handles updates.
 - Translations, definitions and word counts stay on your device and can be cleared in Options → Data Management. The cache settings are not part of settings exports.
 
 The full policy is in [PRIVACY.md](./PRIVACY.md).

@@ -12,6 +12,10 @@ import {
   isUpdateCheckDue,
 } from './updateCheckSchedule';
 
+// Firefox Add-ons updates the extension itself, so Firefox builds never
+// contact GitHub (AMO policy: no data transmission beyond the core function)
+const UPDATE_CHECK_ENABLED = !import.meta.env.FIREFOX;
+
 export interface UpdateInfo {
   hasUpdate: boolean;
   latestVersion: string;
@@ -50,8 +54,10 @@ export interface GitHubAsset {
 export class UpdateCheckService {
   private static instance: UpdateCheckService;
   private readonly currentVersion: string;
-  private readonly githubApiUrl =
-    'https://api.github.com/repos/eliTruckoo/illa-helper/releases/latest';
+  // Folded away at build time in Firefox builds, so the URL isn't shipped there
+  private readonly githubApiUrl = UPDATE_CHECK_ENABLED
+    ? 'https://api.github.com/repos/eliTruckoo/illa-helper/releases/latest'
+    : '';
   private storageService: StorageService;
   private listenersRegistered = false;
   private readonly handleAlarm = (alarm: { name: string }): void => {
@@ -83,6 +89,8 @@ export class UpdateCheckService {
    * request is made here.
    */
   async init(): Promise<void> {
+    if (!UPDATE_CHECK_ENABLED) return;
+
     console.log('[UpdateCheckService] Initialize update check service');
 
     // Register listeners synchronously, before any await
@@ -251,6 +259,10 @@ export class UpdateCheckService {
    * @param forceCheck whether to force the check (ignores the ignored-version setting)
    */
   async checkForUpdates(forceCheck: boolean = false): Promise<UpdateInfo> {
+    if (!UPDATE_CHECK_ENABLED) {
+      return this.createUpdateInfo(false, this.currentVersion);
+    }
+
     try {
       const response = await fetch(this.githubApiUrl, {
         headers: {

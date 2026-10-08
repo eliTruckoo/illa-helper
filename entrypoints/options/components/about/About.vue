@@ -62,7 +62,7 @@
       </CardContent>
     </Card>
 
-    <Card>
+    <Card v-if="updateCheckEnabled">
       <CardHeader>
         <CardTitle>
           <h2 class="text-xl font-bold text-foreground">
@@ -273,6 +273,8 @@ interface DownloadAsset {
 }
 
 const extensionVersion = ref('N/A');
+// Firefox Add-ons updates the extension itself; no GitHub check there
+const updateCheckEnabled = !import.meta.env.FIREFOX;
 const checkingUpdate = ref(false);
 const updateChecked = ref(false);
 const updateInfo = ref<UpdateInfo | null>(null);
