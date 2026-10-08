@@ -31,6 +31,8 @@ export interface PageGlossaryRunOptions {
   glossary: PageGlossary;
   /** Send the "already handled" hint with each segment */
   promptHint: boolean;
+  /** Skip the request for segments the glossary alone fills (never two in a row) */
+  economyMode: boolean;
 }
 
 export interface TranslationStyleProvider {

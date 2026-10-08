@@ -100,6 +100,8 @@ export class PageGlossary {
   private readonly conflicted = new Set<string>();
   private readonly maxEntries: number;
   private matchers: RegExp[] | null = null;
+  /** Economy mode: whether the previous segment was served by the glossary alone */
+  private previousSegmentSkipped = false;
 
   constructor(options: PageGlossaryOptions = {}) {
     this.maxEntries = options.maxEntries ?? PAGE_GLOSSARY_MAX_ENTRIES;
@@ -220,6 +222,21 @@ export class PageGlossary {
     return pairs;
   }
 
+  /**
+   * Economy mode gate, called once per segment in processing order.
+   * Returns true when the glossary alone covers the segment's replacement limit, but never for two
+   * segments in a row, so new words keep appearing.
+   */
+  shouldSkipRequest(coverage: number, limit: number | undefined): boolean {
+    if (this.previousSegmentSkipped) {
+      this.previousSegmentSkipped = false;
+      return false;
+    }
+    const skip = limit !== undefined && limit > 0 && coverage >= limit;
+    this.previousSegmentSkipped = skip;
+    return skip;
+  }
+
   get size(): number {
     return this.entries.size;
   }
@@ -228,6 +245,7 @@ export class PageGlossary {
     this.entries.clear();
     this.conflicted.clear();
     this.matchers = null;
+    this.previousSegmentSkipped = false;
   }
 
   private getMatchers(): RegExp[] {
@@ -292,6 +310,16 @@ export function selectGlossaryReplacements(
   }
 
   return selected;
+}
+
+/**
+ * Number of glossary replacements a segment could get without any LLM pick (economy mode coverage).
+ */
+export function countGlossaryCoverage(
+  glossary: PageGlossary,
+  rawText: string,
+): number {
+  return selectGlossaryReplacements(glossary.findIn(rawText)).length;
 }
 
 /**

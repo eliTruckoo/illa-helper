@@ -60,6 +60,8 @@ export interface PageGlossaryConfig {
   enabled: boolean;
   /** Tell the model which glossary words a segment already has (fewer output tokens) */
   promptHint: boolean;
+  /** Skip the request for a segment the glossary alone fills (never two segments in a row) */
+  economyMode: boolean;
 }
 
 // Context menu message interface

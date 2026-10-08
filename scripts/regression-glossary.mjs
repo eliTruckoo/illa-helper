@@ -1,4 +1,4 @@
-// Regression checks for the opt-in page glossary (eq7.11).
+// Regression checks for the opt-in page glossary (eq7.11) and economy mode (eq7.12).
 // Imported from regression-main.mjs, which sets up the linkedom DOM globals.
 import assert from 'node:assert/strict';
 
@@ -7,6 +7,7 @@ const {
   isLearnablePair,
   mergeWithGlossary,
   selectGlossaryReplacements,
+  countGlossaryCoverage,
 } = await import('../src/modules/processing/PageGlossary.ts');
 const { indexOfWord } = await import('../src/modules/api/utils/textUtils.ts');
 const { promptService, formatAlreadyHandledHint } = await import(
@@ -420,7 +421,7 @@ assert.deepEqual(
   'A cache hit without the glossary still yields every word',
 );
 
-// ---------- coordinator: learning and glossary hits ----------
+// ---------- coordinator: learning, glossary hits, economy mode ----------
 
 const makeSegment = (id, text) => {
   const element = document.createElement('p');
@@ -489,7 +490,7 @@ await learnCoordinator.processSegments(
   true,
   false,
   ReplacementBudget.unlimited(),
-  { glossary: learnGlossary, promptHint: true },
+  { glossary: learnGlossary, promptHint: true, economyMode: false },
 );
 assert.equal(
   learnGlossary.lookup('glacier'),
@@ -505,7 +506,7 @@ await learnCoordinator.processSegments(
   true,
   false,
   ReplacementBudget.unlimited(),
-  { glossary: learnGlossary, promptHint: true },
+  { glossary: learnGlossary, promptHint: true, economyMode: false },
 );
 assert.deepEqual(
   learnEngine.calls[1].hints[0].pairs,
@@ -521,5 +522,59 @@ assert.deepEqual(
   'The glossary fills the segment the model left empty',
 );
 assert.equal(translationStats.getSnapshot().glossaryHits, 1);
+
+translationStats.reset();
+const ecoGlossary = new PageGlossary();
+ecoGlossary.learn([pair('glacier', 'Gletscher')]);
+const ecoSegments = [1, 2, 3, 4, 5].map((n) =>
+  makeSegment(`eco-${n}`, `Paragraph ${n} mentions the glacier once more.`),
+);
+assert.equal(countGlossaryCoverage(ecoGlossary, ecoSegments[0].textContent), 1);
+const ecoEngine = makeEngine(() => null);
+const ecoCoordinator = new ProcessingCoordinator();
+const ecoApplied = recordApplied(ecoCoordinator);
+await ecoCoordinator.processSegments(
+  ecoSegments.slice(0, 3),
+  ecoEngine,
+  0,
+  'after',
+  true,
+  false,
+  ReplacementBudget.unlimited(),
+  { glossary: ecoGlossary, promptHint: false, economyMode: true },
+);
+await ecoCoordinator.processSegments(
+  ecoSegments.slice(3),
+  ecoEngine,
+  0,
+  'after',
+  true,
+  true,
+  ReplacementBudget.unlimited(),
+  { glossary: ecoGlossary, promptHint: false, economyMode: true },
+);
+assert.deepEqual(
+  ecoEngine.calls.map((call) => call.texts.map((t) => t.split(' ')[1])),
+  [['2'], ['4']],
+  'Economy mode skips covered segments but never two in a row, across runs',
+);
+assert.equal(translationStats.getSnapshot().economySkipped, 3);
+assert.equal(
+  ecoApplied.length,
+  5,
+  'Every segment still gets its glossary word',
+);
+
+const gate = new PageGlossary();
+assert.deepEqual(
+  [
+    gate.shouldSkipRequest(2, 2),
+    gate.shouldSkipRequest(2, 2),
+    gate.shouldSkipRequest(1, 2),
+    gate.shouldSkipRequest(2, 2),
+    gate.shouldSkipRequest(5, undefined),
+  ],
+  [true, false, false, true, false],
+);
 
 console.log('page glossary regression passed');

@@ -73,6 +73,7 @@ function createDefaultApiConfigItem(): ApiConfigItem {
 export const DEFAULT_PAGE_GLOSSARY_CONFIG: PageGlossaryConfig = {
   enabled: false,
   promptHint: false,
+  economyMode: false,
 };
 
 // Default user settings

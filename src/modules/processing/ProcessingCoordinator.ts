@@ -34,7 +34,11 @@ import {
   type TranslationHint,
   type TranslationStyleProvider,
 } from './ProcessingContracts';
-import { mergeWithGlossary, type PageGlossary } from './PageGlossary';
+import {
+  countGlossaryCoverage,
+  mergeWithGlossary,
+  type PageGlossary,
+} from './PageGlossary';
 
 /** Concurrent single-segment requests per wave when batching is unavailable */
 const SINGLE_REQUEST_CONCURRENCY = 8;
@@ -322,7 +326,8 @@ export class ProcessingCoordinator {
 
   /**
    * Fetch candidate replacements for a wave, in wave order.
-   * With the page glossary prompt hint, each request lists the glossary words present in its segment.
+   * With the page glossary, economy mode may serve segments locally and the prompt hint lists the
+   * glossary words present in each requested segment.
    */
   private async collectWaveTranslations(
     wave: ContentSegment[],
@@ -331,7 +336,25 @@ export class ProcessingCoordinator {
     pageGlossary?: PageGlossaryRunOptions,
   ): Promise<SegmentTranslationResult[]> {
     const replacementRate = textReplacer.getConfig().replacementRate;
-    const requested = wave;
+    const local = new Map<ContentSegment, SegmentTranslationResult>();
+    const requested: ContentSegment[] = [];
+
+    wave.forEach((segment) => {
+      if (
+        pageGlossary?.economyMode &&
+        this.canServeFromGlossary(
+          segment,
+          pageGlossary.glossary,
+          replacementRate,
+        )
+      ) {
+        // The glossary fills this segment's quota: no request, replacements come from the glossary merge
+        translationStats.recordEconomySkipped();
+        local.set(segment, { segment, success: true, replacements: [] });
+      } else {
+        requested.push(segment);
+      }
+    });
 
     const hints = pageGlossary?.promptHint
       ? requested.map((segment) =>
@@ -358,7 +381,39 @@ export class ProcessingCoordinator {
           );
     }
 
-    return fetched;
+    const fetchedBySegment = new Map(
+      fetched.map((translation) => [translation.segment, translation]),
+    );
+    return wave.map(
+      (segment) => local.get(segment) ?? fetchedBySegment.get(segment)!,
+    );
+  }
+
+  /**
+   * Economy mode: whether the glossary alone fills the segment's replacement limit
+   * (PageGlossary.shouldSkipRequest never allows two segments in a row).
+   */
+  private canServeFromGlossary(
+    segment: ContentSegment,
+    glossary: PageGlossary,
+    replacementRate?: number,
+  ): boolean {
+    const limit = calculateReplacementLimit(
+      segment.textContent,
+      replacementRate,
+    );
+    if (limit === 0) {
+      // Nothing to translate: neither a skip nor a source of new words
+      return false;
+    }
+    const coverage =
+      limit === undefined
+        ? 0
+        : countGlossaryCoverage(
+            glossary,
+            buildTextFromNodes(segment.textNodes),
+          );
+    return glossary.shouldSkipRequest(coverage, limit);
   }
 
   /**

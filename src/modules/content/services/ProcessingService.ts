@@ -24,6 +24,7 @@ export class ProcessingService implements IProcessingService {
   private pageGlossaryOptions = {
     enabled: false,
     promptHint: false,
+    economyMode: false,
   };
   /** Settings the learned translations depend on; a change discards the glossary */
   private pageGlossaryFingerprint = '';
@@ -176,6 +177,7 @@ export class ProcessingService implements IProcessingService {
     return {
       glossary: this.pageGlossary,
       promptHint: this.pageGlossaryOptions.promptHint,
+      economyMode: this.pageGlossaryOptions.economyMode,
     };
   }
 
@@ -197,6 +199,7 @@ export class ProcessingService implements IProcessingService {
     this.pageGlossaryOptions = {
       enabled: config?.enabled === true,
       promptHint: config?.promptHint === true,
+      economyMode: config?.economyMode === true,
     };
 
     const activeConfig = settings.apiConfigs?.find(

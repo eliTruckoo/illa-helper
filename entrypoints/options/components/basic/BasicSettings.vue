@@ -463,6 +463,24 @@
               @update:model-value="updatePageGlossary({ promptHint: $event })"
             />
           </div>
+          <div
+            v-if="pageGlossary.enabled"
+            class="flex items-center justify-between pl-4"
+          >
+            <div class="space-y-1">
+              <Label for="page-glossary-economy-mode">
+                {{ $t('pageGlossary.economyMode') }}
+              </Label>
+              <p class="text-xs text-muted-foreground">
+                {{ $t('pageGlossary.economyModeDescription') }}
+              </p>
+            </div>
+            <Switch
+              id="page-glossary-economy-mode"
+              :model-value="pageGlossary.economyMode"
+              @update:model-value="updatePageGlossary({ economyMode: $event })"
+            />
+          </div>
         </div>
       </CardContent>
     </Card>
