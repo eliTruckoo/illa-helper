@@ -54,13 +54,6 @@ export class ParagraphTranslationService {
 
   // Loading indicator styles
   private readonly LOADING_CLASS = 'illa-paragraph-loading';
-  private readonly LOADING_ICON = `
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="8" cy="8" r="7" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-dasharray="11 11" stroke-dashoffset="0">
-        <animateTransform attributeName="transform" type="rotate" values="0 8 8;360 8 8" dur="1s" repeatCount="indefinite"/>
-      </circle>
-    </svg>
-  `;
 
   private constructor(lazyLoadingService?: LazyLoadingService) {
     this.storageService = StorageService.getInstance();
@@ -517,7 +510,7 @@ export class ParagraphTranslationService {
 
     const loadingSpan = document.createElement('span');
     loadingSpan.classList.add(this.LOADING_CLASS);
-    loadingSpan.innerHTML = this.LOADING_ICON;
+    loadingSpan.appendChild(createLoadingIcon());
 
     // Unified loading indicator style; pointer-events is controlled by CSS
     loadingSpan.style.cssText = `
@@ -652,4 +645,47 @@ export class ParagraphTranslationService {
     ).length;
     return { total, translated };
   }
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/**
+ * Spinning loading icon, built with DOM APIs instead of innerHTML
+ * (AMO flags innerHTML assignments in content scripts).
+ */
+function createLoadingIcon(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('width', '16');
+  svg.setAttribute('height', '16');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('fill', 'none');
+
+  const circle = document.createElementNS(SVG_NS, 'circle');
+  for (const [name, value] of Object.entries({
+    cx: '8',
+    cy: '8',
+    r: '7',
+    stroke: '#666',
+    'stroke-width': '2',
+    'stroke-linecap': 'round',
+    'stroke-dasharray': '11 11',
+    'stroke-dashoffset': '0',
+  })) {
+    circle.setAttribute(name, value);
+  }
+
+  const rotate = document.createElementNS(SVG_NS, 'animateTransform');
+  for (const [name, value] of Object.entries({
+    attributeName: 'transform',
+    type: 'rotate',
+    values: '0 8 8;360 8 8',
+    dur: '1s',
+    repeatCount: 'indefinite',
+  })) {
+    rotate.setAttribute(name, value);
+  }
+
+  circle.appendChild(rotate);
+  svg.appendChild(circle);
+  return svg;
 }
