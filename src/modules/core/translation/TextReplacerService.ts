@@ -18,7 +18,18 @@ import {
   toTranslationOutcome,
   type TranslationOutcome,
 } from './SegmentTranslationCache';
-import { TRANSLATION_PROMPT_VERSION } from './PromptService';
+import {
+  TRANSLATION_PROMPT_VERSION,
+  getBatchSystemPromptByConfig,
+  getSystemPromptByConfig,
+} from './PromptService';
+import {
+  createTranslationMemoryLayer,
+  translationMemoryClient,
+  type TranslationMemoryLayer,
+} from './TranslationMemoryClient';
+import { buildWordFingerprintSource } from './TranslationMemoryShared';
+import { calculateReplacementLimit } from '../../processing/ReplacementBudget';
 import {
   ConcurrencyLimiter,
   MAX_CONCURRENT_TRANSLATION_REQUESTS,
@@ -148,7 +159,11 @@ export class TextReplacerService {
       const settingsForApi = this.buildUserSettings();
 
       // Handle translation
-      return await this.processTranslation(text, settingsForApi);
+      return await this.processTranslation(
+        text,
+        settingsForApi,
+        this.createMemoryLayer(settingsForApi),
+      );
     } catch (error) {
       console.error('Text replacement failed:', error);
       return this.createErrorResult(text, error);
@@ -170,10 +185,11 @@ export class TextReplacerService {
 
     try {
       const settings = this.buildUserSettings();
+      const memory = this.createMemoryLayer(settings);
 
       if (TRANSLATION_BATCH_MAX_ITEMS <= 1) {
         return await Promise.all(
-          texts.map((text) => this.processTranslation(text, settings)),
+          texts.map((text) => this.processTranslation(text, settings, memory)),
         );
       }
 
@@ -188,6 +204,7 @@ export class TextReplacerService {
           maxItems: TRANSLATION_BATCH_MAX_ITEMS,
           maxChars: TRANSLATION_BATCH_MAX_CHARS,
         },
+        memory,
       );
       const outcomes = await executor.translate(
         texts,
@@ -253,11 +270,14 @@ export class TextReplacerService {
   private async processTranslation(
     text: string,
     settings: UserSettings,
+    memory?: TranslationMemoryLayer,
   ): Promise<FullTextAnalysisResponse> {
     const cacheKey = this.generateCacheKey(text, settings);
 
     const { outcome, source } = await this.segmentCache.resolve(cacheKey, () =>
-      this.requestTranslation(text, settings),
+      memory
+        ? this.requestTranslationWithMemory(text, settings, memory)
+        : this.requestTranslation(text, settings),
     );
 
     if (source === 'cache') {
@@ -267,6 +287,89 @@ export class TextReplacerService {
     }
 
     return responseFromOutcome(text, outcome, settings.replacementRate);
+  }
+
+  /**
+   * Persistent translation memory first, then the API; successful answers are remembered.
+   */
+  private async requestTranslationWithMemory(
+    text: string,
+    settings: UserSettings,
+    memory: TranslationMemoryLayer,
+  ): Promise<TranslationOutcome> {
+    const [hit] = await memory.lookup([text]);
+    if (hit) {
+      translationStats.recordMemoryHit();
+      return hit;
+    }
+
+    const outcome = await this.requestTranslation(text, settings);
+    if (outcome.status !== 'error') {
+      memory.store([{ text, outcome }]);
+    }
+    return outcome;
+  }
+
+  /**
+   * The persistent translation memory for this run, or undefined when disabled.
+   * Texts answered locally without a request (nothing to pick) are not persisted.
+   */
+  private createMemoryLayer(
+    settings: UserSettings,
+  ): TranslationMemoryLayer | undefined {
+    if (settings.translationCache?.enabled === false) {
+      return undefined;
+    }
+    const activeConfig = this.config.activeApiConfig;
+    if (!activeConfig) {
+      return undefined;
+    }
+
+    try {
+      const fingerprint = this.buildMemoryFingerprint(settings);
+      return createTranslationMemoryLayer(
+        translationMemoryClient,
+        fingerprint,
+        (text) =>
+          !!text.trim() &&
+          calculateReplacementLimit(text, settings.replacementRate) !== 0,
+      );
+    } catch (error) {
+      console.warn('Translation memory unavailable:', error);
+      return undefined;
+    }
+  }
+
+  /**
+   * Fingerprint of everything that changes the answer for the same text, including
+   * the prompt strings actually sent (prompt edits invalidate stored answers).
+   * Same inputs as generateCacheKey, so both cache layers agree.
+   */
+  private buildMemoryFingerprint(settings: UserSettings): string {
+    const activeConfig = this.config.activeApiConfig;
+    const apiConfig = activeConfig?.config ?? this.config.apiConfig;
+    const promptConfig = {
+      targetLanguage: settings.multilingualConfig.targetLanguage,
+      userLevel: settings.userLevel,
+      replacementRate: settings.replacementRate,
+    };
+
+    return buildWordFingerprintSource({
+      protocolFamily: activeConfig?.protocolFamily,
+      endpoint: apiConfig?.apiEndpoint,
+      model: apiConfig?.model ?? '',
+      temperature: apiConfig?.temperature,
+      customParams: apiConfig?.customParams,
+      thinking: apiConfig?.includeThinkingParam
+        ? !!apiConfig.enable_thinking
+        : null,
+      systemPrompt: getSystemPromptByConfig(promptConfig),
+      batchSystemPrompt: getBatchSystemPromptByConfig(promptConfig),
+      promptVersion: TRANSLATION_PROMPT_VERSION,
+      targetLanguage: promptConfig.targetLanguage,
+      userLevel: promptConfig.userLevel,
+      replacementRate: promptConfig.replacementRate,
+    });
   }
 
   /**

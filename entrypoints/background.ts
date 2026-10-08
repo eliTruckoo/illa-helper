@@ -12,6 +12,7 @@ import {
 import { CommandService } from '@/src/modules/background/services/CommandService';
 import { InitializationService } from '@/src/modules/background/services/InitializationService';
 import { UpdateCheckService } from '@/src/modules/background/services/UpdateCheckService';
+import { TranslationMemoryService } from '@/src/modules/background/services/TranslationMemoryService';
 import {
   MESSAGE_TYPES,
   BACKGROUND_CONSTANTS,
@@ -26,6 +27,7 @@ export default defineBackground(() => {
   const commandService = CommandService.getInstance();
   const initializationService = InitializationService.getInstance();
   const updateCheckService = UpdateCheckService.getInstance();
+  const translationMemoryService = TranslationMemoryService.getInstance();
 
   // Legacy managers removed - now managed uniformly in InitializationService
 
@@ -35,6 +37,9 @@ export default defineBackground(() => {
 
   // Abort in-flight API requests whose tab or document went away
   apiProxyService.registerLifecycleListeners();
+
+  // Re-read the translation memory settings when the user changes them
+  translationMemoryService.registerListeners();
 
   /**
    * Initialize all services
@@ -78,6 +83,14 @@ export default defineBackground(() => {
    */
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log(`[Background] Received message: ${message.type}`);
+
+    // Translation memory (tm-lookup / tm-store / tm-stats / tm-clear)
+    if (TranslationMemoryService.handles(message?.type)) {
+      translationMemoryService
+        .handleMessage(message, sender)
+        .then(sendResponse, () => sendResponse(undefined));
+      return true; // Keep the message channel open
+    }
 
     switch (message.type) {
       case MESSAGE_TYPES.SHOW_NOTIFICATION:

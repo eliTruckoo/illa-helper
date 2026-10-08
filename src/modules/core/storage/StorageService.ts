@@ -483,6 +483,13 @@ export class StorageService {
         validatedSettings.lazyLoading = DEFAULT_SETTINGS.lazyLoading;
       }
 
+      // Ensure the translation memory config exists (older installs lack it)
+      if (!validatedSettings.translationCache) {
+        validatedSettings.translationCache = {
+          ...DEFAULT_SETTINGS.translationCache,
+        };
+      }
+
       return validatedSettings;
     } catch (error) {
       console.error(`Settings validation error: ${error}`);
