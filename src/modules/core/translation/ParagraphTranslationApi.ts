@@ -7,6 +7,7 @@
 
 import { callAI } from '../../api/services/UniversalApiService';
 import { StorageService } from '../storage';
+import type { UserSettings } from '../../shared/types';
 import { languageService } from './LanguageService';
 import { cleanParagraphTranslationResult } from './ParagraphTranslationResult';
 
@@ -24,12 +25,28 @@ Requirements:
 Text to translate:
 {{input}}`;
 
+/** Upper bound of cached paragraph translations per page (LRU) */
+const MAX_CACHED_PARAGRAPHS = 500;
+
+/**
+ * Values a caller resolved once for a whole batch of paragraphs.
+ */
+export interface ParagraphTranslationContext {
+  /** User settings; read from storage when omitted */
+  settings?: UserSettings;
+}
+
 /**
  * Paragraph translation API service class
  */
 export class ParagraphTranslationApi {
   private static instance: ParagraphTranslationApi | null = null;
   private storageService: StorageService;
+
+  /** Settled translations, key: model + target language + normalized text */
+  private resultCache = new Map<string, string>();
+  /** Requests in flight, so identical paragraphs share one API call */
+  private inFlightRequests = new Map<string, Promise<string>>();
 
   private constructor() {
     this.storageService = StorageService.getInstance();
@@ -49,11 +66,13 @@ export class ParagraphTranslationApi {
    * Translate paragraph text
    * @param sourceText Source text
    * @param targetLanguage Target language (optional, defaults to user settings)
+   * @param context Values resolved once per batch (e.g. settings)
    * @returns Translated text
    */
   public async translateParagraph(
     sourceText: string,
     targetLanguage?: string,
+    context: ParagraphTranslationContext = {},
   ): Promise<string> {
     if (!sourceText || !sourceText.trim()) {
       return '';
@@ -63,8 +82,9 @@ export class ParagraphTranslationApi {
     const cleanSourceText = sourceText.replace(/\u200B/g, '').trim();
 
     try {
-      // Get user settings
-      const settings = await this.storageService.getUserSettings();
+      // Batch callers resolve settings once instead of once per paragraph.
+      const settings =
+        context.settings ?? (await this.storageService.getUserSettings());
 
       // Only detect the page language when the caller did not resolve it.
       const finalTargetLanguage =
@@ -74,31 +94,97 @@ export class ParagraphTranslationApi {
           await languageService.detectPageLanguage(),
         );
 
-      // Build the paragraph translation prompt
-      const prompt = this.buildParagraphTranslationPrompt(
+      const cacheKey = this.buildCacheKey(
         cleanSourceText,
         finalTargetLanguage,
+        settings,
       );
-
-      console.log(`[ParagraphTranslationApi] Calling API...`);
-      const result = await callAI(prompt);
-      console.log(`[ParagraphTranslationApi] Raw API result:`, result);
-
-      if (!result.success) {
-        throw new Error(result.error || 'Translation API call failed');
+      const cached = this.resultCache.get(cacheKey);
+      if (cached !== undefined) {
+        // Refresh the LRU position
+        this.resultCache.delete(cacheKey);
+        this.resultCache.set(cacheKey, cached);
+        return cached;
       }
 
-      // Process the translation result
-      const processedResult = cleanParagraphTranslationResult(
-        result.content,
-        cleanSourceText,
-      );
+      const inFlight = this.inFlightRequests.get(cacheKey);
+      if (inFlight) {
+        return await inFlight;
+      }
 
-      return processedResult;
+      const request = this.requestTranslation(
+        cleanSourceText,
+        finalTargetLanguage,
+      )
+        .then((translation) => {
+          // Failures reject and are never cached; neither are empty results.
+          if (translation.trim()) {
+            this.rememberResult(cacheKey, translation);
+          }
+          return translation;
+        })
+        .finally(() => {
+          this.inFlightRequests.delete(cacheKey);
+        });
+      this.inFlightRequests.set(cacheKey, request);
+
+      return await request;
     } catch (error) {
       console.error('Paragraph translation API call failed:', error);
       throw error;
     }
+  }
+
+  /**
+   * Drop all cached paragraph translations
+   */
+  public clearCache(): void {
+    this.resultCache.clear();
+  }
+
+  private buildCacheKey(
+    text: string,
+    targetLanguage: string,
+    settings: UserSettings,
+  ): string {
+    const activeConfig = settings.apiConfigs?.find(
+      (config) => config.id === settings.activeApiConfigId,
+    );
+    const modelId = `${settings.activeApiConfigId ?? ''}:${activeConfig?.config?.model ?? ''}`;
+    const normalizedText = text.replace(/\s+/g, ' ');
+    return `${modelId}\u0001${targetLanguage.toLowerCase()}\u0001${normalizedText}`;
+  }
+
+  private rememberResult(cacheKey: string, translation: string): void {
+    this.resultCache.delete(cacheKey);
+    while (this.resultCache.size >= MAX_CACHED_PARAGRAPHS) {
+      const oldest = this.resultCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.resultCache.delete(oldest);
+    }
+    this.resultCache.set(cacheKey, translation);
+  }
+
+  private async requestTranslation(
+    cleanSourceText: string,
+    finalTargetLanguage: string,
+  ): Promise<string> {
+    // Build the paragraph translation prompt
+    const prompt = this.buildParagraphTranslationPrompt(
+      cleanSourceText,
+      finalTargetLanguage,
+    );
+
+    console.log(`[ParagraphTranslationApi] Calling API...`);
+    const result = await callAI(prompt);
+    console.log(`[ParagraphTranslationApi] Raw API result:`, result);
+
+    if (!result.success) {
+      throw new Error(result.error || 'Translation API call failed');
+    }
+
+    // Process the translation result
+    return cleanParagraphTranslationResult(result.content, cleanSourceText);
   }
 
   /**

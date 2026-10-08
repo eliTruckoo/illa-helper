@@ -17,7 +17,9 @@ import { globalProcessingState } from '../../processing/ProcessingStateManager';
 import {
   walkAndCollectParagraphsAsync,
   collectTextNodes,
+  type ParagraphInfo,
 } from '../../processing/DomWalker';
+import type { UserSettings } from '../../shared/types';
 import { languageService } from './LanguageService';
 import { selectParagraphTranslationElements } from './ParagraphTranslationSelection';
 import { renderParagraphTranslation } from './ParagraphTranslationRenderer';
@@ -37,6 +39,10 @@ export class ParagraphTranslationService {
   private translatedElements = new WeakSet<HTMLElement>();
   private translatingElements = new WeakSet<HTMLElement>(); // Elements currently being translated
   private targetLanguage?: string;
+  /** Settings resolved once per start()/batch and passed down to the API */
+  private runSettings?: UserSettings;
+  /** Text nodes found by the last walk, reused when building lazy segments */
+  private paragraphTextNodes = new WeakMap<HTMLElement, Text[]>();
 
   // Concurrency settings
   private readonly BATCH_SIZE = 5; // Process 5 elements per batch
@@ -104,27 +110,82 @@ export class ParagraphTranslationService {
 
     try {
       // Re-read the current page and settings on every manual trigger. SPA route changes do not recreate the content script.
-      const settings = await this.storageService.getUserSettings();
-      const pageLanguage = await languageService.detectPageLanguage();
-      this.targetLanguage = languageService.resolveTargetLanguage(
-        settings.multilingualConfig,
-        pageLanguage,
-      );
-
-      const isLazyLoadingEnabled =
-        settings?.lazyLoading?.enabled && this.lazyLoadingService?.isEnabled();
-
-      if (isLazyLoadingEnabled) {
-        // Lazy loading mode only registers the current DOM; visible elements are triggered later by LazyLoadingService.
-        console.log('[ParagraphTranslation] Using lazy loading mode');
-        return this.startLazyLoading();
-      }
-
-      console.log('[ParagraphTranslation] Using full translation mode');
-      return this.startFullTranslation();
+      const settings = await this.resolveRunContext();
+      const elements = await this.findParagraphElements([document.body]);
+      return await this.dispatchElements(elements, settings);
     } finally {
       this.isStarting = false;
     }
+  }
+
+  /**
+   * Translate only the paragraphs inside the given (mutated) nodes.
+   *
+   * Used for dynamic content: one scoped scan per mutation batch instead of a
+   * full-page start() per mutated node.
+   */
+  public async translateWithin(nodes: Iterable<Node>): Promise<number> {
+    const roots = this.toTopLevelRoots(nodes);
+    if (roots.length === 0) return 0;
+
+    const settings = await this.resolveRunContext();
+    const elements = await this.findParagraphElements(roots);
+    return this.dispatchElements(elements, settings);
+  }
+
+  /**
+   * Resolve settings and the target language once for a whole run. Page
+   * language detection is cached per page by LanguageService.
+   */
+  private async resolveRunContext(): Promise<UserSettings> {
+    const settings = await this.storageService.getUserSettings();
+    const pageLanguage = await languageService.detectPageLanguage();
+    this.targetLanguage = languageService.resolveTargetLanguage(
+      settings.multilingualConfig,
+      pageLanguage,
+    );
+    this.runSettings = settings;
+    return settings;
+  }
+
+  private async dispatchElements(
+    elements: HTMLElement[],
+    settings: UserSettings,
+  ): Promise<number> {
+    const isLazyLoadingEnabled =
+      settings?.lazyLoading?.enabled && this.lazyLoadingService?.isEnabled();
+
+    if (isLazyLoadingEnabled) {
+      // Lazy loading mode only registers the current DOM; visible elements are triggered later by LazyLoadingService.
+      console.log('[ParagraphTranslation] Using lazy loading mode');
+      return this.startLazyLoading(elements);
+    }
+
+    console.log('[ParagraphTranslation] Using full translation mode');
+    return this.startFullTranslation(elements);
+  }
+
+  /**
+   * Elements to walk for the given nodes: text nodes map to their parent,
+   * detached nodes are dropped and nodes inside another root are merged.
+   */
+  private toTopLevelRoots(nodes: Iterable<Node>): HTMLElement[] {
+    const candidates = new Set<HTMLElement>();
+    for (const node of nodes) {
+      const element =
+        node.nodeType === Node.ELEMENT_NODE
+          ? (node as HTMLElement)
+          : node.parentElement;
+      if (element?.isConnected) candidates.add(element);
+    }
+
+    return Array.from(candidates).filter((element) => {
+      for (let parent = element.parentElement; parent; ) {
+        if (candidates.has(parent)) return false;
+        parent = parent.parentElement;
+      }
+      return true;
+    });
   }
 
   /**
@@ -135,6 +196,7 @@ export class ParagraphTranslationService {
     this.translatedElements = new WeakSet();
     this.translatingElements = new WeakSet(); // Reset
     this.targetLanguage = undefined;
+    this.runSettings = undefined;
     this.clearAllLoadingIndicators(); // Clear
 
     // Stop lazy loading observation
@@ -155,6 +217,7 @@ export class ParagraphTranslationService {
     this.translatedElements = new WeakSet();
     this.translatingElements = new WeakSet(); // Reset
     this.targetLanguage = undefined;
+    this.runSettings = undefined;
     this.clearAllLoadingIndicators(); // Clear
 
     // Stop lazy loading observation
@@ -168,14 +231,27 @@ export class ParagraphTranslationService {
   /**
    * Find paragraph elements - based on the unified DomWalker traversal
    */
-  private async findParagraphElements(): Promise<HTMLElement[]> {
-    const paragraphs = await walkAndCollectParagraphsAsync(document.body);
+  private async findParagraphElements(
+    roots: HTMLElement[],
+  ): Promise<HTMLElement[]> {
+    // Roots are disjoint, so concatenating their (document-ordered) results
+    // keeps every subtree contiguous, as the selection expects.
+    const paragraphs: ParagraphInfo[] = [];
+    for (const root of roots) {
+      paragraphs.push(...(await walkAndCollectParagraphsAsync(root)));
+    }
+    paragraphs.forEach((paragraph) => {
+      this.paragraphTextNodes.set(paragraph.element, paragraph.textNodes);
+    });
     const paragraphElements = selectParagraphTranslationElements(paragraphs);
 
     // Filter out elements that are already translated, being translated, or too short
     const elements = paragraphElements.filter((element) => {
       if (this.translatedElements.has(element)) return false;
       if (this.translatingElements.has(element)) return false;
+      // Rescans of a subtree must not translate parts of an already
+      // translated (or in-flight) paragraph a second time.
+      if (this.hasHandledAncestor(element)) return false;
 
       const text = element.textContent?.trim();
       if (!text || text.length < 3) return false;
@@ -192,6 +268,19 @@ export class ParagraphTranslationService {
       elements.length,
     );
     return elements;
+  }
+
+  private hasHandledAncestor(element: HTMLElement): boolean {
+    for (let parent = element.parentElement; parent; ) {
+      if (
+        this.translatedElements.has(parent) ||
+        this.translatingElements.has(parent)
+      ) {
+        return true;
+      }
+      parent = parent.parentElement;
+    }
+    return false;
   }
 
   /**
@@ -282,6 +371,7 @@ export class ParagraphTranslationService {
       const translatedText = await this.paragraphApi.translateParagraph(
         textContent,
         this.targetLanguage,
+        { settings: this.runSettings },
       );
 
       if (translatedText && translatedText.trim()) {
@@ -426,9 +516,9 @@ export class ParagraphTranslationService {
   /**
    * Start full translation
    */
-  private async startFullTranslation(): Promise<number> {
-    // Find all paragraph elements
-    const paragraphElements = await this.findParagraphElements();
+  private async startFullTranslation(
+    paragraphElements: HTMLElement[],
+  ): Promise<number> {
     console.log(
       '[ParagraphTranslation] Full translation mode: paragraph elements found:',
       paragraphElements.length,
@@ -443,16 +533,17 @@ export class ParagraphTranslationService {
   /**
    * Start lazy loading translation
    */
-  private async startLazyLoading(): Promise<number> {
+  private async startLazyLoading(
+    paragraphElements: HTMLElement[],
+  ): Promise<number> {
     if (!this.lazyLoadingService) {
       console.warn(
         '[ParagraphTranslation] Lazy loading service not initialized, falling back to full translation',
       );
-      return this.startFullTranslation();
+      return this.startFullTranslation(paragraphElements);
     }
 
-    // Find all paragraph elements and convert them to ContentSegment
-    const paragraphElements = await this.findParagraphElements();
+    // Convert paragraph elements to ContentSegment
     const segments = this.convertToContentSegments(paragraphElements);
 
     console.log(
@@ -488,7 +579,9 @@ export class ParagraphTranslationService {
         domPath,
       );
 
-      const textNodes: Text[] = collectTextNodes(element);
+      // Reuse the walk's text nodes; selected inline children may need a walk.
+      const textNodes: Text[] =
+        this.paragraphTextNodes.get(element) ?? collectTextNodes(element);
 
       return {
         id: `${element.tagName.toLowerCase()}-${fingerprint}-${index}`,

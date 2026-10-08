@@ -253,9 +253,7 @@ export class ListenerService implements IListenerService {
       }
 
       try {
-        for (const node of topLevelNodes) {
-          await this.processDynamicNode(node);
-        }
+        await this.processDynamicNodes(topLevelNodes);
       } catch (error) {
         console.error('[ListenerService] DOM node processing failed:', error);
       }
@@ -272,12 +270,15 @@ export class ListenerService implements IListenerService {
     }, 150);
   }
 
-  private async processDynamicNode(node: Node): Promise<void> {
+  private async processDynamicNodes(nodes: Set<Node>): Promise<void> {
     if (this.settings.translationMode === TranslationMode.PARAGRAPH) {
-      await this.paragraphService.start();
+      // One scan per batch, scoped to the mutated subtrees.
+      await this.paragraphService.translateWithin(nodes);
       return;
     }
 
-    await this.processingService.processNode(node);
+    for (const node of nodes) {
+      await this.processingService.processNode(node);
+    }
   }
 }

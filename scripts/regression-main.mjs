@@ -410,4 +410,60 @@ assert.equal(
   'text-sample detection must run once per page',
 );
 
+// ------------------------------------------------------------
+// Paragraph mode: selection and per-page result cache
+// ------------------------------------------------------------
+
+const selectionFixture = document.createElement('section');
+selectionFixture.innerHTML = `
+  <ul><li id="sel-li"><a id="sel-a" href="#">Short</a></li></ul>
+  <div id="sel-two"><a href="#">First link item</a> text <a href="#">Second link item</a></div>
+`;
+document.body.appendChild(selectionFixture);
+assert.deepEqual(
+  selectParagraphTranslationElements(
+    walkAndCollectParagraphs(selectionFixture),
+  ).map((element) => element.id),
+  ['sel-a', 'sel-two'],
+  'a short block with exactly one inline candidate selects the inline child',
+);
+
+const { ParagraphTranslationApi } = await import(
+  '../src/modules/core/translation/ParagraphTranslationApi.ts'
+);
+const paragraphApi = ParagraphTranslationApi.getInstance();
+const requested = [];
+paragraphApi.requestTranslation = async (text) => {
+  requested.push(text);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  if (text.startsWith('fail')) throw new Error('api down');
+  return `de:${text}`;
+};
+const paragraphSettings = {
+  activeApiConfigId: 'cfg',
+  apiConfigs: [{ id: 'cfg', config: { model: 'model-a' } }],
+  multilingualConfig: { targetLanguage: 'de', nativeLanguage: 'en' },
+};
+const context = { settings: paragraphSettings };
+const [first, second] = await Promise.all([
+  paragraphApi.translateParagraph('Hello  world', 'de', context),
+  paragraphApi.translateParagraph('Hello world', 'de', context),
+]);
+assert.equal(first, 'de:Hello  world');
+assert.equal(second, first, 'concurrent identical paragraphs share a request');
+await paragraphApi.translateParagraph('Hello world', 'de', context);
+assert.equal(requested.length, 1, 'repeated paragraphs are served from cache');
+await paragraphApi.translateParagraph('Hello world', 'fr', context);
+assert.equal(requested.length, 2, 'the target language is part of the key');
+const originalConsoleError = console.error;
+console.error = () => undefined;
+await assert.rejects(
+  paragraphApi.translateParagraph('fail once', 'de', context),
+);
+await assert.rejects(
+  paragraphApi.translateParagraph('fail once', 'de', context),
+);
+console.error = originalConsoleError;
+assert.equal(requested.length, 4, 'failures must never be cached');
+
 console.log('main regression passed');
