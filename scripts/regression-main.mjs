@@ -1145,4 +1145,172 @@ pronunciationService.destroy();
   }
 }
 
+// ------------------------------------------------------------
+// Hover lookups: negative cache TTLs + in-flight dedup, Youdao stop()
+// ------------------------------------------------------------
+
+{
+  const { LookupCache } = await import(
+    '../src/modules/pronunciation/utils/LookupCache.ts'
+  );
+  const { API_CONSTANTS } = await import(
+    '../src/modules/pronunciation/config/constants.ts'
+  );
+
+  let clock = 1_000_000;
+  const cache = new LookupCache({ maxEntries: 3, now: () => clock });
+  let loads = 0;
+  const notFound = () => {
+    loads += 1;
+    return Promise.resolve({
+      ok: false,
+      error: 'not found',
+      ttlMs: API_CONSTANTS.NOT_FOUND_CACHE_TTL,
+    });
+  };
+  const failing = () => {
+    loads += 1;
+    return Promise.resolve({
+      ok: false,
+      error: 'boom',
+      ttlMs: API_CONSTANTS.LOOKUP_ERROR_CACHE_TTL,
+    });
+  };
+
+  assert.equal(API_CONSTANTS.NOT_FOUND_CACHE_TTL, 7 * 24 * 60 * 60 * 1000);
+  assert.equal(API_CONSTANTS.LOOKUP_ERROR_CACHE_TTL, 10 * 60 * 1000);
+
+  await cache.resolve('xyzzy', notFound);
+  const cachedMiss = await cache.resolve('xyzzy', notFound);
+  assert.equal(loads, 1, 'a 404 is not requested again');
+  assert.deepEqual(cachedMiss, { ok: false, error: 'not found', cached: true });
+  clock += API_CONSTANTS.NOT_FOUND_CACHE_TTL - 1;
+  await cache.resolve('xyzzy', notFound);
+  assert.equal(loads, 1, '404s stay cached for ~7 days');
+  clock += 2;
+  await cache.resolve('xyzzy', notFound);
+  assert.equal(loads, 2, 'the 404 entry expires after 7 days');
+
+  loads = 0;
+  await cache.resolve('flaky', failing);
+  clock += API_CONSTANTS.LOOKUP_ERROR_CACHE_TTL - 1;
+  await cache.resolve('flaky', failing);
+  assert.equal(loads, 1, 'errors are cached for ~10 minutes');
+  clock += 2;
+  await cache.resolve('flaky', failing);
+  assert.equal(loads, 2, 'errors are retried after 10 minutes');
+  cache.clearFailures();
+  await cache.resolve('flaky', failing);
+  assert.equal(loads, 3, 'clearFailures() forces a retry');
+
+  // Concurrent lookups share one request; ttl 0 is not cached
+  loads = 0;
+  let release;
+  const slow = () => {
+    loads += 1;
+    return new Promise((resolve) => {
+      release = () => resolve({ ok: true, data: { word: 'hi' }, ttlMs: 0 });
+    });
+  };
+  const concurrent = [
+    cache.resolve('hi', slow),
+    cache.resolve('hi', slow),
+    cache.resolve('hi', slow),
+  ];
+  release();
+  const settled = await Promise.all(concurrent);
+  assert.equal(loads, 1, 'concurrent hovers trigger one request');
+  assert.ok(settled.every((result) => result.ok && result.data.word === 'hi'));
+  const uncached = cache.resolve('hi', slow);
+  release();
+  await uncached;
+  assert.equal(loads, 2, 'ttl 0 outcomes are not cached');
+
+  // Lookups started before clear() do not repopulate the cache
+  const beforeClear = cache.resolve('stale', () =>
+    Promise.resolve({ ok: true, data: 'old', ttlMs: 60_000 }),
+  );
+  cache.clear();
+  await beforeClear;
+  assert.equal(cache.get('stale'), null, 'clear() discards in-flight results');
+
+  // Bounded size
+  for (const key of ['a', 'b', 'c', 'd']) {
+    await cache.resolve(key, () =>
+      Promise.resolve({ ok: true, data: key, ttlMs: 60_000 }),
+    );
+  }
+  assert.equal(cache.size, 3);
+  assert.equal(cache.get('a'), null, 'the oldest entry is evicted');
+
+  // DictionaryApiProvider: concurrent hovers + cached 404 => one fetch
+  const { DictionaryApiProvider } = await import(
+    '../src/modules/pronunciation/phonetic/DictionaryApiProvider.ts'
+  );
+  const originalFetch = globalThis.fetch;
+  const originalLocation = globalThis.location;
+  globalThis.location = { href: 'https://example.com/' };
+  let fetches = 0;
+  globalThis.fetch = async () => {
+    fetches += 1;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    return { ok: false, status: 404, statusText: 'Not Found' };
+  };
+  try {
+    const dictionary = new DictionaryApiProvider();
+    const results = await Promise.all([
+      dictionary.getPhonetic('Qwrtz'),
+      dictionary.getPhonetic('qwrtz'),
+    ]);
+    await dictionary.getPhonetic('qwrtz');
+    assert.equal(fetches, 1, 'dictionary 404s are deduplicated and cached');
+    assert.ok(results.every((result) => result.success === false));
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.location = originalLocation;
+  }
+
+  // YoudaoTTSProvider.stop() releases the audio and settles speak()
+  const { YoudaoTTSProvider } = await import(
+    '../src/modules/pronunciation/tts/YoudaoTTSProvider.ts'
+  );
+  const audios = [];
+  const OriginalAudio = globalThis.Audio;
+  globalThis.Audio = class {
+    constructor(src) {
+      this.attributes = new Map([['src', src]]);
+      this.loads = 0;
+      this.paused = true;
+      audios.push(this);
+    }
+    load() {
+      this.loads += 1;
+    }
+    pause() {
+      this.paused = true;
+    }
+    play() {
+      this.paused = false;
+      return Promise.resolve();
+    }
+    removeAttribute(name) {
+      this.attributes.delete(name);
+    }
+  };
+  try {
+    const youdao = new YoudaoTTSProvider();
+    const speaking = youdao.speak('hello');
+    const audio = audios[0];
+    youdao.stop();
+    const stopped = await speaking;
+    assert.deepEqual(stopped, { success: true, stopped: true });
+    assert.ok(!audio.attributes.has('src'), 'stop() clears the audio source');
+    assert.equal(audio.loads, 2, 'stop() calls load() to release the media');
+    assert.equal(audio.onended, null, 'stop() detaches the handlers');
+    assert.equal(youdao.isSpeaking(), false);
+  } finally {
+    globalThis.Audio = OriginalAudio;
+  }
+}
+
 console.log('main regression passed');

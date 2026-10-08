@@ -131,6 +131,12 @@ export class WebSpeechTTSProvider implements ITTSProvider {
 
         utterance.onerror = (event) => {
           this.currentUtterance = null;
+          // cancel() from stop() reports interrupted/canceled: not a failure
+          // that should trigger a fallback provider
+          if (event.error === 'interrupted' || event.error === 'canceled') {
+            resolve({ success: true, stopped: true });
+            return;
+          }
           resolve({
             success: false,
             error: `Speech failed: ${event.error}`,

@@ -6,6 +6,8 @@
 export interface TTSResult {
   success: boolean;
   error?: string;
+  /** Playback was stopped on purpose (e.g. a newer request); not a failure */
+  stopped?: boolean;
 }
 
 // TTS provider type
