@@ -535,7 +535,7 @@ export class StorageService {
       console.error('Failed to get config statistics:', error);
       return {
         intelligentModeEnabled: true,
-        targetLanguage: 'en',
+        targetLanguage: DEFAULT_SETTINGS.multilingualConfig.targetLanguage,
         totalKeys: 0,
         apiConfigsCount: 0,
       };

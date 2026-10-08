@@ -39,8 +39,8 @@ export const DEFAULT_API_CONFIG: ApiConfig = {
 
 // Default language configuration - minimal version
 export const DEFAULT_MULTILINGUAL_CONFIG: MultilingualConfig = {
-  nativeLanguage: 'zh', // Chinese as the default native language
-  targetLanguage: 'en', // English as the default target language
+  nativeLanguage: 'en', // English as the default native language
+  targetLanguage: 'es', // Spanish as the default target language
 };
 
 // Default pronunciation shortcut configuration
