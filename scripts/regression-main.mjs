@@ -529,4 +529,82 @@ scheduler.cancel();
 clock.advanceTo(5000);
 assert.equal(flushTimes.length, 2, 'cancel drops the pending flush');
 
+// ------------------------------------------------------------
+// SegmentObserver: split paragraphs, release after processing
+// ------------------------------------------------------------
+
+const observedTargets = new Set();
+let intersectionCallback;
+globalThis.IntersectionObserver = class {
+  constructor(callback) {
+    intersectionCallback = callback;
+  }
+  observe(target) {
+    observedTargets.add(target);
+  }
+  unobserve(target) {
+    observedTargets.delete(target);
+  }
+  disconnect() {
+    observedTargets.clear();
+  }
+};
+window.innerHeight = 800;
+window.HTMLElement.prototype.getBoundingClientRect = () => ({
+  top: 10000,
+  bottom: 10100,
+});
+
+const { SegmentObserver } = await import(
+  '../src/modules/content/utils/SegmentObserver.ts'
+);
+const visibleBatches = [];
+const segmentObserver = new SegmentObserver((visible) => {
+  if (visible.length > 0) visibleBatches.push(visible);
+});
+const splitElement = document.createElement('p');
+document.body.appendChild(splitElement);
+const splitSegments = [0, 1, 2].map((index) => ({
+  id: `split-${index}`,
+  textContent: `part ${index}`,
+  element: splitElement,
+  elements: [splitElement],
+  textNodes: [],
+  fingerprint: `split-fp-${index}`,
+  domPath: 'p#split',
+}));
+segmentObserver.observeMultiple(splitSegments);
+segmentObserver.observe(splitSegments[0]);
+assert.equal(
+  segmentObserver.getObservedCount(),
+  3,
+  'all sub-segments of a split paragraph must be kept (no overwrite, no duplicates)',
+);
+intersectionCallback([{ target: splitElement, isIntersecting: true }]);
+assert.deepEqual(
+  visibleBatches.at(-1).map((segment) => segment.id),
+  ['split-0', 'split-1', 'split-2'],
+  'an element entering the viewport reports every sub-segment',
+);
+segmentObserver.unobserveMultiple(splitSegments.slice(0, 2));
+assert.ok(observedTargets.has(splitElement));
+segmentObserver.unobserve(splitSegments[2]);
+assert.equal(segmentObserver.getObservedCount(), 0);
+assert.ok(
+  !observedTargets.has(splitElement),
+  'the element is unobserved once all its segments are processed',
+);
+
+const detachedElement = document.createElement('p');
+document.body.appendChild(detachedElement);
+segmentObserver.observe({ ...splitSegments[0], element: detachedElement });
+detachedElement.remove();
+intersectionCallback([{ target: detachedElement, isIntersecting: false }]);
+assert.equal(
+  segmentObserver.getObservedCount(),
+  0,
+  'detached elements must be released',
+);
+segmentObserver.destroy();
+
 console.log('main regression passed');
