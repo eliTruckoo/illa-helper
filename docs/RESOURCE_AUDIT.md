@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-08 · **Scope:** whole extension (content script, processing pipeline, API layer, background service worker, storage/messaging, in-page UI, popup/options) · **Method:** six parallel code-reading audits, key claims re-verified against source. No runtime profiling was done; items marked _unverified_ need a measurement.
 
-Issues are tracked in beads (`bd show <id>`). Epics: **`illa-helper-ei3`** (freezes), **`illa-helper-bfn`** (memory & lifecycle), **`illa-helper-eq7`** (API cost / dedup).
+**Status:** all findings implemented and merged — see sections 9–10. Issues are tracked in beads (`bd show <id>`). Epics: **`illa-helper-ei3`** (freezes), **`illa-helper-bfn`** (memory & lifecycle), **`illa-helper-eq7`** (API cost / dedup).
 
 ---
 
@@ -188,4 +188,50 @@ Dependency edges in beads: `eq7.1` blocks `eq7.2`, `eq7.3`, `eq7.6`; `eq7.2` blo
 - Firefox behaviour of the callback form of `browser.runtime.sendMessage` (`ei3.8`).
 - Overlapping segments from nested inline paragraphs (`eq7.9`) — inferred from code.
 - Paint cost of the blur effects (`ei3.11`).
-- All savings percentages and token counts — estimates from code + default config; validate with `eq7.10`.
+- All savings percentages and token counts — estimates from code + default config; validate with `eq7.10` (`[TranslationStats]` console line).
+
+---
+
+## 9. Implementation status (2026-10-08)
+
+All 34 beads were implemented in parallel git worktrees and merged into `master`. Every merge passed `npm run compile`, lint and `npm run test:regression` (six suites); the final state also builds for Chrome MV3 and Firefox MV2. **Nothing has been verified in a real browser yet** — tracked as `illa-helper-tsk`.
+
+| Track                      | Merge     | Beads                                 | Summary                                                                                                                                                                                                                                                                                 |
+| -------------------------- | --------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C — API cost core          | `fb9152e` | eq7.1–.4, eq7.10, ei3.6 (per tab)     | `ok`/`empty`/`error` status, errors never cached; LRU segment cache with full key + in-flight coalescing; batches of ≤ 8 items / 2 500 chars; prompt ~600 chars, line limit + `max_tokens`, no calls after budget is exhausted; per-tab `TranslationStats`                              |
+| A — content pipeline       | `9dbc0d9` | ei3.1–.4, ei3.12, bfn.1, eq7.8, eq7.9 | Single-pass time-sliced DomWalker without DOM labelling; `<html lang>` language detection, cached; scoped paragraph rescans; debounce with 750 ms max-wait and capped node set; SegmentObserver releases processed segments; small segments no longer merged                            |
+| F — lifecycle & background | `bb7d63e` | bfn.3–.7                              | `ctx.onInvalidated` teardown, no `beforeunload`; enabled/blacklist check before any IPC; update check via `browser.alarms` once per 24 h; context menu listeners at top level, active tab only, diffed updates; debounced options/popup saves                                           |
+| B — network                | `507c176` | ei3.6–.8, eq7.5                       | No-hang proxy replies; 30 s default timeout, per-tab cancellation, retries only for 408/429/5xx with backoff + `Retry-After`; global priority limiter (4, active tab first); Gemini via background REST, SDK removed                                                                    |
+| E — UI & pronunciation     | `63d28ed` | ei3.5, ei3.9–.11, bfn.2, bfn.8        | Lazy TTS (no `speechSynthesis` until first play); in-memory settings cache with `storage.onChanged`; delegated tooltip listeners, WeakMap data; stylesheet injected once; no `backdrop-filter`/infinite shimmer/per-word blur; floating-ball fixes; hover lookup dedup + negative cache |
+| G — glossary (opt-in)      | `aa41205` | eq7.11, eq7.12                        | Page glossary with prompt hint and economy mode, all off by default                                                                                                                                                                                                                     |
+| D — persistence            | `d3d4295` | eq7.6, eq7.7, eq7.13, eq7.14          | Background IndexedDB translation memory (segments, paragraphs, hover definitions), incognito memory-only, options card with stats/toggle/clear, word exposure counts                                                                                                                    |
+
+Follow-ups on master: `98c35de` (await segmentation), `0345e46` (remove message listener + abort requests on teardown), `2bb3806` (migrate stored `apiRequestTimeout: 0` to 30 s; eslint ignores `.claude/**`).
+
+## 10. Browser verification checklist (`illa-helper-tsk`)
+
+**Freezes / CPU**
+
+- Long Wikipedia article: Performance panel shows no long task from the DomWalker; paragraphs/translations unchanged.
+- Feeds (Reddit/Twitter), word + paragraph mode, lazy on/off: new items translated within ~750 ms, no duplicates, no full-page rescans per item.
+- Linux: `speech-dispatcher` does not start until the first pronunciation playback.
+- Session restore with many tabs: ≤ 4 concurrent upstream requests, active tab first.
+- Stalled endpoint: request fails after 30 s (408); navigating away aborts in-flight fetches.
+
+**Cost**
+
+- `[TranslationStats]` console line (dev build): requests per page ~5–10× lower than before; check batch output quality and rate adherence.
+- Reload a translated page → 0 API requests; also after stopping the service worker; model/level change → fresh translation.
+- Incognito: works, nothing persisted. Options → Data Management: stats load, clear/toggle work.
+- Hover the same word in two tabs → one definition request.
+- OpenAI-compatible endpoints accept `max_tokens`; Gemini end-to-end (word mode, connection test, definitions, bad-key error) on Chrome and Firefox.
+- Glossary (opt-in): reused translations consistent, never inside longer words, never on CJK pages; measure wrong-sense rate before enabling by default.
+
+**Lifecycle / UI**
+
+- Reload the extension with open tabs: old scripts stop, translations stay.
+- Firefox back/forward restores from bfcache.
+- Options sliders/inputs save once ~400 ms after the last change; closing right after an edit persists it.
+- Context menu correct and clickable after a service-worker restart.
+- Tooltips (hotkey on/off, nested phrase tooltips, links), learning-mode mask, floating ball (hover pulse, drag with mouse/touch, disable → enable → click, each menu action fires once), Youdao/Web Speech stop without fallback voice.
+- Pages with a wrong `<html lang>` now pick the wrong direction (known trade-off).
